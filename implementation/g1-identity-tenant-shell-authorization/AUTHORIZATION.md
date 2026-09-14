@@ -53,7 +53,8 @@ A PR may exercise this G1 implementation authority only when all of the followin
 - the GitHub PR carries `jlmirror-slice:g1-identity-tenant-shell`;
 - its head contains `implementation/g1-identity-tenant-shell/IMPLEMENTATION_CLAIM.json` with exact schema/version, authorization ID and slice ID;
 - head and base belong to the same canonical repository;
-- the exact candidate HEAD has a successful trusted scope attestation.
+- the PR base ref equals the repository current default branch;
+- the exact candidate HEAD has a successful trusted scope attestation under the stable status context `JLMIRROR / g1-identity-tenant-shell-implementation-scope`.
 
 ## Trusted scope attestation
 
@@ -65,20 +66,25 @@ The canonical command is:
 /jlmirror-g1-scope-attest
 ```
 
-When this command is posted on the implementation PR, the default-branch workflow:
+When this command is posted on the implementation PR by an authorized repository participant, the default-branch workflow:
 
-1. resolves the PR number from the trusted event;
+1. resolves the PR number and current repository default branch from the trusted event/API;
 2. reads exact base SHA, exact head SHA, base/head refs, repositories and labels from the GitHub API;
-3. checks out only the trusted default branch and fetches the candidate commits as Git objects/data;
-4. materializes `tools/assurance/validate_g1_identity_tenant_shell_implementation_scope.py` from the exact PR base commit with `git show`;
-5. executes only that base-owned validator against the exact `base...head` diff with rename detection disabled;
-6. requires the branch, label, claim, same-repository rule and complete path allowlist on the explicitly attested PR.
+3. requires the PR base ref to equal the current default branch and requires base/head repositories to equal the canonical repository;
+4. publishes `pending` on the exact resolved PR HEAD under `JLMIRROR / g1-identity-tenant-shell-implementation-scope`;
+5. checks out only the trusted default branch and fetches the candidate commits as Git objects/data;
+6. materializes `tools/assurance/validate_g1_identity_tenant_shell_implementation_scope.py` from the exact default-branch base commit with `git show`;
+7. executes only that base-owned validator against the exact `base...head` diff with rename detection disabled;
+8. requires branch, label, claim, same-repository rule and complete path allowlist on the explicitly attested PR;
+9. re-reads current PR HEAD/base/ref before final publication and publishes `success` only when HEAD, base SHA and base ref remain unchanged and the base ref is still the default branch; otherwise it publishes failure/stale evidence to the resolved HEAD and requires a new attestation.
+
+Status-write authority is isolated from the analysis job: the jobs that publish pending/final status do not checkout or execute candidate Python. The workflow uses per-PR concurrency with superseded-run cancellation so an older attestation cannot overwrite a newer result.
 
 `pull_request_target` remains forbidden by repository v1 assurance. Candidate-controlled `pull_request` orchestration is not authoritative for the implementation-scope decision.
 
 There is no candidate-controlled `relevance=not-g1` success path and no authorization bootstrap exception. Invocation of the trusted default-branch attestation is the independent classifier. Once invoked for an implementation PR, omission of branch, label, claim, repository identity or G1 paths fails closed, including a diff containing only forbidden shared-core changes.
 
-The attestation is exact-head evidence. If the implementation PR HEAD changes after attestation, the old evidence is stale and a new `/jlmirror-g1-scope-attest` run is required before merge readiness may be considered.
+The attestation is exact-head/exact-base evidence. If implementation PR HEAD, base SHA, or base ref changes after resolution, the previous evidence is stale and a new `/jlmirror-g1-scope-attest` run is required before merge readiness may be considered.
 
 ## Allowed G0 bootstrap inside the G1 slice
 

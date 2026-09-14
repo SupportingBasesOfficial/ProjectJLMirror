@@ -49,7 +49,9 @@ Allowed exact path:
 
 All existing shared paths, including `src/jlmirror_authority/**`, accepted Wave 1–3 substrate, shared governance, shared runtime and unrelated contracts, are read-only under this authorization. If G1 cannot be completed without modifying shared existing substrate or any path outside the policy above, implementation MUST stop and obtain a separate successor authorization before that change is made.
 
-The implementation PR MUST mechanically compare its complete diff against the manifest path policy. A path is authorized only when it matches an allowed prefix or the exact allowed workflow path.
+The future implementation branch is identified by the prefix `impl/g1-identity-tenant-protected-shell`. Every pull request is observed by `.github/workflows/g1-identity-tenant-shell-implementation-scope.yml`; when the branch or changed paths identify G1, `tools/assurance/validate_g1_identity_tenant_shell_implementation_scope.py` loads this policy from the exact pull-request base commit and compares the complete `base...head` diff against it with rename detection disabled. A mixed diff containing any shared or otherwise unauthorized path fails closed.
+
+The implementation PR MUST mechanically compare its complete diff against the manifest path policy. A path is authorized only when it matches an allowed prefix or the exact allowed runtime workflow path.
 
 ## Allowed G0 bootstrap inside the G1 slice
 

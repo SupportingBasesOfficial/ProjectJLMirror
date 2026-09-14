@@ -49,13 +49,25 @@ def falsify_monitoring_alerting_privileged_acl_preflight():
  recovery_proxy_fence_start=sql.index('-- The Wave 4 recovery authority is intentionally shared')
  recovery_proxy_fence_end=sql.index('GRANT USAGE ON SCHEMA monitoring, system',recovery_proxy_fence_start)
  recovery_proxy_fence=sql[recovery_proxy_fence_start:recovery_proxy_fence_end]
- assert 'monitoring.publication_recovery_authority_callable_proxy_unsafe' in recovery_proxy_fence
- assert 'monitoring.publication_recovery_authority_dependency_proxy_unsafe' in recovery_proxy_fence
- assert 'p.proowner=v_recovery_oid' in recovery_proxy_fence
- assert "a.privilege_type='EXECUTE'" in recovery_proxy_fence
- assert 'a.grantee<>p.proowner' in recovery_proxy_fence
- assert "aclexplode(COALESCE(p.proacl, acldefault('f', p.proowner)))" in recovery_proxy_fence
- assert "JOIN pg_depend d" in recovery_proxy_fence and "d.refclassid='pg_proc'::regclass" in recovery_proxy_fence and 'd.refobjid=p.oid' in recovery_proxy_fence
+ def require_recovery_proxy_fence(text):
+  assert 'monitoring.publication_recovery_authority_callable_proxy_unsafe' in text
+  assert 'monitoring.publication_recovery_authority_dependency_proxy_unsafe' in text
+  assert text.count('WITH inheriting_principals AS')==2
+  assert text.count("pg_has_role(r.oid,v_recovery_oid,'USAGE')")==2
+  assert text.count('JOIN inheriting_principals ip ON ip.principal_oid=p.proowner')==2
+  assert text.count('NOT r.rolsuper')==2
+  assert "a.privilege_type='EXECUTE'" in text
+  assert 'a.grantee<>p.proowner' in text
+  assert "aclexplode(COALESCE(p.proacl, acldefault('f', p.proowner)))" in text
+  assert "JOIN pg_depend d" in text and "d.refclassid='pg_proc'::regclass" in text and 'd.refobjid=p.oid' in text
+ require_recovery_proxy_fence(recovery_proxy_fence)
+ weakened_recovery_proxy_fence=recovery_proxy_fence.replace("AND pg_has_role(r.oid,v_recovery_oid,'USAGE')",'AND false',1)
+ try:
+  require_recovery_proxy_fence(weakened_recovery_proxy_fence)
+ except AssertionError:
+  pass
+ else:
+  raise AssertionError('inherited recovery principal fence mutation was accepted')
  assert 'monitoring.publication_existing_function_acl_unsafe' in sql
  assert 'monitoring.publication_installed_function_acl_unsafe' in sql
  assert "aclexplode(COALESCE(p.proacl, ARRAY[]::aclitem[]))" in sql
@@ -86,14 +98,22 @@ def falsify_monitoring_alerting_privileged_acl_preflight():
  assert 'WITH GRANT OPTION' in conformance and 'recovery_grant_option=blocked' in conformance
  assert 'ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA monitoring' in conformance
  assert 'default_execute_grant=blocked' in conformance and 'transactional_acl_fence=proven' in conformance
- assert 'jlmirror_recovery_trigger_proxy_probe' in recovery_dependency_conformance
- assert 'CREATE TRIGGER jlmirror_recovery_trigger_proxy' in recovery_dependency_conformance
- assert 'OWNER TO jlmirror_wave4_recovery_authority' in recovery_dependency_conformance
- assert 'REVOKE ALL ON FUNCTION monitoring.jlmirror_recovery_trigger_proxy() FROM PUBLIC' in recovery_dependency_conformance
- assert "PERFORM monitoring.recover_problem_state_publication(NEW.tenant_id,NEW.transition_id)" in recovery_dependency_conformance
+ assert 'jlmirror_recovery_inheriting_member NOLOGIN INHERIT' in recovery_dependency_conformance
+ assert 'GRANT jlmirror_wave4_recovery_authority TO jlmirror_recovery_inheriting_member' in recovery_dependency_conformance
+ assert 'jlmirror_recovery_member_callable_proxy' in recovery_dependency_conformance
+ assert "pg_has_role('jlmirror_recovery_inheriting_member','jlmirror_wave4_recovery_authority','USAGE')" in recovery_dependency_conformance
+ assert 'owner=jlmirror_recovery_inheriting_member' in recovery_dependency_conformance
+ assert 'jlmirror_recovery_member_trigger_proxy' in recovery_dependency_conformance
+ assert 'CREATE TRIGGER jlmirror_recovery_member_trigger_proxy' in recovery_dependency_conformance
+ assert 'REVOKE ALL ON FUNCTION monitoring.jlmirror_recovery_member_trigger_proxy() FROM PUBLIC' in recovery_dependency_conformance
  assert 'monitoring.publication_recovery_authority_dependency_proxy_unsafe:' in recovery_dependency_conformance
  assert "grep -Fq 'class=pg_trigger'" in recovery_dependency_conformance
- assert 'trigger_callable_owner_only_proxy=blocked' in recovery_dependency_conformance
+ assert 'jlmirror_recovery_noninheriting_member NOLOGIN NOINHERIT' in recovery_dependency_conformance
+ assert "pg_has_role('jlmirror_recovery_noninheriting_member','jlmirror_wave4_recovery_authority','USAGE')" in recovery_dependency_conformance
+ assert 'test "$noninherit_usage" = "0"' in recovery_dependency_conformance
+ assert 'inherited_callable_proxy=blocked' in recovery_dependency_conformance
+ assert 'inherited_trigger_proxy=blocked' in recovery_dependency_conformance
+ assert 'noninheriting_membership=preserved' in recovery_dependency_conformance
  assert 'runtime_resolved_recovery_call=no-pg-depend' in recovery_dependency_conformance
  assert 'Prove privileged function ACL preflight' in workflow
  assert 'Prove recovery trigger proxy rejection' in workflow
@@ -119,7 +139,7 @@ def main():
  falsify_selection_record_product_authority()
  falsify_monitoring_alerting_composed_workflow_dependencies()
  falsify_monitoring_alerting_privileged_acl_preflight()
- print('d4c_selection_falsification=PASS profile_drift=blocked historical_rewrite=blocked evidence_regression=blocked authority_escalation=blocked gate_acceptance_regression=blocked publication_composed_dependencies=bound publication_acl_preflight=recovery-acl+dependency-proxy+all-privileged-owner+dependency+pre+post-install-attested')
+ print('d4c_selection_falsification=PASS profile_drift=blocked historical_rewrite=blocked evidence_regression=blocked authority_escalation=blocked gate_acceptance_regression=blocked publication_composed_dependencies=bound publication_acl_preflight=recovery-inherited-principal+acl+dependency-proxy+all-privileged-owner+dependency+pre+post-install-attested')
  return 0
 if __name__=='__main__':
  main()

@@ -27,7 +27,6 @@ FALSIFICATION_PATHS = {
     Path("tools/assurance/test_validate_d4d_trace_context_source.py"),
     Path("tools/assurance/test_validate_adversarial_learning.py"),
     Path("tools/assurance/test_validate_g1_identity_tenant_shell_authorization.py"),
-    Path("tools/assurance/test_validate_g1_identity_tenant_shell_implementation_scope.py"),
 }
 MATERIAL_BADGE = re.compile(r"(?:\bP[012]\s+Badge\b|\[P[012]\])")
 
@@ -80,205 +79,281 @@ def _executed_source_probes(path: Path) -> tuple[set[str], list[str]]:
         sys.modules.pop(module_name, None)
 
 
-def _direct_calls(statements: list[ast.stmt]) -> list[ast.Call]:
-    calls: list[ast.Call] = []
-    for statement in statements:
-        if isinstance(statement, (ast.Return, ast.Raise)):
-            break
-        if isinstance(statement, ast.Expr) and isinstance(statement.value, ast.Call):
-            calls.append(statement.value)
-    return calls
+def _is_main_entrypoint_guard(node: ast.If) -> bool:
+    test = node.test
+    if not isinstance(test, ast.Compare) or len(test.ops) != 1 or not isinstance(test.ops[0], ast.Eq) or len(test.comparators) != 1:
+        return False
+    left, right = test.left, test.comparators[0]
+    return isinstance(left, ast.Name) and left.id == "__name__" and isinstance(right, ast.Constant) and right.value == "__main__"
 
 
-def _call_name(call: ast.Call) -> str | None:
-    if isinstance(call.func, ast.Name):
-        return call.func.id
-    return None
+def _entrypoint_invokes_main(tree: ast.Module) -> bool:
+    for statement in tree.body:
+        if not isinstance(statement, ast.If) or not _is_main_entrypoint_guard(statement):
+            continue
+        for body_statement in statement.body:
+            if isinstance(body_statement, (ast.Return, ast.Raise)):
+                break
+            if not isinstance(body_statement, ast.Expr) or not isinstance(body_statement.value, ast.Call):
+                continue
+            call = body_statement.value
+            if isinstance(call.func, ast.Name) and call.func.id == "main" and not call.args and not call.keywords:
+                return True
+    return False
 
 
 def _reachable_main_falsifiers(path: Path) -> tuple[set[str], list[str]]:
-    errors: list[str] = []
     try:
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-    except Exception as exc:
-        return set(), [f"cannot parse falsifier file {path}: {type(exc).__name__}: {exc}"]
+    except (OSError, UnicodeDecodeError, SyntaxError) as exc:
+        return set(), [f"cannot parse registered falsification file {path}: {type(exc).__name__}: {exc}"]
     functions = {node.name: node for node in tree.body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))}
     main = functions.get("main")
     if main is None:
-        return set(), [f"registered falsifier file has no main(): {path}"]
+        return set(), [f"registered falsification file has no main function: {path}"]
+    if not _entrypoint_invokes_main(tree):
+        return set(), [f"registered falsification file does not invoke main from the module entrypoint: {path}"]
 
-    has_entrypoint = False
-    for node in tree.body:
-        if not isinstance(node, ast.If):
+    executed: set[str] = set()
+    for statement in main.body:
+        if isinstance(statement, (ast.Return, ast.Raise)):
+            break
+        if not isinstance(statement, ast.Expr) or not isinstance(statement.value, ast.Call):
             continue
-        test = node.test
-        if not (
-            isinstance(test, ast.Compare)
-            and isinstance(test.left, ast.Name)
-            and test.left.id == "__name__"
-            and len(test.ops) == 1
-            and isinstance(test.ops[0], ast.Eq)
-            and len(test.comparators) == 1
-            and isinstance(test.comparators[0], ast.Constant)
-            and test.comparators[0].value == "__main__"
-        ):
+        call = statement.value
+        if not isinstance(call.func, ast.Name):
             continue
-        for call in _direct_calls(node.body):
-            if _call_name(call) == "main":
-                has_entrypoint = True
-    if not has_entrypoint:
-        errors.append(f"registered falsifier main() is not directly invoked by __main__ entrypoint: {path}")
-
-    credited: set[str] = set()
-    for call in _direct_calls(main.body):
-        name = _call_name(call)
-        if isinstance(name, str) and name.startswith("falsify_") and name in functions:
-            credited.add(name)
-    return credited, errors
+        name = call.func.id
+        if name in functions and name.startswith("falsify_"):
+            executed.add(name)
+    return executed, []
 
 
-def _registered_guardrail_probes(root: Path) -> tuple[dict[Path, set[str]], list[str]]:
+def _resolve_executable_checks(root: Path) -> tuple[dict[Path, set[str]], list[str]]:
+    checks: dict[Path, set[str]] = {}
     errors: list[str] = []
-    probes: dict[Path, set[str]] = {}
     source_path = root / SOURCE_PROBE_PATH
     if source_path.is_file():
-        source_probes, source_errors = _executed_source_probes(source_path)
-        probes[SOURCE_PROBE_PATH] = source_probes
+        checks[SOURCE_PROBE_PATH], source_errors = _executed_source_probes(source_path)
         errors.extend(source_errors)
+    else:
+        errors.append(f"registered executable source probe path missing: {SOURCE_PROBE_PATH}")
     for rel in FALSIFICATION_PATHS:
         path = root / rel
         if not path.is_file():
-            errors.append(f"registered falsifier file missing: {rel}")
+            errors.append(f"registered falsification path missing: {rel}")
             continue
-        executed, falsifier_errors = _reachable_main_falsifiers(path)
-        probes[rel] = executed
-        errors.extend(falsifier_errors)
-    return probes, errors
+        checks[rel], file_errors = _reachable_main_falsifiers(path)
+        errors.extend(file_errors)
+    return checks, errors
 
 
 def _load_ledger_entries(root: Path) -> tuple[list[dict[str, Any]], list[str]]:
     errors: list[str] = []
-    entries: list[dict[str, Any]] = []
-    ledger_path = root / LEDGER
-    try:
-        data = _load(ledger_path)
-        base_entries = data.get("entries", [])
-        if not isinstance(base_entries, list):
-            errors.append("learning-ledger entries must be a list")
-        else:
-            entries.extend(row for row in base_entries if isinstance(row, dict))
-    except Exception as exc:
-        errors.append(f"cannot load learning ledger: {type(exc).__name__}: {exc}")
+    base = _load(root / LEDGER)
+    if base.get("schema_version") != 1 or not isinstance(base.get("entries"), list):
+        return [], ["ledger schema_version must be 1 and entries must be an array"]
+    entries = list(base["entries"])
     shard_dir = root / LEDGER_SHARDS
     if shard_dir.is_dir():
         for path in sorted(shard_dir.glob("*.json")):
-            try:
-                data = _load(path)
-                shard_entries = data.get("entries", [])
-                if not isinstance(shard_entries, list):
-                    errors.append(f"learning ledger shard entries must be a list: {path.relative_to(root)}")
-                else:
-                    entries.extend(row for row in shard_entries if isinstance(row, dict))
-            except Exception as exc:
-                errors.append(f"cannot load learning ledger shard {path.relative_to(root)}: {type(exc).__name__}: {exc}")
+            shard = _load(path)
+            if shard.get("schema_version") != 1 or not isinstance(shard.get("entries"), list):
+                errors.append(f"ledger shard malformed: {path.relative_to(root)}")
+                continue
+            entries.extend(shard["entries"])
     return entries, errors
 
 
+def validate_review_surface_coverage(root: Path) -> list[str]:
+    workflow = root / WORKFLOW
+    if not workflow.is_file():
+        return [f"learning reconciliation workflow missing: {WORKFLOW}"]
+    try:
+        text = workflow.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        return [f"learning reconciliation workflow must be UTF-8: {WORKFLOW}"]
+    required_markers = {
+        "issue_comment trigger": "issue_comment:",
+        "PR-only issue-comment job guard": "github.event.issue.pull_request != null",
+        "issue-comment event reconciliation": "github.event_name == 'issue_comment'",
+        "top-level issue comment collection": "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments?per_page=100",
+        "issue-comment PR number resolution": "github.event.pull_request.number || github.event.issue.number",
+        "issue-comment exact PR head lookup": "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}",
+        "strict material finding reconciliation": "validate_adversarial_learning_strict.py --root . --review-comments",
+    }
+    return [f"learning reconciliation workflow missing {name}" for name, marker in required_markers.items() if marker not in text]
+
+
 def validate_bootstrap_exceptions(root: Path) -> tuple[set[int], list[str]]:
-    errors: list[str] = []
     path = root / BOOTSTRAP_EXCEPTIONS
     if not path.is_file():
-        return set(), [f"bootstrap exceptions missing: {BOOTSTRAP_EXCEPTIONS}"]
-    try:
-        data = _load(path)
-    except Exception as exc:
-        return set(), [f"cannot load bootstrap exceptions: {type(exc).__name__}: {exc}"]
-    rows = data.get("exceptions", [])
-    if not isinstance(rows, list):
-        return set(), ["bootstrap exceptions must be a list"]
+        return set(), [f"bootstrap exception registry missing: {BOOTSTRAP_EXCEPTIONS}"]
+    data = _load(path)
+    if data.get("schema_version") != 1 or not isinstance(data.get("exceptions"), list):
+        return set(), ["bootstrap exception registry malformed"]
     ids: set[int] = set()
-    for row in rows:
+    errors: list[str] = []
+    for row in data["exceptions"]:
         if not isinstance(row, dict):
-            errors.append("bootstrap exception row must be an object")
+            errors.append("bootstrap exception row must be object")
             continue
         rid = row.get("review_comment_id")
-        if not isinstance(rid, int):
-            errors.append("bootstrap exception review_comment_id must be integer")
-            continue
-        ids.add(rid)
+        if row.get("bootstrap_only") is not True:
+            errors.append("bootstrap exception must be explicitly bootstrap_only")
+        if row.get("pr") != 118 or rid != 3963734258:
+            errors.append("bootstrap exception registry may contain only the one-time PR118 issue_comment activation exception")
+        if not isinstance(row.get("reason"), str) or len(row["reason"].strip()) < 60:
+            errors.append("bootstrap exception reason is too weak")
+        controls = row.get("compensating_controls")
+        if not isinstance(controls, list) or len(controls) < 2 or any(not isinstance(v, str) or len(v.strip()) < 20 for v in controls):
+            errors.append("bootstrap exception requires explicit compensating controls")
+        if row.get("expires_when") != "deterministic-assurance issue_comment trigger is present on default branch after PR118 merge":
+            errors.append("bootstrap exception must expire immediately after PR118 lands on default branch")
+        if isinstance(rid, int):
+            ids.add(rid)
     return ids, errors
 
 
-def validate(root: Path, review_comments: Path | None = None) -> list[str]:
-    root = root.resolve()
+def validate_stop_policy(root: Path) -> list[str]:
+    path = root / STOP_POLICY
+    if not path.is_file():
+        return [f"review stop policy missing: {STOP_POLICY}"]
+    data = _load(path)
     errors: list[str] = []
-    probes, probe_errors = _registered_guardrail_probes(root)
-    errors.extend(probe_errors)
+    if data.get("schema_version") != 1:
+        errors.append("review stop policy schema_version must be 1")
+    if data.get("merge_blocking_severities") != ["P0", "P1"]:
+        errors.append("review stop policy must keep P0/P1 merge-blocking")
+    if data.get("p2_default_disposition") != "backlog_unless_gate_correctness_or_security_invariant":
+        errors.append("review stop policy P2 disposition drift")
+    if data.get("external_red_team_rounds_after_internal_clean") != 1:
+        errors.append("review stop policy must cap routine post-clean external red-team rounds at one")
+    return errors
+
+
+def validate(root: Path, review_comments: Path | None = None) -> list[str]:
+    errors: list[str] = []
+    taxonomy = _load(root / TAXONOMY)
+    invariants = _load(root / INVARIANTS)
     entries, ledger_errors = _load_ledger_entries(root)
     errors.extend(ledger_errors)
 
-    seen_ids: set[str] = set()
-    seen_review_ids: set[int] = set()
-    generations: list[int] = []
+    if taxonomy.get("schema_version") != 1:
+        errors.append("taxonomy schema_version must be 1")
+    if invariants.get("schema_version") != 1:
+        errors.append("invariants schema_version must be 1")
+
+    invariant_rows = invariants.get("invariants")
+    class_rows = taxonomy.get("classes")
+    if not isinstance(invariant_rows, list) or not isinstance(class_rows, list):
+        return errors + ["taxonomy and invariants collections must be arrays"]
+
+    invariant_ids = [row.get("id") for row in invariant_rows if isinstance(row, dict)]
+    if len(invariant_ids) != len(set(invariant_ids)) or any(not isinstance(i, str) or not i for i in invariant_ids):
+        errors.append("invariant ids must be unique non-empty strings")
+    invariant_set = set(invariant_ids)
+
+    class_ids = [row.get("id") for row in class_rows if isinstance(row, dict)]
+    if len(class_ids) != len(set(class_ids)) or any(not isinstance(i, str) or not i for i in class_ids):
+        errors.append("class ids must be unique non-empty strings")
+    class_map = {row["id"]: row for row in class_rows if isinstance(row, dict) and isinstance(row.get("id"), str)}
+    for cid, row in class_map.items():
+        refs = row.get("invariant_ids")
+        if not isinstance(refs, list) or not refs or not set(refs).issubset(invariant_set):
+            errors.append(f"class {cid} must reference only known invariants")
+        if not isinstance(row.get("description"), str) or len(row["description"].strip()) < 40:
+            errors.append(f"class {cid} description is too weak")
+
+    errors.extend(validate_review_surface_coverage(root))
+    errors.extend(validate_stop_policy(root))
+    exception_ids, exception_errors = validate_bootstrap_exceptions(root)
+    errors.extend(exception_errors)
+    executable_checks, executable_errors = _resolve_executable_checks(root)
+    errors.extend(executable_errors)
+
+    entry_ids: set[str] = set()
+    review_ids: set[int] = set()
+    generations: dict[str, int] = defaultdict(int)
     for entry in entries:
-        entry_id = entry.get("id")
-        if not isinstance(entry_id, str) or not entry_id:
-            errors.append("learning entry missing id")
-        elif entry_id in seen_ids:
-            errors.append(f"duplicate learning entry id: {entry_id}")
-        else:
-            seen_ids.add(entry_id)
-        review_id = entry.get("review_comment_id")
-        if isinstance(review_id, int):
-            if review_id in seen_review_ids:
-                errors.append(f"duplicate learning review_comment_id: {review_id}")
-            seen_review_ids.add(review_id)
-        generation = entry.get("guardrail_generation")
-        if not isinstance(generation, int) or isinstance(generation, bool):
-            errors.append(f"learning entry guardrail_generation must be integer: {entry_id}")
-        else:
-            generations.append(generation)
+        if not isinstance(entry, dict):
+            errors.append("ledger entry must be an object")
+            continue
+        eid = entry.get("id")
+        if not isinstance(eid, str) or not eid or eid in entry_ids:
+            errors.append("ledger entry ids must be unique non-empty strings")
+            continue
+        entry_ids.add(eid)
+        cid = entry.get("class_id")
+        if cid not in class_map:
+            errors.append(f"{eid}: unknown class_id")
+            continue
+        refs = entry.get("invariant_ids")
+        allowed_refs = set(class_map[cid].get("invariant_ids", []))
+        if not isinstance(refs, list) or not refs or not set(refs).issubset(allowed_refs):
+            errors.append(f"{eid}: invariant_ids must be a non-empty subset of class invariants")
+        if not isinstance(entry.get("root_cause"), str) or len(entry["root_cause"].strip()) < 40:
+            errors.append(f"{eid}: root_cause is missing or too local")
+        audit = entry.get("horizontal_audit")
+        if not isinstance(audit, list) or not audit or any(not isinstance(v, str) or len(v.strip()) < 4 for v in audit):
+            errors.append(f"{eid}: horizontal_audit must record audited siblings/boundaries")
         guardrails = entry.get("guardrails")
         if not isinstance(guardrails, list) or not guardrails:
-            errors.append(f"learning entry guardrails missing: {entry_id}")
-            continue
-        for guardrail in guardrails:
-            if not isinstance(guardrail, dict):
-                errors.append(f"learning entry guardrail malformed: {entry_id}")
-                continue
-            path_value = guardrail.get("path")
-            probe = guardrail.get("probe")
-            if not isinstance(path_value, str) or not isinstance(probe, str):
-                errors.append(f"learning entry guardrail path/probe malformed: {entry_id}")
-                continue
-            rel = Path(path_value)
-            if rel not in probes:
-                errors.append(f"learning entry guardrail path is not registered executable evidence: {entry_id}:{path_value}")
-                continue
-            if probe not in probes[rel]:
-                errors.append(f"learning entry guardrail probe is not main-reachable executable evidence: {entry_id}:{path_value}:{probe}")
+            errors.append(f"{eid}: at least one permanent guardrail is required")
+        else:
+            for guardrail in guardrails:
+                if not isinstance(guardrail, dict) or not isinstance(guardrail.get("path"), str):
+                    errors.append(f"{eid}: malformed guardrail")
+                    continue
+                rel = Path(guardrail["path"])
+                if not (root / rel).is_file():
+                    errors.append(f"{eid}: guardrail path does not exist: {guardrail['path']}")
+                    continue
+                probe = guardrail.get("probe")
+                if not isinstance(probe, str) or not probe.strip():
+                    errors.append(f"{eid}: guardrail must name the probe/check it relies on")
+                    continue
+                registered = executable_checks.get(rel)
+                if registered is None:
+                    errors.append(f"{eid}: no executable guardrail resolver registered for path: {guardrail['path']}")
+                    continue
+                if not any(_template_matches(probe, actual) for actual in registered):
+                    errors.append(f"{eid}: declared guardrail does not resolve to an executed check: {probe}")
+        if entry.get("systemic_guardrail_updated") is not True:
+            errors.append(f"{eid}: systemic_guardrail_updated must be true")
+        generation = entry.get("guardrail_generation")
+        if not isinstance(generation, int) or generation <= generations[cid]:
+            errors.append(f"{eid}: recurring class {cid} must advance guardrail_generation")
+        else:
+            generations[cid] = generation
 
-    if generations and generations != sorted(generations):
-        errors.append("learning guardrail_generation must be monotonically nondecreasing")
+        source = entry.get("source")
+        rid = entry.get("review_comment_id")
+        if source == "external_review":
+            if not isinstance(rid, int) or rid <= 0:
+                errors.append(f"{eid}: external_review requires positive review_comment_id")
+            elif rid in review_ids:
+                errors.append(f"{eid}: duplicate review_comment_id {rid}")
+            else:
+                review_ids.add(rid)
+        elif source == "internal_audit":
+            if rid is not None:
+                errors.append(f"{eid}: internal_audit must not impersonate external review identity")
+        else:
+            errors.append(f"{eid}: source must be external_review or internal_audit")
 
     if review_comments is not None:
-        try:
-            comments = _flatten_comments(json.loads(review_comments.read_text(encoding="utf-8")))
-        except Exception as exc:
-            errors.append(f"cannot load review comments: {type(exc).__name__}: {exc}")
-            comments = []
-        material_ids = {
-            row.get("id")
-            for row in comments
-            if isinstance(row.get("id"), int)
-            and isinstance(row.get("body"), str)
-            and MATERIAL_BADGE.search(row["body"])
+        comments = _flatten_comments(_load(review_comments))
+        material = {
+            comment.get("id")
+            for comment in comments
+            if isinstance(comment.get("id"), int)
+            and isinstance(comment.get("body"), str)
+            and MATERIAL_BADGE.search(comment["body"])
         }
-        exception_ids, exception_errors = validate_bootstrap_exceptions(root)
-        errors.extend(exception_errors)
-        missing = sorted(material_ids - seen_review_ids - exception_ids)
+        missing = sorted(material - review_ids - exception_ids)
         if missing:
-            errors.append("material PR findings missing from learning ledger or bootstrap exception: " + ",".join(map(str, missing)))
+            errors.append("material PR review findings missing from learning ledger or exact bootstrap exception: " + ",".join(map(str, missing)))
     return errors
 
 
@@ -287,12 +362,13 @@ def main() -> None:
     parser.add_argument("--root", type=Path, default=Path.cwd())
     parser.add_argument("--review-comments", type=Path)
     args = parser.parse_args()
-    errors = validate(args.root, args.review_comments)
+    root = args.root.resolve()
+    errors = validate(root, args.review_comments)
     for error in errors:
         print("ADVERSARIAL_LEARNING_ERROR:", error)
     if errors:
         raise SystemExit(1)
-    print("adversarial_learning=PASS registered_guardrails=main-reachable executable")
+    print("adversarial_learning=PASS taxonomy=linked invariants=linked ledger=sharded recurrence=guardrail-advancing guardrail-checks=entrypoint-reachable dynamic_findings=all-surfaces-mapped bootstrap=explicit stop_policy=bounded")
 
 
 if __name__ == "__main__":

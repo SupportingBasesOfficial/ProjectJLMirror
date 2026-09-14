@@ -189,9 +189,11 @@ def _validate_g1_authorization_readiness_outer_effect(root: Path) -> list[str]:
     delegated_name = 'test_validate_g1_identity_tenant_shell_scope_readiness'
     saved_delegated = sys.modules.pop(delegated_name, None)
     sentinel = type(sys)(delegated_name)
-    marker = '__strict_readiness_delegate_called__'
+    state = {'calls': 0}
+    sentinel_exception = RuntimeError('strict G1 readiness delegation sentinel')
     def delegated_probe() -> None:
-        raise RuntimeError(marker)
+        state['calls'] += 1
+        raise sentinel_exception
     sentinel.falsify_live_readiness_guards = delegated_probe
     sys.modules[delegated_name] = sentinel
     errors: list[str] = []
@@ -207,13 +209,13 @@ def _validate_g1_authorization_readiness_outer_effect(root: Path) -> list[str]:
             return [f'credited G1 authorization readiness outer probe missing: {G1_AUTHORIZATION_READINESS_PROBE}']
         try:
             probe()
-        except RuntimeError as exc:
-            if str(exc) != marker:
-                errors.append(f'credited G1 authorization readiness outer probe raised unexpected runtime error: {exc}')
-        except Exception as exc:
-            errors.append(f'credited G1 authorization readiness outer probe failed before executing delegated sentinel: {type(exc).__name__}: {exc}')
+        except BaseException as exc:
+            if exc is not sentinel_exception:
+                errors.append(f'credited G1 authorization readiness outer probe did not propagate the injected sentinel identity: {type(exc).__name__}: {exc}')
         else:
             errors.append('credited G1 authorization readiness outer probe did not execute delegated readiness sentinel')
+        if state['calls'] != 1:
+            errors.append(f'credited G1 authorization readiness outer probe delegated sentinel call count drift: {state["calls"]}')
     except Exception as exc:
         errors.append(f'credited G1 authorization readiness outer probe could not execute: {type(exc).__name__}: {exc}')
     finally:
@@ -226,21 +228,60 @@ def _validate_g1_authorization_readiness_outer_effect(root: Path) -> list[str]:
 
 def _validate_g1_readiness_probe_effects(root: Path) -> list[str]:
     path = root / G1_READINESS_TEST; module_name = '_jlmirror_g1_readiness_probe_effects'; errors: list[str] = []
+    required_negative_fragments = {
+        'no trusted G1 scope attestation status',
+        'exact publisher job identity',
+        'coordinates are stale or malformed',
+        'base SHA is not the current default-branch tip',
+        'missing current required canonical label',
+        'head ref is not canonical G1 prefix',
+        'base ref is not the current default branch',
+        'event must be issue_comment',
+        'workflow path drift',
+        'run is not bound to the exact current base SHA',
+        'exact publisher job is not completed successfully',
+        'target_url is not a canonical workflow run',
+    }
     try:
         spec = importlib.util.spec_from_file_location(module_name, path)
         if spec is None or spec.loader is None: return ['cannot load credited G1 readiness probe module']
         module = importlib.util.module_from_spec(spec); sys.modules[module_name] = module; spec.loader.exec_module(module)
         original_validate = module.readiness.validate_live_readiness
-        module.readiness.validate_live_readiness = lambda **kwargs: ('a' * 40, 'b' * 40, 123456789)
+        original_must_reject = module.must_reject
+        state: dict[str, Any] = {'verifier_calls': 0, 'negative_fragments': [], 'invalid_deltas': []}
+        def permissive_verifier(**kwargs: Any) -> tuple[str, str, int]:
+            state['verifier_calls'] += 1
+            return ('a' * 40, 'b' * 40, 123456789)
+        def instrumented_must_reject(fn: Any, fragment: str) -> None:
+            before = state['verifier_calls']
+            fn()
+            after = state['verifier_calls']
+            state['negative_fragments'].append(fragment)
+            if after != before + 1:
+                state['invalid_deltas'].append((fragment, before, after))
+        module.readiness.validate_live_readiness = permissive_verifier
+        module.must_reject = instrumented_must_reject
         try:
             probe = getattr(module, G1_READINESS_PROBE, None)
-            if not callable(probe): errors.append(f'credited G1 readiness probe missing: {G1_READINESS_PROBE}')
+            if not callable(probe):
+                errors.append(f'credited G1 readiness probe missing: {G1_READINESS_PROBE}')
             else:
-                try: probe()
-                except AssertionError: pass
-                except Exception as exc: errors.append(f'credited G1 readiness probe failed unexpectedly under permissive verifier: {type(exc).__name__}:{exc}')
-                else: errors.append('credited G1 readiness probe does not reject permissive verifier/no-op body')
-        finally: module.readiness.validate_live_readiness = original_validate
+                try:
+                    probe()
+                except Exception as exc:
+                    errors.append(f'credited G1 readiness probe aborted before completing instrumented negative cases: {type(exc).__name__}:{exc}')
+                seen = set(state['negative_fragments'])
+                missing = sorted(required_negative_fragments - seen)
+                if missing:
+                    errors.append('credited G1 readiness probe did not execute required negative readiness cases under permissive verifier: ' + ','.join(missing))
+                if state['invalid_deltas']:
+                    errors.append(f'credited G1 readiness negative case did not invoke permissive verifier exactly once: {state["invalid_deltas"]}')
+                expected_calls = len(state['negative_fragments']) + 3
+                if state['verifier_calls'] != expected_calls:
+                    errors.append(f'credited G1 readiness verifier call accounting drift: calls={state["verifier_calls"]} negative_cases={len(state["negative_fragments"])} expected={expected_calls}')
+        finally:
+            module.readiness.validate_live_readiness = original_validate
+            module.must_reject = original_must_reject
     except Exception as exc: errors.append(f'credited G1 readiness probe could not execute: {type(exc).__name__}: {exc}')
     finally: sys.modules.pop(module_name, None)
     return errors
@@ -313,6 +354,6 @@ def main() -> None:
     parser=argparse.ArgumentParser(); parser.add_argument('--root',type=Path,default=Path.cwd()); parser.add_argument('--review-comments',type=Path); args=parser.parse_args(); errors=validate(args.root,args.review_comments)
     for error in errors: print('ADVERSARIAL_LEARNING_STRICT_ERROR:',error)
     if errors: raise SystemExit(1)
-    print('adversarial_learning_strict=PASS head_status=isolated+fresh reviewer_identity=external-only material_formats=badge+priority-prefix d4c_current_projection=terminal-governed-surfaces falsifier_effects=executed-negative-helper g1_negative_helper=executed-reject+accept g1_scope_probes=permissive-evaluator-rejected g1_readiness_delegation=bound+runtime-sentinel g1_readiness_probe=permissive-verifier-rejected')
+    print('adversarial_learning_strict=PASS head_status=isolated+fresh reviewer_identity=external-only material_formats=badge+priority-prefix d4c_current_projection=terminal-governed-surfaces falsifier_effects=executed-negative-helper g1_negative_helper=executed-reject+accept g1_scope_probes=permissive-evaluator-rejected g1_readiness_delegation=bound+identity-authenticated-runtime-sentinel g1_readiness_probe=instrumented-negative-cases+permissive-verifier-accounted')
 
 if __name__=='__main__': main()

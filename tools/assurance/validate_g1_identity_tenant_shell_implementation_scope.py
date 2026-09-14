@@ -17,7 +17,10 @@ EXPECTED_AUTHORIZATION_ID = "g1.identity-tenant-protected-shell@1"
 EXPECTED_SLICE_ID = "g1.identity-tenant-protected-shell@1"
 EXPECTED_RULE = "every_changed_path_must_match_canonical_base_policy"
 EXPECTED_ATTESTATION_COMMAND = "/jlmirror-g1-scope-attest"
+EXPECTED_READINESS_COMMAND = "/jlmirror-g1-scope-ready"
 EXPECTED_STATUS_CONTEXT = "JLMIRROR / g1-identity-tenant-shell-implementation-scope"
+EXPECTED_READY_CONTEXT = "JLMIRROR / g1-identity-tenant-shell-merge-readiness"
+EXPECTED_READINESS_VALIDATOR = "tools/assurance/validate_g1_identity_tenant_shell_scope_readiness.py"
 EXPECTED_PREFIXES = (
     "apps/g1-identity-tenant-shell/", "contracts/g1-identity-tenant-shell/",
     "implementation/g1-identity-tenant-shell/", "sql/g1/", "src/jlmirror_g1/",
@@ -37,7 +40,8 @@ def git_bytes(root: Path, *args: str) -> bytes:
 def policy_from_base(root: Path, base_sha: str) -> dict[str, Any]:
     data = json.loads(git_bytes(root, "show", f"{base_sha}:{AUTHORIZATION_MANIFEST}").decode("utf-8"))
     policy = data.get("implementation_path_policy")
-    if not isinstance(policy, dict): raise AssertionError("canonical base missing implementation_path_policy")
+    if not isinstance(policy, dict):
+        raise AssertionError("canonical base missing implementation_path_policy")
     if data.get("implementation_authority_after_merge") != "granted_for_exact_g1_identity_tenant_protected_shell_only":
         raise AssertionError("canonical base does not grant exact G1 implementation authority")
     return policy
@@ -45,8 +49,10 @@ def policy_from_base(root: Path, base_sha: str) -> dict[str, Any]:
 
 def matches_policy(path: str, policy: dict[str, Any]) -> bool:
     prefixes, exact = policy.get("allowed_prefixes"), policy.get("allowed_exact_paths")
-    if not isinstance(prefixes, list) or not all(isinstance(v, str) and v for v in prefixes): raise AssertionError("invalid allowed_prefixes")
-    if not isinstance(exact, list) or not all(isinstance(v, str) and v for v in exact): raise AssertionError("invalid allowed_exact_paths")
+    if not isinstance(prefixes, list) or not all(isinstance(v, str) and v for v in prefixes):
+        raise AssertionError("invalid allowed_prefixes")
+    if not isinstance(exact, list) or not all(isinstance(v, str) and v for v in exact):
+        raise AssertionError("invalid allowed_exact_paths")
     return path in exact or any(path.startswith(prefix) for prefix in prefixes)
 
 
@@ -57,7 +63,8 @@ def changed_paths(root: Path, base_sha: str, head_sha: str) -> list[str]:
 
 def claim_from_head(root: Path, head_sha: str, claim_path: str) -> dict[str, Any]:
     value = json.loads(git_bytes(root, "show", f"{head_sha}:{claim_path}").decode("utf-8"))
-    if not isinstance(value, dict): raise AssertionError("G1 implementation claim must be a JSON object")
+    if not isinstance(value, dict):
+        raise AssertionError("G1 implementation claim must be a JSON object")
     return value
 
 
@@ -70,35 +77,50 @@ def configured_policy(policy: dict[str, Any]) -> None:
         (policy.get("implementation_pr_base_ref_policy") == "must_equal_repository_default_branch", "implementation PR base ref policy drift"),
         (policy.get("trusted_evaluator_event") == "issue_comment", "trusted evaluator event drift"),
         (policy.get("trusted_scope_attestation_command") == EXPECTED_ATTESTATION_COMMAND, "trusted scope attestation command drift"),
+        (policy.get("trusted_scope_readiness_command") == EXPECTED_READINESS_COMMAND, "trusted scope readiness command drift"),
         (policy.get("trusted_evaluator_source") == "default_branch_issue_comment_workflow_plus_exact_default_branch_base_git_object", "trusted evaluator source drift"),
         (policy.get("trusted_scope_status_context") == EXPECTED_STATUS_CONTEXT, "trusted scope status context drift"),
-        (policy.get("trusted_scope_status_publication") == "pending_then_final_on_resolved_pr_head", "trusted scope status publication drift"),
-        (policy.get("trusted_scope_freshness_rule") == "final_success_requires_unchanged_head_base_sha_and_default_branch_ref", "trusted scope freshness rule drift"),
+        (policy.get("trusted_scope_readiness_status_context") == EXPECTED_READY_CONTEXT, "trusted scope readiness status context drift"),
+        (policy.get("trusted_scope_status_publication") == "pending_then_final_coordinate_bound_evidence_on_resolved_pr_head", "trusted scope status publication drift"),
+        (policy.get("trusted_scope_status_evidence_role") == "evidence_only_not_standalone_merge_authority", "trusted scope evidence role drift"),
+        (policy.get("trusted_scope_freshness_rule") == "merge_readiness_revalidates_live_head_base_default_tip_label_and_trusted_status_run_provenance", "trusted scope freshness rule drift"),
         (policy.get("trusted_scope_concurrency_rule") == "per_pr_cancel_in_progress", "trusted scope concurrency rule drift"),
+        (policy.get("trusted_status_creator_login") == "github-actions[bot]", "trusted status creator login drift"),
+        (policy.get("trusted_status_creator_id") == 41898282, "trusted status creator id drift"),
+        (policy.get("trusted_scope_merge_preflight_rule") == "live_revalidate_ready_evidence_current_coordinates_label_and_workflow_run_immediately_before_merge", "trusted merge preflight rule drift"),
+        (policy.get("trusted_scope_readiness_validator") == EXPECTED_READINESS_VALIDATOR, "trusted scope readiness validator drift"),
         (policy.get("same_repository_required") is True, "same-repository requirement drift"),
         (policy.get("implementation_pr_requires_trusted_scope_attestation_on_exact_head") is True, "trusted scope attestation requirement drift"),
+        (policy.get("implementation_pr_requires_trusted_scope_readiness_on_exact_head_base") is True, "trusted scope readiness requirement drift"),
         (policy.get("candidate_controlled_relevance_inference") == "forbidden", "candidate relevance inference drift"),
         (tuple(policy.get("allowed_prefixes", [])) == EXPECTED_PREFIXES, "implementation allowed prefixes drift"),
         (tuple(policy.get("allowed_exact_paths", [])) == EXPECTED_EXACT, "implementation exact paths drift"),
         (policy.get("diff_enforcement_rule") == EXPECTED_RULE, "implementation diff enforcement rule drift"),
     )
     for ok, msg in checks:
-        if not ok: raise AssertionError(msg)
+        if not ok:
+            raise AssertionError(msg)
 
 
 def validate_candidate_metadata(root: Path, head_sha: str, head_ref: str, labels: set[str], head_repo: str, base_repo: str, policy: dict[str, Any]) -> list[str]:
     errors: list[str] = []
-    if head_repo != base_repo: errors.append("G1 implementation PR must originate from the canonical repository")
-    if not head_ref.startswith(EXPECTED_HEAD_PREFIX): errors.append("G1 implementation PR missing required canonical head prefix")
-    if EXPECTED_LABEL not in labels: errors.append("G1 implementation PR missing required canonical label")
+    if head_repo != base_repo:
+        errors.append("G1 implementation PR must originate from the canonical repository")
+    if not head_ref.startswith(EXPECTED_HEAD_PREFIX):
+        errors.append("G1 implementation PR missing required canonical head prefix")
+    if EXPECTED_LABEL not in labels:
+        errors.append("G1 implementation PR missing required canonical label")
     try:
         claim = claim_from_head(root, head_sha, policy["implementation_claim_path"])
     except (subprocess.CalledProcessError, json.JSONDecodeError, UnicodeDecodeError):
         errors.append("G1 implementation PR missing or malformed required claim")
     else:
-        if type(claim.get("schema_version")) is not int or claim.get("schema_version") != 1: errors.append("G1 implementation claim schema_version drift")
-        if claim.get("authorization_id") != EXPECTED_AUTHORIZATION_ID: errors.append("G1 implementation claim authorization_id drift")
-        if claim.get("slice_id") != EXPECTED_SLICE_ID: errors.append("G1 implementation claim slice_id drift")
+        if type(claim.get("schema_version")) is not int or claim.get("schema_version") != 1:
+            errors.append("G1 implementation claim schema_version drift")
+        if claim.get("authorization_id") != EXPECTED_AUTHORIZATION_ID:
+            errors.append("G1 implementation claim authorization_id drift")
+        if claim.get("slice_id") != EXPECTED_SLICE_ID:
+            errors.append("G1 implementation claim slice_id drift")
     return errors
 
 
@@ -122,7 +144,8 @@ def validate(base_sha: str, head_sha: str, head_ref: str, labels: set[str], head
     try:
         git(root, "cat-file", "-e", f"{base_sha}^{{commit}}")
         git(root, "cat-file", "-e", f"{head_sha}^{{commit}}")
-        policy = policy_from_base(root, base_sha); configured_policy(policy)
+        policy = policy_from_base(root, base_sha)
+        configured_policy(policy)
         paths = changed_paths(root, base_sha, head_sha)
         errors = validate_candidate_metadata(root, head_sha, head_ref, labels, head_repo, base_repo, policy)
         errors.extend(["attested G1 implementation PR has no changed paths"] if not paths else validate_paths(paths, policy))
@@ -133,23 +156,30 @@ def validate(base_sha: str, head_sha: str, head_ref: str, labels: set[str], head
 
 def parse_labels(value: str) -> set[str]:
     parsed = json.loads(value)
-    if not isinstance(parsed, list) or any(not isinstance(item, str) for item in parsed): raise ValueError("labels JSON must be an array of strings")
+    if not isinstance(parsed, list) or any(not isinstance(item, str) for item in parsed):
+        raise ValueError("labels JSON must be an array of strings")
     return set(parsed)
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    for arg in ("base", "head", "head-ref", "labels-json", "head-repo", "base-repo"): parser.add_argument(f"--{arg}", required=True)
+    for arg in ("base", "head", "head-ref", "labels-json", "head-repo", "base-repo"):
+        parser.add_argument(f"--{arg}", required=True)
     parser.add_argument("--repo-root", type=Path, default=DEFAULT_ROOT)
     args = parser.parse_args()
-    try: labels = parse_labels(args.labels_json)
+    try:
+        labels = parse_labels(args.labels_json)
     except (json.JSONDecodeError, ValueError) as exc:
-        print(f"G1_IMPLEMENTATION_SCOPE_ERROR: invalid labels metadata: {exc}", file=sys.stderr); return 1
+        print(f"G1_IMPLEMENTATION_SCOPE_ERROR: invalid labels metadata: {exc}", file=sys.stderr)
+        return 1
     _classified, errors = validate(args.base, args.head, args.head_ref, labels, args.head_repo, args.base_repo, root=args.repo_root)
-    for error in errors: print(f"G1_IMPLEMENTATION_SCOPE_ERROR: {error}", file=sys.stderr)
-    if errors: return 1
-    print("g1_implementation_scope=PASS classification=trusted_explicit_attestation default_base=required exact_head_status=external_caller metadata=label+branch+claim complete_diff=allowlisted")
+    for error in errors:
+        print(f"G1_IMPLEMENTATION_SCOPE_ERROR: {error}", file=sys.stderr)
+    if errors:
+        return 1
+    print("g1_implementation_scope=PASS classification=trusted_explicit_attestation default_base=required exact_head_status=evidence-only readiness=live-source-authenticated metadata=label+branch+claim complete_diff=allowlisted")
     return 0
 
 
-if __name__ == "__main__": raise SystemExit(main())
+if __name__ == "__main__":
+    raise SystemExit(main())

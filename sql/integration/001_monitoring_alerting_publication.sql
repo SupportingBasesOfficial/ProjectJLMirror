@@ -148,21 +148,44 @@ $$;
 -- bridge delegates two additional recovery functions, prove that every routine
 -- owned either by the recovery role itself or by a non-superuser principal that
 -- currently inherits that role is both ACL-closed and free of persistent inbound
--- invocation dependencies. pg_has_role(...,'USAGE') models authority available
--- immediately without SET ROLE, including transitive inheriting memberships; a
--- membership that is not usable without SET ROLE is intentionally not treated as
--- an implicit SECURITY DEFINER proxy path. Owner-only EXECUTE is still insufficient
--- when a retained trigger/expression can invoke the routine without a runtime
--- EXECUTE check and the routine can dynamically resolve a new recovery call.
+-- invocation dependencies. Also reject every direct recovery-role membership with
+-- ADMIN OPTION: PostgreSQL defines that bit as authority for the member to grant
+-- the recovery role onward, and every transitive delegation chain must begin at
+-- exactly such a direct delegable root. pg_has_role(...,'USAGE') models authority
+-- available immediately without SET ROLE, including transitive inheriting
+-- memberships; a membership that is not usable without SET ROLE is intentionally
+-- not treated as an implicit SECURITY DEFINER proxy path. Owner-only EXECUTE is
+-- still insufficient when a retained trigger/expression can invoke the routine
+-- without a runtime EXECUTE check and the routine can dynamically resolve a new
+-- recovery call.
 DO $$
 DECLARE
     v_recovery_oid OID;
+    v_delegable_membership TEXT;
     v_proxy TEXT;
     v_dependency TEXT;
 BEGIN
     SELECT oid INTO v_recovery_oid
       FROM pg_roles
      WHERE rolname='jlmirror_wave4_recovery_authority';
+
+    SELECT format(
+               'member=%s,grantor=%s,admin_option=%s',
+               pg_get_userbyid(m.member),
+               pg_get_userbyid(m.grantor),
+               m.admin_option
+           )
+      INTO v_delegable_membership
+      FROM pg_auth_members m
+     WHERE m.roleid=v_recovery_oid
+       AND m.admin_option
+     ORDER BY m.member,m.grantor
+     LIMIT 1;
+
+    IF v_delegable_membership IS NOT NULL THEN
+        RAISE EXCEPTION 'monitoring.publication_recovery_authority_delegable_membership_unsafe:%',
+            v_delegable_membership;
+    END IF;
 
     WITH inheriting_principals AS (
         SELECT v_recovery_oid AS principal_oid

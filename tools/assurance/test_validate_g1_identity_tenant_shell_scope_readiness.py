@@ -27,7 +27,7 @@ def must_reject(fn, fragment: str) -> None:
     raise AssertionError(f"readiness mutation unexpectedly accepted: {fragment}")
 
 
-def fixtures() -> tuple[dict, dict, list[dict], dict]:
+def fixtures(evidence: str = "scope") -> tuple[dict, dict, list[dict], dict]:
     pr = {
         "state": "open",
         "base": {"ref": DEFAULT_BRANCH, "sha": BASE, "repo": {"full_name": REPO}},
@@ -35,10 +35,11 @@ def fixtures() -> tuple[dict, dict, list[dict], dict]:
         "labels": [{"name": readiness.REQUIRED_LABEL}],
     }
     branch = {"commit": {"sha": BASE}}
+    context, description, _ = readiness.evidence_contract(evidence, BASE, HEAD)
     statuses = [{
-        "context": readiness.SCOPE_CONTEXT,
+        "context": context,
         "state": "success",
-        "description": f"G1 scope PASS base={BASE} head={HEAD}",
+        "description": description,
         "target_url": f"{SERVER}/{REPO}/actions/runs/{RUN_ID}",
         "created_at": "2026-09-14T20:00:00Z",
         "creator": {"login": readiness.TRUSTED_CREATOR_LOGIN, "id": readiness.TRUSTED_CREATOR_ID},
@@ -57,7 +58,7 @@ def fixtures() -> tuple[dict, dict, list[dict], dict]:
     return pr, branch, statuses, run
 
 
-def validate(pr: dict, branch: dict, statuses: list[dict], run: dict) -> None:
+def validate(pr: dict, branch: dict, statuses: list[dict], run: dict, *, evidence: str = "scope") -> None:
     readiness.validate_live_readiness(
         pr=pr,
         branch=branch,
@@ -66,16 +67,24 @@ def validate(pr: dict, branch: dict, statuses: list[dict], run: dict) -> None:
         repo=REPO,
         default_branch=DEFAULT_BRANCH,
         server_url=SERVER,
+        evidence=evidence,
     )
 
 
 def falsify_live_readiness_guards() -> None:
-    pr, branch, statuses, run = fixtures()
+    pr, branch, statuses, run = fixtures("scope")
     validate(pr, branch, statuses, run)
+
+    ready_pr, ready_branch, ready_statuses, ready_run = fixtures("ready")
+    validate(ready_pr, ready_branch, ready_statuses, ready_run, evidence="ready")
 
     spoof = copy.deepcopy(statuses)
     spoof[0]["creator"] = {"login": "contributor", "id": 999}
     must_reject(lambda: validate(pr, branch, spoof, run), "no trusted G1 scope attestation status")
+
+    spoof_bot_name_only = copy.deepcopy(statuses)
+    spoof_bot_name_only[0]["creator"] = {"login": readiness.TRUSTED_CREATOR_LOGIN, "id": 999}
+    must_reject(lambda: validate(pr, branch, spoof_bot_name_only, run), "no trusted G1 scope attestation status")
 
     stale_base = copy.deepcopy(statuses)
     stale_base[0]["description"] = f"G1 scope PASS base={'c' * 40} head={HEAD}"
@@ -105,10 +114,21 @@ def falsify_live_readiness_guards() -> None:
     malformed_target[0]["target_url"] = "https://example.invalid/run/123"
     must_reject(lambda: validate(pr, branch, malformed_target, run), "target_url is not a canonical workflow run")
 
+    untrusted_newer = copy.deepcopy(statuses)
+    untrusted_newer.append({
+        "context": readiness.SCOPE_CONTEXT,
+        "state": "success",
+        "description": f"G1 scope PASS base={BASE} head={HEAD}",
+        "target_url": f"{SERVER}/{REPO}/actions/runs/999999999",
+        "created_at": "2026-09-14T21:00:00Z",
+        "creator": {"login": "contributor", "id": 999},
+    })
+    validate(pr, branch, untrusted_newer, run)
+
 
 def main() -> int:
     falsify_live_readiness_guards()
-    print("g1_scope_readiness_falsification=PASS spoofed_status=blocked stale_base=blocked skip_ci_base_advance=blocked missing_label=blocked wrong_workflow_run=blocked")
+    print("g1_scope_readiness_falsification=PASS spoofed_status=blocked creator_id=bound stale_base=blocked skip_ci_base_advance=blocked missing_label=blocked wrong_workflow_run=blocked ready_evidence=source_authenticated")
     return 0
 
 

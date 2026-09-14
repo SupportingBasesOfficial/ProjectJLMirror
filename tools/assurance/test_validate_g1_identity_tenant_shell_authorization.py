@@ -46,6 +46,7 @@ def falsify_implementation_path_policy() -> None:
         (lambda d: d["implementation_path_policy"].__setitem__("implementation_pr_required_label", "optional"), "implementation path policy drift: implementation_pr_required_label"),
         (lambda d: d["implementation_path_policy"].__setitem__("implementation_claim_path", "implementation/optional.json"), "implementation path policy drift: implementation_claim_path"),
         (lambda d: d["implementation_path_policy"].__setitem__("same_repository_required", False), "implementation path policy drift: same_repository_required"),
+        (lambda d: d["implementation_path_policy"].__setitem__("implementation_pr_base_ref_policy", "any_branch"), "implementation path policy drift: implementation_pr_base_ref_policy"),
         (lambda d: d["implementation_path_policy"].__setitem__("trusted_evaluator_event", "pull_request"), "implementation path policy drift: trusted_evaluator_event"),
         (lambda d: d["implementation_path_policy"].__setitem__("trusted_scope_attestation_command", "/optional"), "implementation path policy drift: trusted_scope_attestation_command"),
         (lambda d: d["implementation_path_policy"].__setitem__("trusted_evaluator_source", "pull_request_head"), "implementation path policy drift: trusted_evaluator_source"),
@@ -54,6 +55,15 @@ def falsify_implementation_path_policy() -> None:
     ]
     for mutation, fragment in mutations:
         must_fail(mutation, fragment)
+
+
+def falsify_trusted_scope_publication_contract() -> None:
+    must_fail(lambda d: d["implementation_path_policy"].__setitem__("implementation_pr_base_ref_policy", "any_writable_branch"), "implementation path policy drift: implementation_pr_base_ref_policy")
+    must_fail(lambda d: d["implementation_path_policy"].__setitem__("trusted_evaluator_source", "default_branch_caller_plus_arbitrary_base_object"), "implementation path policy drift: trusted_evaluator_source")
+    must_fail(lambda d: d["implementation_path_policy"].__setitem__("trusted_scope_status_context", "optional"), "implementation path policy drift: trusted_scope_status_context")
+    must_fail(lambda d: d["implementation_path_policy"].__setitem__("trusted_scope_status_publication", "workflow_run_only"), "implementation path policy drift: trusted_scope_status_publication")
+    must_fail(lambda d: d["implementation_path_policy"].__setitem__("trusted_scope_freshness_rule", "none"), "implementation path policy drift: trusted_scope_freshness_rule")
+    must_fail(lambda d: d["implementation_path_policy"].__setitem__("trusted_scope_concurrency_rule", "parallel_unordered"), "implementation path policy drift: trusted_scope_concurrency_rule")
 
 
 def falsify_implementation_scope_gate_execution() -> None:
@@ -95,12 +105,13 @@ def main() -> int:
     falsify_effective_rule()
     falsify_exact_exclusion_set()
     falsify_implementation_path_policy()
+    falsify_trusted_scope_publication_contract()
     falsify_implementation_scope_gate_execution()
     falsify_authority_source_corpus()
     falsify_g1_scope_and_invariants()
     falsify_merge_and_production_boundaries()
     falsify_successor_governance_rules()
-    print("g1_identity_tenant_shell_authorization_falsification=PASS authority_escalation=blocked implementation_path_expansion=blocked trusted_default_branch_caller=bound candidate_workflow_authority=blocked candidate_relevance_bypass=blocked real_git_diff=executed metadata=label+branch+claim_fail_closed")
+    print("g1_identity_tenant_shell_authorization_falsification=PASS authority_escalation=blocked implementation_path_expansion=blocked trusted_default_branch_caller=bound default_base=required exact_head_status=pending+fresh-final candidate_workflow_authority=blocked candidate_relevance_bypass=blocked real_git_diff=executed metadata=label+branch+claim_fail_closed")
     return 0
 
 

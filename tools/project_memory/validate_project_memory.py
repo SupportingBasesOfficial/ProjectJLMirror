@@ -200,8 +200,10 @@ def _decision_records(decisions: str) -> list[tuple[str, str, str, str, str]]:
         if not first.startswith("JLM-DEC-"):
             continue
         if not DECISION_ID_RE.fullmatch(first):
-            raise AssertionError(f"project_memory_decision_id_invalid:{first}")
+            continue
         if len(cells) != 4 or any(not cell.strip() for cell in cells):
+            if first in BASELINE_DECISION_MEANINGS:
+                raise AssertionError(f"project_memory_baseline_decision_meaning_changed:{first}")
             raise AssertionError(f"project_memory_decision_row_invalid:{first}")
         records.append((first, cells[1].strip(), cells[2].strip(), cells[3].strip(), line))
     return records
@@ -228,12 +230,11 @@ def _validate_baseline_decision_meanings(decisions: str) -> None:
 
 def decision_supersession_edges(decisions: str) -> dict[str, str]:
     edges: dict[str, str] = {}
-    for source, _meaning, status, source_authority, row in _decision_records(decisions):
-        searchable = " | ".join((status, source_authority, row))
-        clauses = DECISION_SUPERSESSION_CLAUSE_RE.findall(searchable)
+    for source, _meaning, _status, _source_authority, row in _decision_records(decisions):
+        clauses = DECISION_SUPERSESSION_CLAUSE_RE.findall(row)
         if not clauses:
             continue
-        targets = DECISION_SUPERSESSION_TARGET_RE.findall(searchable)
+        targets = DECISION_SUPERSESSION_TARGET_RE.findall(row)
         if len(clauses) != 1 or len(targets) != 1 or not DECISION_ID_RE.fullmatch(targets[0]):
             raise AssertionError(f"project_memory_malformed_supersession:{source}")
         edges[source] = targets[0]

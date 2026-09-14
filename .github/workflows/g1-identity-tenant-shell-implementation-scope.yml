@@ -1,7 +1,7 @@
 name: JLMIRROR G1 Identity Tenant Shell Implementation Scope
 
 on:
-  pull_request_target:
+  pull_request:
     types: [opened, synchronize, reopened, labeled, unlabeled, ready_for_review]
 
 permissions:
@@ -30,40 +30,36 @@ jobs:
           test -n "$PR_HEAD_REPO"
           test -n "$PR_LABELS_JSON"
 
-      - name: Checkout trusted exact PR base
+      - name: Checkout exact candidate HEAD with full history
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          repository: ${{ github.event.pull_request.base.repo.full_name }}
-          ref: ${{ github.event.pull_request.base.sha }}
-          path: trusted-base
-          fetch-depth: 0
-          persist-credentials: false
-          allow-unsafe-pr-checkout: false
-
-      - name: Checkout candidate exact PR HEAD as data only
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.event.pull_request.head.sha }}
-          path: candidate
           fetch-depth: 0
           persist-credentials: false
           allow-unsafe-pr-checkout: false
 
-      - name: Verify trusted base and candidate identities
+      - name: Verify exact PR identities
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git -C trusted-base rev-parse HEAD)" = "$PR_BASE_SHA"
-          test "$(git -C candidate rev-parse HEAD)" = "$PR_HEAD_SHA"
-          git -C candidate cat-file -e "${PR_BASE_SHA}^{commit}"
+          test "$(git rev-parse HEAD)" = "$PR_HEAD_SHA"
+          git cat-file -e "${PR_BASE_SHA}^{commit}"
+
+      - name: Materialize trusted validator from exact PR base object
+        shell: bash
+        run: |
+          set -euo pipefail
+          trusted_validator="$RUNNER_TEMP/g1-implementation-scope-validator.py"
+          git show "${PR_BASE_SHA}:tools/assurance/validate_g1_identity_tenant_shell_implementation_scope.py" > "$trusted_validator"
+          test -s "$trusted_validator"
+          printf 'TRUSTED_VALIDATOR=%s\n' "$trusted_validator" >> "$GITHUB_ENV"
 
       - name: Enforce canonical G1 implementation path policy from trusted base code
         shell: bash
         run: |
           set -euo pipefail
-          python3 "$GITHUB_WORKSPACE/trusted-base/tools/assurance/validate_g1_identity_tenant_shell_implementation_scope.py" \
-            --repo-root "$GITHUB_WORKSPACE/candidate" \
+          python3 "$TRUSTED_VALIDATOR" \
+            --repo-root "$GITHUB_WORKSPACE" \
             --base "$PR_BASE_SHA" \
             --head "$PR_HEAD_SHA" \
             --head-ref "$PR_HEAD_REF" \

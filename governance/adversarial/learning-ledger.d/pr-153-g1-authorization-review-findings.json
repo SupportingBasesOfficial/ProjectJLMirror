@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "id": "LEARN-PR153-001",
+      "pr": 153,
+      "source": "external_review",
+      "review_comment_id": 4005181386,
+      "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP",
+      "invariant_ids": ["INV-LEARNING-002"],
+      "root_cause": "The G1 successor-authorization manifest described a proposed authorization and a post-merge effect in prose-like fields but did not encode the repository-standard machine-readable implementation_authority_before_merge and implementation_authority_after_merge transition. Automated consumers could therefore not distinguish merge permission from the implementation authority that becomes effective only after canonicalization.",
+      "horizontal_audit": ["successor authorization manifests", "merge authority versus implementation authority", "pre/post merge state transitions", "future G2+ implementation authorization gates", "machine-readable governance consumers"],
+      "guardrails": [{"path":"tools/assurance/test_validate_g1_identity_tenant_shell_authorization.py","probe":"successor authority transition falsifiers"}],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 69
+    },
+    {
+      "id": "LEARN-PR153-002",
+      "pr": 153,
+      "source": "external_review",
+      "review_comment_id": 4005181397,
+      "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP",
+      "invariant_ids": ["INV-LEARNING-002"],
+      "root_cause": "The first G1 authorization validator did not attest the manifest effective_rule, allowing a manifest-only mutation to claim immediate effect while all other exact-head authorization fields remained green. A merge-gated proposal therefore lacked a permanent executable assertion for its activation rule.",
+      "horizontal_audit": ["authorization effective rules", "exact-head review boundary", "separate merge authorization", "future implementation authorization validators", "manifest-only authority mutations"],
+      "guardrails": [{"path":"tools/assurance/test_validate_g1_identity_tenant_shell_authorization.py","probe":"effective_rule mutation must fail"}],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 70
+    },
+    {
+      "id": "LEARN-PR153-003",
+      "pr": 153,
+      "source": "external_review",
+      "review_comment_id": 4005181407,
+      "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP",
+      "invariant_ids": ["INV-LEARNING-002"],
+      "root_cause": "The initial G1 exact-scope validator checked only a subset of explicitly_not_authorized entries. Removing an unlisted exclusion such as browser long-lived credentials, ITSM, or production C3 numerics could therefore silently widen the successor authorization while the dedicated validator stayed green.",
+      "horizontal_audit": ["G1 explicit non-authority list", "browser credential exclusions", "G2+ product exclusions", "production C3 exclusions", "future exact-scope authorization manifests"],
+      "guardrails": [{"path":"tools/assurance/test_validate_g1_identity_tenant_shell_authorization.py","probe":"exact exclusion-set removal must fail"}],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 71
+    }
+  ]
+}

@@ -16,7 +16,9 @@ jobs:
     env:
       EVENT_NAME: ${{ github.event_name }}
       PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
       EVENT_SHA: ${{ github.sha }}
+      EVENT_BEFORE_SHA: ${{ github.event.before }}
     steps:
       - name: Resolve exact analyzed HEAD
         id: target

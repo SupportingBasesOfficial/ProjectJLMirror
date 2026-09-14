@@ -16,13 +16,14 @@ HEAD_STATUS_WORKFLOW = Path('.github/workflows/adversarial-learning-reconciliati
 MATERIAL_RE = re.compile(r'(?:\bP[012]\s+Badge\b|\[P[012]\])')
 MAINTAINER_LOGINS = {'SupportingBasesOfficial'}
 D4C_SELECTION_TEST = Path('tools/assurance/test_validate_d4c_selection.py')
+G1_AUTHORIZATION_TEST = Path('tools/assurance/test_validate_g1_identity_tenant_shell_authorization.py')
 NEGATIVE_HELPERS = {
     Path('tools/assurance/test_validate_d4d_selection.py'): {'must_fail'},
     D4C_SELECTION_TEST: {'must_fail', '_delivery_must_fail'},
     Path('tools/assurance/d4b_wire_schema/test_source_evidence.py'): {'must_fail'},
     Path('tools/assurance/test_validate_adversarial_learning.py'): {'expect_failure', 'expect_repository_failure'},
     Path('tools/assurance/test_validate_d4d_trace_context_source.py'): {'mutate_and_expect_failure'},
-    Path('tools/assurance/test_validate_g1_identity_tenant_shell_authorization.py'): {'must_fail'},
+    G1_AUTHORIZATION_TEST: {'must_fail'},
 }
 D4C_CURRENT_WORKFLOWS = (
     Path('.github/workflows/d4-eventing-async-entry-gate.yml'),
@@ -116,6 +117,53 @@ def _validate_delivery_negative_helper(root: Path, path: Path) -> list[str]:
     return errors
 
 
+def _validate_g1_negative_helper(root: Path, path: Path) -> list[str]:
+    """Execute G1 must_fail against a known rejection and a known acceptance path."""
+    module_name = '_jlmirror_g1_negative_helper_probe'
+    dependency_name = 'validate_g1_identity_tenant_shell_authorization'
+    saved_dependency = sys.modules.pop(dependency_name, None)
+    errors: list[str] = []
+    try:
+        spec = importlib.util.spec_from_file_location(module_name, path)
+        if spec is None or spec.loader is None:
+            return ['cannot load registered G1 negative helper module']
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[module_name] = module
+        spec.loader.exec_module(module)
+        helper = getattr(module, 'must_fail', None)
+        if not callable(helper):
+            return ['registered G1 negative helper missing: must_fail']
+
+        def corrupt_effective_rule(data: dict[str, Any]) -> None:
+            data['effective_rule'] = '__strict_invalid_effective_rule__'
+
+        try:
+            helper(corrupt_effective_rule, 'effective rule drift')
+        except Exception as exc:
+            errors.append(f'registered G1 negative helper rejects known-invalid probe incorrectly: {type(exc).__name__}: {exc}')
+
+        def no_op(_data: dict[str, Any]) -> None:
+            return None
+
+        try:
+            helper(no_op, '__strict_acceptance_probe__')
+        except AssertionError as exc:
+            if 'mutation unexpectedly accepted' not in str(exc):
+                errors.append('registered G1 negative helper acceptance-path failure is not authoritative')
+        except Exception as exc:
+            errors.append(f'registered G1 negative helper acceptance probe failed unexpectedly: {type(exc).__name__}: {exc}')
+        else:
+            errors.append('registered G1 negative helper does not fail when mutation is accepted')
+    except Exception as exc:
+        errors.append(f'registered G1 negative helper could not execute: {type(exc).__name__}: {exc}')
+    finally:
+        sys.modules.pop(module_name, None)
+        sys.modules.pop(dependency_name, None)
+        if saved_dependency is not None:
+            sys.modules[dependency_name] = saved_dependency
+    return errors
+
+
 def _validate_falsifier_effects(root: Path) -> list[str]:
     errors: list[str] = []
     for rel, helpers in NEGATIVE_HELPERS.items():
@@ -128,6 +176,8 @@ def _validate_falsifier_effects(root: Path) -> list[str]:
         functions = {n.name: n for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
         if rel == D4C_SELECTION_TEST:
             errors.extend(_validate_delivery_negative_helper(root, path))
+        if rel == G1_AUTHORIZATION_TEST:
+            errors.extend(_validate_g1_negative_helper(root, path))
         credited, credited_errors = base._reachable_main_falsifiers(path)
         errors.extend(credited_errors)
         for name in sorted(credited):
@@ -198,6 +248,6 @@ def main() -> None:
     errors=validate(args.root,args.review_comments)
     for error in errors: print('ADVERSARIAL_LEARNING_STRICT_ERROR:',error)
     if errors: raise SystemExit(1)
-    print('adversarial_learning_strict=PASS head_status=isolated+fresh reviewer_identity=external-only material_formats=badge+priority-prefix d4c_current_projection=terminal-governed-surfaces falsifier_effects=executed-negative-helper')
+    print('adversarial_learning_strict=PASS head_status=isolated+fresh reviewer_identity=external-only material_formats=badge+priority-prefix d4c_current_projection=terminal-governed-surfaces falsifier_effects=executed-negative-helper g1_negative_helper=executed-reject+accept')
 
 if __name__=='__main__': main()

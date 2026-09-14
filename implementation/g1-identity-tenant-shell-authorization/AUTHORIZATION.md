@@ -29,6 +29,28 @@ The observable outcome is:
 
 > an authenticated user can enter a tenant-scoped JLMirror application shell, the BFF establishes current platform authorization independently of token validity, and forbidden/cross-tenant context fails closed.
 
+## Implementation path authority
+
+Post-merge G1 implementation authority is constrained to the following exact path policy. The implementation PR does not get to choose or broaden its own repository boundary.
+
+Allowed prefixes:
+
+- `apps/g1-identity-tenant-shell/`;
+- `contracts/g1-identity-tenant-shell/`;
+- `implementation/g1-identity-tenant-shell/`;
+- `sql/g1/`;
+- `src/jlmirror_g1/`;
+- `tests/g1/`;
+- `tools/g1/`.
+
+Allowed exact path:
+
+- `.github/workflows/g1-identity-tenant-shell-runtime.yml`.
+
+All existing shared paths, including `src/jlmirror_authority/**`, accepted Wave 1–3 substrate, shared governance, shared runtime and unrelated contracts, are read-only under this authorization. If G1 cannot be completed without modifying shared existing substrate or any path outside the policy above, implementation MUST stop and obtain a separate successor authorization before that change is made.
+
+The implementation PR MUST mechanically compare its complete diff against the manifest path policy. A path is authorized only when it matches an allowed prefix or the exact allowed workflow path.
+
 ## Allowed G0 bootstrap inside the G1 slice
 
 G0 is not authorized as a speculative platform program. Only bootstrap required by the G1 slice may be introduced:

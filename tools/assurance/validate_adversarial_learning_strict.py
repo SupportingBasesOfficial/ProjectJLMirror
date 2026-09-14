@@ -190,7 +190,7 @@ def _validate_g1_authorization_readiness_outer_effect(root: Path) -> list[str]:
     saved_delegated = sys.modules.pop(delegated_name, None)
     sentinel = type(sys)(delegated_name)
     state = {'calls': 0}
-    sentinel_exception = RuntimeError('strict G1 readiness delegation sentinel')
+    sentinel_exception = RuntimeError('strict G1 readiness delegation import sentinel')
     def delegated_probe() -> None:
         state['calls'] += 1
         raise sentinel_exception
@@ -204,6 +204,11 @@ def _validate_g1_authorization_readiness_outer_effect(root: Path) -> list[str]:
         module = importlib.util.module_from_spec(spec)
         sys.modules[module_name] = module
         spec.loader.exec_module(module)
+        if state['calls'] != 0:
+            errors.append(f'credited G1 authorization readiness outer module invoked delegated sentinel during import: {state["calls"]}')
+        state['calls'] = 0
+        sentinel_exception = RuntimeError('strict G1 readiness delegation invocation sentinel')
+        sentinel.falsify_live_readiness_guards = delegated_probe
         probe = getattr(module, G1_AUTHORIZATION_READINESS_PROBE, None)
         if not callable(probe):
             return [f'credited G1 authorization readiness outer probe missing: {G1_AUTHORIZATION_READINESS_PROBE}']
@@ -211,11 +216,11 @@ def _validate_g1_authorization_readiness_outer_effect(root: Path) -> list[str]:
             probe()
         except BaseException as exc:
             if exc is not sentinel_exception:
-                errors.append(f'credited G1 authorization readiness outer probe did not propagate the injected sentinel identity: {type(exc).__name__}: {exc}')
+                errors.append(f'credited G1 authorization readiness outer probe did not propagate the invocation-scoped sentinel identity: {type(exc).__name__}: {exc}')
         else:
             errors.append('credited G1 authorization readiness outer probe did not execute delegated readiness sentinel')
         if state['calls'] != 1:
-            errors.append(f'credited G1 authorization readiness outer probe delegated sentinel call count drift: {state["calls"]}')
+            errors.append(f'credited G1 authorization readiness outer probe delegated sentinel invocation count drift: {state["calls"]}')
     except Exception as exc:
         errors.append(f'credited G1 authorization readiness outer probe could not execute: {type(exc).__name__}: {exc}')
     finally:
@@ -228,37 +233,61 @@ def _validate_g1_authorization_readiness_outer_effect(root: Path) -> list[str]:
 
 def _validate_g1_readiness_probe_effects(root: Path) -> list[str]:
     path = root / G1_READINESS_TEST; module_name = '_jlmirror_g1_readiness_probe_effects'; errors: list[str] = []
-    required_negative_fragments = {
-        'no trusted G1 scope attestation status',
-        'exact publisher job identity',
-        'coordinates are stale or malformed',
-        'base SHA is not the current default-branch tip',
-        'missing current required canonical label',
-        'head ref is not canonical G1 prefix',
-        'base ref is not the current default branch',
-        'event must be issue_comment',
-        'workflow path drift',
-        'run is not bound to the exact current base SHA',
-        'exact publisher job is not completed successfully',
-        'target_url is not a canonical workflow run',
-    }
+    repo = 'SupportingBasesOfficial/ProjectJLMirror'; default_branch = 'main'; base_sha = 'a' * 40; head_sha = 'b' * 40
+    head_ref = 'impl/g1-identity-tenant-protected-shell-demo'; run_id = 123456789; server = 'https://github.com'; pr_number = 1530
+    trusted_login = 'github-actions[bot]'; trusted_id = 41898282; required_label = 'jlmirror-slice:g1-identity-tenant-shell'
+    workflow_name = 'JLMIRROR G1 Identity Tenant Shell Implementation Scope'; workflow_path = '.github/workflows/g1-identity-tenant-shell-implementation-scope.yml'
+    scope_context = 'JLMIRROR / g1-identity-tenant-shell-implementation-scope'; ready_context = 'JLMIRROR / g1-identity-tenant-shell-merge-readiness'
+    def clone(value: Any) -> Any: return json.loads(json.dumps(value))
+    def publisher_name(*, pr: int = pr_number, mode: str = 'attest', ref: str = head_ref) -> str:
+        return f'g1-publish-final pr={pr} mode={mode} base={base_sha} head={head_sha} ref={ref}'
+    repository = {'default_branch': default_branch, 'full_name': repo}
+    pr = {'state':'open','base':{'ref':default_branch,'sha':base_sha,'repo':{'full_name':repo}},'head':{'ref':head_ref,'sha':head_sha,'repo':{'full_name':repo}},'labels':[{'name':required_label}]}
+    branch = {'commit':{'sha':base_sha}}
+    run = {'id':run_id,'name':workflow_name,'path':workflow_path,'event':'issue_comment','status':'completed','conclusion':'success','head_branch':default_branch,'head_sha':base_sha,'repository':{'full_name':repo}}
+    def status(context: str, description: str) -> dict[str, Any]:
+        return {'context':context,'state':'success','description':description,'target_url':f'{server}/{repo}/actions/runs/{run_id}','created_at':'2026-09-14T20:00:00Z','creator':{'login':trusted_login,'id':trusted_id}}
+    def jobs(mode: str = 'attest', *, prn: int = pr_number, ref: str = head_ref) -> dict[str, Any]:
+        return {'jobs':[{'name':publisher_name(pr=prn, mode=mode, ref=ref),'status':'completed','conclusion':'success'}]}
+    def call(*, evidence: str = 'scope', repository_value: Any = None, pr_value: Any = None, branch_value: Any = None, statuses_value: Any = None, run_value: Any = None, jobs_value: Any = None) -> dict[str, Any]:
+        context = scope_context if evidence == 'scope' else ready_context
+        description = f'G1 scope PASS base={base_sha} head={head_sha}' if evidence == 'scope' else f'G1 ready PASS base={base_sha} head={head_sha}'
+        mode = 'attest' if evidence == 'scope' else 'ready'
+        return {'repository':clone(repository if repository_value is None else repository_value),'pr':clone(pr if pr_value is None else pr_value),'branch':clone(branch if branch_value is None else branch_value),'statuses':clone([status(context, description)] if statuses_value is None else statuses_value),'run':clone(run if run_value is None else run_value),'jobs':clone(jobs(mode) if jobs_value is None else jobs_value),'repo':repo,'pr_number':pr_number,'server_url':server,'evidence':evidence}
+    expected_calls: list[dict[str, Any]] = [call(), call(evidence='ready')]
+    spoof = call(); spoof['statuses'][0]['creator'] = {'login':'contributor','id':999}; expected_calls.append(spoof)
+    spoof_bot = call(); spoof_bot['statuses'][0]['creator'] = {'login':trusted_login,'id':999}; expected_calls.append(spoof_bot)
+    wrong_pr = call(); wrong_pr['jobs'] = jobs(prn=9999); expected_calls.append(wrong_pr)
+    wrong_mode = call(); wrong_mode['jobs'] = jobs(mode='ready'); expected_calls.append(wrong_mode)
+    wrong_ref = call(); wrong_ref['jobs'] = jobs(ref='impl/g1-identity-tenant-protected-shell-other'); expected_calls.append(wrong_ref)
+    stale_base = call(); stale_base['statuses'][0]['description'] = f'G1 scope PASS base={"c" * 40} head={head_sha}'; expected_calls.append(stale_base)
+    stale_tip = call(); stale_tip['branch']['commit']['sha'] = 'd' * 40; expected_calls.append(stale_tip)
+    missing_label = call(); missing_label['pr']['labels'] = []; expected_calls.append(missing_label)
+    renamed_head = call(); renamed_head['pr']['head']['ref'] = 'feature/renamed'; expected_calls.append(renamed_head)
+    changed_default = call(); changed_default['repository']['default_branch'] = 'trunk'; expected_calls.append(changed_default)
+    wrong_event = call(); wrong_event['run']['event'] = 'push'; expected_calls.append(wrong_event)
+    wrong_path = call(); wrong_path['run']['path'] = '.github/workflows/other.yml'; expected_calls.append(wrong_path)
+    wrong_base_run = call(); wrong_base_run['run']['head_sha'] = 'e' * 40; expected_calls.append(wrong_base_run)
+    failed_publisher = call(); failed_publisher['jobs']['jobs'][0]['conclusion'] = 'failure'; expected_calls.append(failed_publisher)
+    malformed_target = call(); malformed_target['statuses'][0]['target_url'] = 'https://example.invalid/run/123'; expected_calls.append(malformed_target)
+    untrusted_newer = call(); untrusted_newer['statuses'].append({'context':scope_context,'state':'success','description':f'G1 scope PASS base={base_sha} head={head_sha}','target_url':f'{server}/{repo}/actions/runs/999999999','created_at':'2026-09-14T21:00:00Z','creator':{'login':'contributor','id':999}}); expected_calls.append(untrusted_newer)
     try:
         spec = importlib.util.spec_from_file_location(module_name, path)
         if spec is None or spec.loader is None: return ['cannot load credited G1 readiness probe module']
         module = importlib.util.module_from_spec(spec); sys.modules[module_name] = module; spec.loader.exec_module(module)
         original_validate = module.readiness.validate_live_readiness
         original_must_reject = module.must_reject
-        state: dict[str, Any] = {'verifier_calls': 0, 'negative_fragments': [], 'invalid_deltas': []}
+        state: dict[str, Any] = {'calls': [], 'negative_boundaries': [], 'invalid_deltas': []}
         def permissive_verifier(**kwargs: Any) -> tuple[str, str, int]:
-            state['verifier_calls'] += 1
-            return ('a' * 40, 'b' * 40, 123456789)
+            state['calls'].append(clone(kwargs))
+            return (base_sha, head_sha, run_id)
         def instrumented_must_reject(fn: Any, fragment: str) -> None:
-            before = state['verifier_calls']
+            before = len(state['calls'])
             fn()
-            after = state['verifier_calls']
-            state['negative_fragments'].append(fragment)
+            after = len(state['calls'])
+            state['negative_boundaries'].append((before, after))
             if after != before + 1:
-                state['invalid_deltas'].append((fragment, before, after))
+                state['invalid_deltas'].append((before, after))
         module.readiness.validate_live_readiness = permissive_verifier
         module.must_reject = instrumented_must_reject
         try:
@@ -269,16 +298,16 @@ def _validate_g1_readiness_probe_effects(root: Path) -> list[str]:
                 try:
                     probe()
                 except Exception as exc:
-                    errors.append(f'credited G1 readiness probe aborted before completing instrumented negative cases: {type(exc).__name__}:{exc}')
-                seen = set(state['negative_fragments'])
-                missing = sorted(required_negative_fragments - seen)
-                if missing:
-                    errors.append('credited G1 readiness probe did not execute required negative readiness cases under permissive verifier: ' + ','.join(missing))
+                    errors.append(f'credited G1 readiness probe aborted before completing authenticated semantic cases: {type(exc).__name__}:{exc}')
+                calls = state['calls']
+                if calls != expected_calls:
+                    mismatches = [index for index in range(max(len(calls), len(expected_calls))) if index >= len(calls) or index >= len(expected_calls) or calls[index] != expected_calls[index]]
+                    errors.append(f'credited G1 readiness probe semantic call sequence drift: calls={len(calls)} expected={len(expected_calls)} mismatches={mismatches}')
+                expected_boundaries = [(index, index + 1) for index in range(2, 17)]
+                if state['negative_boundaries'] != expected_boundaries:
+                    errors.append(f'credited G1 readiness negative-case boundaries drift: actual={state["negative_boundaries"]} expected={expected_boundaries}')
                 if state['invalid_deltas']:
                     errors.append(f'credited G1 readiness negative case did not invoke permissive verifier exactly once: {state["invalid_deltas"]}')
-                expected_calls = len(state['negative_fragments']) + 3
-                if state['verifier_calls'] != expected_calls:
-                    errors.append(f'credited G1 readiness verifier call accounting drift: calls={state["verifier_calls"]} negative_cases={len(state["negative_fragments"])} expected={expected_calls}')
         finally:
             module.readiness.validate_live_readiness = original_validate
             module.must_reject = original_must_reject
@@ -354,6 +383,6 @@ def main() -> None:
     parser=argparse.ArgumentParser(); parser.add_argument('--root',type=Path,default=Path.cwd()); parser.add_argument('--review-comments',type=Path); args=parser.parse_args(); errors=validate(args.root,args.review_comments)
     for error in errors: print('ADVERSARIAL_LEARNING_STRICT_ERROR:',error)
     if errors: raise SystemExit(1)
-    print('adversarial_learning_strict=PASS head_status=isolated+fresh reviewer_identity=external-only material_formats=badge+priority-prefix d4c_current_projection=terminal-governed-surfaces falsifier_effects=executed-negative-helper g1_negative_helper=executed-reject+accept g1_scope_probes=permissive-evaluator-rejected g1_readiness_delegation=bound+identity-authenticated-runtime-sentinel g1_readiness_probe=instrumented-negative-cases+permissive-verifier-accounted')
+    print('adversarial_learning_strict=PASS head_status=isolated+fresh reviewer_identity=external-only material_formats=badge+priority-prefix d4c_current_projection=terminal-governed-surfaces falsifier_effects=executed-negative-helper g1_negative_helper=executed-reject+accept g1_scope_probes=permissive-evaluator-rejected g1_readiness_delegation=bound+import-clean+invocation-scoped-sentinel g1_readiness_probe=exact-semantic-call-sequence+negative-boundaries')
 
 if __name__=='__main__': main()

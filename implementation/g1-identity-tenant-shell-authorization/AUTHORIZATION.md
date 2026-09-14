@@ -23,11 +23,9 @@ implementation_authority_before_merge = blocked
 implementation_authority_after_merge = granted_for_exact_g1_identity_tenant_protected_shell_only
 ```
 
-`merge_authorization = not_granted` describes this proposal's merge permission and remains separate from the implementation authority that becomes effective only after a separately authorized merge makes this package canonical.
+`merge_authorization = not_granted` remains separate from implementation authority. This proposal does not authorize its own merge.
 
-The observable outcome is:
-
-> an authenticated user can enter a tenant-scoped JLMirror application shell, the BFF establishes current platform authorization independently of token validity, and forbidden/cross-tenant context fails closed.
+The observable outcome is an authenticated user entering a tenant-scoped JLMirror application shell while the BFF establishes current platform authorization independently of token validity and forbidden/cross-tenant context fails closed.
 
 ## Implementation path authority
 
@@ -47,43 +45,40 @@ Allowed exact path:
 
 - `.github/workflows/g1-identity-tenant-shell-runtime.yml`.
 
-All existing shared paths, including `src/jlmirror_authority/**`, accepted Wave 1–3 substrate, shared governance, shared runtime and unrelated contracts, are read-only under this authorization. If G1 cannot be completed without modifying shared existing substrate or any path outside the policy above, implementation MUST stop and obtain a separate successor authorization before that change is made.
+All existing shared paths, including `src/jlmirror_authority/**`, accepted Wave 1–3 substrate, shared governance, shared runtime and unrelated contracts, are read-only under this authorization. If G1 cannot be completed without modifying shared existing substrate or any path outside the policy above, implementation MUST stop and obtain a separate successor authorization.
 
 A PR may exercise this G1 implementation authority only when all of the following are simultaneously true:
 
 - its head branch starts with `impl/g1-identity-tenant-protected-shell`;
-- the GitHub PR carries the independently supplied label `jlmirror-slice:g1-identity-tenant-shell`;
-- its head contains `implementation/g1-identity-tenant-shell/IMPLEMENTATION_CLAIM.json` with `authorization_id = g1.identity-tenant-protected-shell@1` and `slice_id = g1.identity-tenant-protected-shell@1`;
-- head and base belong to the same canonical repository.
+- the GitHub PR carries `jlmirror-slice:g1-identity-tenant-shell`;
+- its head contains `implementation/g1-identity-tenant-shell/IMPLEMENTATION_CLAIM.json` with exact schema/version, authorization ID and slice ID;
+- head and base belong to the same canonical repository;
+- the exact candidate HEAD has a successful trusted scope attestation.
 
-The enforcement workflow `.github/workflows/g1-identity-tenant-shell-implementation-scope.yml` runs in the repository-standard secretless `pull_request` context. It checks out the exact candidate HEAD with credentials disabled, verifies the exact base object is present, then materializes the evaluator directly from the exact base Git object with `git show "${PR_BASE_SHA}:tools/assurance/validate_g1_identity_tenant_shell_implementation_scope.py"`. The temporary base-owned evaluator is executed against the candidate checkout; the candidate copy of the evaluator is never executed by the scope-enforcement step.
+## Trusted scope attestation
 
-This design intentionally does **not** use `pull_request_target`: the v1 deterministic-assurance profile forbids privileged PR execution. Trust comes from the exact base Git object, not from a privileged workflow context.
+The authoritative implementation-scope caller is `.github/workflows/g1-identity-tenant-shell-implementation-scope.yml` using the `issue_comment` event. `issue_comment` workflows are loaded from the repository default branch, so a candidate implementation PR cannot replace or skip the caller by editing its own workflow copy.
 
-The trusted evaluator loads this policy from the exact base commit, compares the complete `base...head` diff with rename detection disabled, and fails closed on mixed allowed/shared-core changes, missing canonical label, missing canonical branch prefix, missing/malformed implementation claim, cross-repository origin, or any path outside the allowlist.
-
-### Closed one-time authorization bootstrap
-
-This authorization PR is the only historical case where the exact base commit does not yet contain the new scope validator that this PR introduces. The workflow therefore contains one bootstrap condition that is intentionally narrower than G1 implementation authority itself.
-
-The bootstrap is valid only when all of the following are true:
-
-- exact base is `7c20c9301711e9a4bf355517d7aa23faad7a05b7`;
-- exact head ref is `governance/g1-identity-tenant-shell-authorization`;
-- head and base are the same repository;
-- the PR does **not** carry `jlmirror-slice:g1-identity-tenant-shell`;
-- the HEAD does **not** contain `implementation/g1-identity-tenant-shell/IMPLEMENTATION_CLAIM.json`;
-- implementation authority remains `blocked`.
-
-Machine-readable rule:
+The canonical command is:
 
 ```text
-bootstrap_authorization_rule = only_when_base_lacks_scope_validator_and_pr_has_no_g1_label_or_implementation_claim
+/jlmirror-g1-scope-attest
 ```
 
-This is not a reusable bypass. After this authorization becomes canonical, future G1 implementation PRs have a base commit that already contains the scope validator and a different base SHA, so the bootstrap branch is unreachable. Future G1 implementation authority is therefore always subject to the base-owned evaluator plus canonical branch, label, claim, same-repository and complete-diff enforcement.
+When this command is posted on the implementation PR, the default-branch workflow:
 
-The implementation PR MUST mechanically compare its complete diff against the manifest path policy. A path is authorized only when it matches an allowed prefix or the exact allowed runtime workflow path.
+1. resolves the PR number from the trusted event;
+2. reads exact base SHA, exact head SHA, base/head refs, repositories and labels from the GitHub API;
+3. checks out only the trusted default branch and fetches the candidate commits as Git objects/data;
+4. materializes `tools/assurance/validate_g1_identity_tenant_shell_implementation_scope.py` from the exact PR base commit with `git show`;
+5. executes only that base-owned validator against the exact `base...head` diff with rename detection disabled;
+6. requires the branch, label, claim, same-repository rule and complete path allowlist on the explicitly attested PR.
+
+`pull_request_target` remains forbidden by repository v1 assurance. Candidate-controlled `pull_request` orchestration is not authoritative for the implementation-scope decision.
+
+There is no candidate-controlled `relevance=not-g1` success path and no authorization bootstrap exception. Invocation of the trusted default-branch attestation is the independent classifier. Once invoked for an implementation PR, omission of branch, label, claim, repository identity or G1 paths fails closed, including a diff containing only forbidden shared-core changes.
+
+The attestation is exact-head evidence. If the implementation PR HEAD changes after attestation, the old evidence is stale and a new `/jlmirror-g1-scope-attest` run is required before merge readiness may be considered.
 
 ## Allowed G0 bootstrap inside the G1 slice
 
@@ -101,13 +96,7 @@ No shared foundation may be invented unless G1 consumes it immediately or an acc
 
 ## Accepted authority consumed
 
-G1 SHALL reuse rather than redefine:
-
-- accepted Wave 1 identity/BFF/current-authorization substrate;
-- accepted D3 Identity/Security mechanism dispositions;
-- canonical API/BFF and security contracts;
-- canonical tenant isolation, current membership/permission, placement and authentication-strength authority rules;
-- the AI E2E Delivery Constitution, Product Execution Roadmap and Vertical Slice Delivery Model.
+G1 SHALL reuse rather than redefine accepted Wave 1 identity/BFF/current-authorization substrate, accepted D3 Identity/Security mechanism dispositions, canonical API/BFF/security contracts, canonical tenant/current-authority rules, and the AI E2E delivery constitution/roadmap.
 
 The following remain mechanically true:
 
@@ -122,32 +111,11 @@ CLIENT_TENANT_ID != TENANT_AUTHORITY
 
 ## Product surface authorized
 
-The later implementation slice may add only what is needed for:
-
-- OIDC Authorization Code + PKCE S256 through the confidential BFF boundary;
-- opaque server-side BFF session capability;
-- current tenant selection/admission based on platform truth;
-- current membership/permission read required by the protected shell;
-- authenticated BFF route(s) required by the shell;
-- protected application shell and minimal tenant context display;
-- loading, success, forbidden, unauthenticated, unavailable and revoked/stale-authority states;
-- browser E2E proving allowed and forbidden/cross-tenant paths;
-- adversarial/recovery proof for stale session/current-authority changes.
+The later implementation slice may add only what is needed for OIDC Authorization Code + PKCE S256 through the confidential BFF, opaque server-side BFF session capability, current tenant admission, current membership/permission read, authenticated shell routes, protected application shell states, browser E2E for allowed/forbidden cross-tenant paths, and adversarial stale/revoked-authority proof.
 
 ## Explicit non-authority
 
-This gate does **not** authorize:
-
-- G2 Monitoring Source onboarding or any Monitoring product UI;
-- Resource, Metric, Problem or Health product surfaces;
-- Alert creation, Alert policy/evaluation, ACK, notification or escalation;
-- ITSM, Automation, AIOps, FinOps or Commercial behavior;
-- production deployment;
-- production C3 capacity, retention, timeout, rotation, topology, SLO, RPO or RTO numerics;
-- provider-native roles/groups/organizations as JLMirror authorization truth;
-- direct browser possession of refresh tokens or long-lived platform access credentials;
-- client-supplied tenant identity as authorization proof;
-- a generic design system, navigation framework or speculative frontend information architecture beyond the protected shell needed by G1.
+This gate does **not** authorize G2 Monitoring Source onboarding, Monitoring UI, Resource/Metric/Problem/Health product surfaces, Alerting policy/lifecycle, ACK/notification/escalation, ITSM, Automation, AIOps, FinOps, Commercial behavior, production deployment, production C3 numerics, provider-native authorization truth, browser refresh tokens/long-lived platform credentials, client-supplied tenant identity as authority, or speculative generic frontend information architecture.
 
 ## Historical authority rule
 

@@ -78,13 +78,15 @@ When this command is posted on the implementation PR by an authorized repository
 8. requires branch, label, claim, same-repository rule and complete path allowlist on the explicitly attested PR;
 9. re-reads current PR HEAD/base/ref before final publication and publishes `success` only when HEAD, base SHA and base ref remain unchanged and the base ref is still the default branch; otherwise it publishes failure/stale evidence to the resolved HEAD and requires a new attestation.
 
-Status-write authority is isolated from the analysis job: the jobs that publish pending/final status do not checkout or execute candidate Python. The workflow uses per-PR concurrency with superseded-run cancellation so an older attestation cannot overwrite a newer result.
+Status-write authority is isolated from the analysis job: the jobs that publish pending/final status do not checkout or execute candidate Python. The workflow uses cancellation of superseded runs so older evidence cannot overwrite newer evidence.
+
+A later default-branch advance also invalidates previously successful G1 scope evidence automatically. On a trusted `push` to the repository current default branch, the same default-branch-owned workflow scans open PRs targeting that branch, finds heads whose latest `JLMIRROR / g1-identity-tenant-shell-implementation-scope` status is `success`, and replaces that context with `pending` plus a stale/base-advanced description. No candidate code is executed during invalidation. The implementation PR must then rerun `/jlmirror-g1-scope-attest` against the new exact base before merge readiness can be considered.
 
 `pull_request_target` remains forbidden by repository v1 assurance. Candidate-controlled `pull_request` orchestration is not authoritative for the implementation-scope decision.
 
 There is no candidate-controlled `relevance=not-g1` success path and no authorization bootstrap exception. Invocation of the trusted default-branch attestation is the independent classifier. Once invoked for an implementation PR, omission of branch, label, claim, repository identity or G1 paths fails closed, including a diff containing only forbidden shared-core changes.
 
-The attestation is exact-head/exact-base evidence. If implementation PR HEAD, base SHA, or base ref changes after resolution, the previous evidence is stale and a new `/jlmirror-g1-scope-attest` run is required before merge readiness may be considered.
+The attestation is exact-head/exact-base evidence. If implementation PR HEAD, base SHA, or base ref changes after resolution, or if the default branch advances afterward, the previous evidence is stale and a new `/jlmirror-g1-scope-attest` run is required before merge readiness may be considered.
 
 ## Allowed G0 bootstrap inside the G1 slice
 

@@ -8,7 +8,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools" / "assurance"))
 import validate_g1_identity_tenant_shell_authorization as validator
-import test_validate_g1_identity_tenant_shell_implementation_scope as scope_falsifier
 
 
 def must_fail(mutator, fragment: str) -> None:
@@ -58,10 +57,12 @@ def falsify_implementation_path_policy() -> None:
 
 
 def falsify_implementation_scope_gate_execution() -> None:
-    # Keep a direct registered negative helper so the strict learning layer
-    # proves this credited falsifier itself cannot degrade to a no-op.
+    # Direct registered negative checks keep this probe eligible for strict
+    # learning credit; the real Git diff and metadata probes are imported only
+    # when the dedicated G1 falsifier actually executes in the repository.
     must_fail(lambda d: d["implementation_path_policy"].__setitem__("trusted_evaluator_event", "pull_request"), "trusted evaluator event drift")
     must_fail(lambda d: d["implementation_path_policy"].__setitem__("implementation_pr_required_label", ""), "implementation PR required label drift")
+    import test_validate_g1_identity_tenant_shell_implementation_scope as scope_falsifier
     scope_falsifier.falsify_real_git_diff_gate()
     scope_falsifier.falsify_candidate_metadata_fail_closed()
 

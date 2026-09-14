@@ -5,6 +5,8 @@
   "authorization_state": "proposed_exact_scope_authorization",
   "effective_rule": "becomes_canonical_only_after_exact_head_review_and_separately_authorized_merge",
   "canonical_effect_after_merge": "authorized_to_implement_exact_g1_identity_tenant_protected_shell_only",
+  "implementation_authority_before_merge": "blocked",
+  "implementation_authority_after_merge": "granted_for_exact_g1_identity_tenant_protected_shell_only",
   "authorized_program_gate": "G1",
   "authorized_slice": {
     "slice_id": "g1.identity-tenant-protected-shell@1",

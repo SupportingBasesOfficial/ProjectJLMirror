@@ -6,8 +6,10 @@ GOAL: Authenticated user enters a tenant-scoped JLMirror shell while current pla
 BASE SHA: 7c20c9301711e9a4bf355517d7aa23faad7a05b7
 AUTHORITY: proposed g1.identity-tenant-protected-shell@1 authorization; accepted Wave 1 identity/BFF substrate; separately accepted D3 Identity/Security; canonical API/BFF/security contracts; AI E2E delivery constitution.
 DEPENDENCIES: accepted Waves 1–3 substrate; G0 bootstrap only where directly required by this G1 slice.
+IMPLEMENTATION BRANCH PREFIX: impl/g1-identity-tenant-protected-shell.
 ALLOWED PATH PREFIXES: apps/g1-identity-tenant-shell/; contracts/g1-identity-tenant-shell/; implementation/g1-identity-tenant-shell/; sql/g1/; src/jlmirror_g1/; tests/g1/; tools/g1/.
 ALLOWED EXACT PATHS: .github/workflows/g1-identity-tenant-shell-runtime.yml.
+IMPLEMENTATION DIFF GATE: .github/workflows/g1-identity-tenant-shell-implementation-scope.yml executes tools/assurance/validate_g1_identity_tenant_shell_implementation_scope.py against the exact pull-request base SHA and head SHA; policy is loaded from the exact base commit; complete diff uses --no-renames and fails on any unauthorized path.
 SHARED EXISTING PATHS: read-only unless a separate successor authorization explicitly grants a specific change. The implementation PR MUST validate its complete diff against this exact prefix/exact-path policy; it may not self-declare additional paths as G1-specific.
 FORBIDDEN: G2+ product behavior; Monitoring UI; Resource/Metric/Problem/Health UI; Alerting policy/lifecycle; ACK/notification; ITSM; Automation; AIOps; FinOps; Commercial; production deployment; speculative generic design/navigation systems.
 DB: Reuse accepted durable Identity/session/current-authority ownership. Add only persistence/bootstrap required by G1 and only when existing accepted substrate does not already provide it.

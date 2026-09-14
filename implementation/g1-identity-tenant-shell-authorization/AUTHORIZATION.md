@@ -16,6 +16,15 @@ If this exact package is reviewed, accepted and separately merged, canonical imp
 
 - `g1.identity-tenant-protected-shell@1`.
 
+The machine-readable transition is exact:
+
+```text
+implementation_authority_before_merge = blocked
+implementation_authority_after_merge = granted_for_exact_g1_identity_tenant_protected_shell_only
+```
+
+`merge_authorization = not_granted` describes this proposal's merge permission and remains separate from the implementation authority that becomes effective only after a separately authorized merge makes this package canonical.
+
 The observable outcome is:
 
 > an authenticated user can enter a tenant-scoped JLMirror application shell, the BFF establishes current platform authorization independently of token validity, and forbidden/cross-tenant context fails closed.

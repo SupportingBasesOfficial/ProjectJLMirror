@@ -75,7 +75,7 @@
       "invariant_ids": ["INV-LEARNING-002"],
       "root_cause": "The authorization manifest declared that future implementation diffs must obey the G1 path policy, but no canonical-base/exact-head workflow actually consumed that policy against a future implementation PR's complete diff. A mixed G1/shared-core PR could therefore violate the reviewed boundary without an executable gate.",
       "horizontal_audit": ["future G1 implementation pull requests", "vertical-slice path policies", "mixed allowed and shared-core diffs", "rename/copy boundary representations", "successor product-slice authorization gates"],
-      "guardrails": [{"path":"tools/assurance/test_validate_g1_identity_tenant_shell_authorization.py","probe":"falsify_implementation_path_policy"}],
+      "guardrails": [{"path":"tools/assurance/test_validate_g1_identity_tenant_shell_authorization.py","probe":"falsify_implementation_scope_gate_execution"}],
       "systemic_guardrail_updated": true,
       "guardrail_generation": 74
     },
@@ -91,6 +91,45 @@
       "guardrails": [{"path":"tools/assurance/test_validate_g1_identity_tenant_shell_authorization.py","probe":"falsify_effective_rule"}],
       "systemic_guardrail_updated": true,
       "guardrail_generation": 75
+    },
+    {
+      "id": "LEARN-PR153-008",
+      "pr": 153,
+      "source": "external_review",
+      "review_comment_id": 4007689521,
+      "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP",
+      "invariant_ids": ["INV-LEARNING-002"],
+      "root_cause": "The first future-G1 scope workflow executed the evaluator from the candidate PR HEAD. A candidate could therefore replace the workflow or validator that judged its own diff, converting the enforcement boundary into self-attestation.",
+      "horizontal_audit": ["pull_request versus pull_request_target trust boundary", "candidate-controlled workflow code", "base-owned policy evaluators", "privileged event safety", "future slice scope gates"],
+      "guardrails": [{"path":"tools/assurance/test_validate_g1_identity_tenant_shell_authorization.py","probe":"falsify_implementation_scope_gate_execution"}],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 76
+    },
+    {
+      "id": "LEARN-PR153-009",
+      "pr": 153,
+      "source": "external_review",
+      "review_comment_id": 4007689528,
+      "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP",
+      "invariant_ids": ["INV-LEARNING-002"],
+      "root_cause": "The first G1 relevance rule inferred implementation intent only from a voluntary branch prefix or allowed G1 path. A candidate using an unrecognized branch and only shared-core changes could avoid classification, so omission of identifying metadata did not fail closed.",
+      "horizontal_audit": ["implementation PR identity metadata", "branch-prefix omission", "independent GitHub labels", "machine-readable slice claims", "same-repository implementation authority"],
+      "guardrails": [{"path":"tools/assurance/test_validate_g1_identity_tenant_shell_authorization.py","probe":"falsify_implementation_scope_gate_execution"}],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 77
+    },
+    {
+      "id": "LEARN-PR153-010",
+      "pr": 153,
+      "source": "external_review",
+      "review_comment_id": 4007689532,
+      "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP",
+      "invariant_ids": ["INV-LEARNING-002"],
+      "root_cause": "The executable implementation-diff finding was reconciled to a manifest-policy falsifier rather than a probe that exercised the actual Git diff gate. The real scope falsifier therefore could weaken while the ledger still reported the finding as guarded.",
+      "horizontal_audit": ["learning-ledger probe-to-finding semantic equivalence", "real Git diff enumeration", "mixed-diff rejection", "candidate metadata enforcement", "future scope-gate falsifiers"],
+      "guardrails": [{"path":"tools/assurance/test_validate_g1_identity_tenant_shell_authorization.py","probe":"falsify_implementation_scope_gate_execution"}],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 78
     }
   ]
 }

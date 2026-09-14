@@ -16,7 +16,8 @@ def must_fail(mutator, fragment: str) -> None:
     try:
         validator.validate_manifest(data)
     except AssertionError as exc:
-        if fragment not in str(exc): raise AssertionError(f"expected {fragment!r}, got {exc!r}")
+        if fragment not in str(exc):
+            raise AssertionError(f"expected {fragment!r}, got {exc!r}")
         return
     raise AssertionError(f"mutation unexpectedly accepted: {fragment}")
 
@@ -36,8 +37,6 @@ def falsify_exact_exclusion_set() -> None:
 
 
 def falsify_implementation_path_policy() -> None:
-    # Keep one direct registered negative helper call so strict learning can
-    # mechanically prove this credited falsifier has a guaranteed effect.
     must_fail(lambda d: d["implementation_path_policy"]["allowed_prefixes"].append("src/jlmirror_authority/"), "implementation allowed prefix drift")
     mutations = [
         (lambda d: d["implementation_path_policy"]["allowed_prefixes"].remove("src/jlmirror_g1/"), "implementation allowed prefix drift"),
@@ -47,22 +46,24 @@ def falsify_implementation_path_policy() -> None:
         (lambda d: d["implementation_path_policy"].__setitem__("implementation_pr_required_label", "optional"), "implementation path policy drift: implementation_pr_required_label"),
         (lambda d: d["implementation_path_policy"].__setitem__("implementation_claim_path", "implementation/optional.json"), "implementation path policy drift: implementation_claim_path"),
         (lambda d: d["implementation_path_policy"].__setitem__("same_repository_required", False), "implementation path policy drift: same_repository_required"),
-        (lambda d: d["implementation_path_policy"].__setitem__("trusted_evaluator_event", "pull_request_target"), "implementation path policy drift: trusted_evaluator_event"),
+        (lambda d: d["implementation_path_policy"].__setitem__("trusted_evaluator_event", "pull_request"), "implementation path policy drift: trusted_evaluator_event"),
+        (lambda d: d["implementation_path_policy"].__setitem__("trusted_scope_attestation_command", "/optional"), "implementation path policy drift: trusted_scope_attestation_command"),
         (lambda d: d["implementation_path_policy"].__setitem__("trusted_evaluator_source", "pull_request_head"), "implementation path policy drift: trusted_evaluator_source"),
-        (lambda d: d["implementation_path_policy"].__setitem__("bootstrap_authorization_base_commit", "HEAD"), "implementation path policy drift: bootstrap_authorization_base_commit"),
-        (lambda d: d["implementation_path_policy"].__setitem__("bootstrap_authorization_head_ref", "impl/g1-identity-tenant-protected-shell"), "implementation path policy drift: bootstrap_authorization_head_ref"),
-        (lambda d: d["implementation_path_policy"].__setitem__("bootstrap_authorization_rule", "allow_when_validator_missing"), "implementation path policy drift: bootstrap_authorization_rule"),
+        (lambda d: d["implementation_path_policy"].__setitem__("implementation_pr_requires_trusted_scope_attestation_on_exact_head", False), "implementation path policy drift: implementation_pr_requires_trusted_scope_attestation_on_exact_head"),
+        (lambda d: d["implementation_path_policy"].__setitem__("candidate_controlled_relevance_inference", "allowed"), "implementation path policy drift: candidate_controlled_relevance_inference"),
     ]
-    for mutation, fragment in mutations: must_fail(mutation, fragment)
+    for mutation, fragment in mutations:
+        must_fail(mutation, fragment)
 
 
 def falsify_implementation_scope_gate_execution() -> None:
-    must_fail(lambda d: d["implementation_path_policy"].__setitem__("trusted_evaluator_event", "pull_request_target"), "implementation path policy drift: trusted_evaluator_event")
+    must_fail(lambda d: d["implementation_path_policy"].__setitem__("trusted_evaluator_event", "pull_request"), "implementation path policy drift: trusted_evaluator_event")
     must_fail(lambda d: d["implementation_path_policy"].__setitem__("trusted_evaluator_source", "pull_request_head"), "implementation path policy drift: trusted_evaluator_source")
-    must_fail(lambda d: d["implementation_path_policy"].__setitem__("bootstrap_authorization_base_commit", "HEAD"), "implementation path policy drift: bootstrap_authorization_base_commit")
+    must_fail(lambda d: d["implementation_path_policy"].__setitem__("candidate_controlled_relevance_inference", "allowed"), "implementation path policy drift: candidate_controlled_relevance_inference")
     import test_validate_g1_identity_tenant_shell_implementation_scope as scope_falsifier
     scope_falsifier.falsify_real_git_diff_gate()
     scope_falsifier.falsify_candidate_metadata_fail_closed()
+    scope_falsifier.falsify_all_voluntary_metadata_omission()
 
 
 def falsify_authority_source_corpus() -> None:
@@ -90,11 +91,18 @@ def falsify_successor_governance_rules() -> None:
 
 def main() -> int:
     validator.validate()
-    falsify_successor_authority_transition(); falsify_effective_rule(); falsify_exact_exclusion_set()
-    falsify_implementation_path_policy(); falsify_implementation_scope_gate_execution(); falsify_authority_source_corpus()
-    falsify_g1_scope_and_invariants(); falsify_merge_and_production_boundaries(); falsify_successor_governance_rules()
-    print("g1_identity_tenant_shell_authorization_falsification=PASS authority_escalation=blocked implementation_path_expansion=blocked base_object_gate=bound bootstrap_widening=blocked privileged_event=blocked real_git_diff=executed metadata=label+branch+claim_fail_closed")
+    falsify_successor_authority_transition()
+    falsify_effective_rule()
+    falsify_exact_exclusion_set()
+    falsify_implementation_path_policy()
+    falsify_implementation_scope_gate_execution()
+    falsify_authority_source_corpus()
+    falsify_g1_scope_and_invariants()
+    falsify_merge_and_production_boundaries()
+    falsify_successor_governance_rules()
+    print("g1_identity_tenant_shell_authorization_falsification=PASS authority_escalation=blocked implementation_path_expansion=blocked trusted_default_branch_caller=bound candidate_workflow_authority=blocked candidate_relevance_bypass=blocked real_git_diff=executed metadata=label+branch+claim_fail_closed")
     return 0
 
 
-if __name__ == "__main__": main()
+if __name__ == "__main__":
+    main()

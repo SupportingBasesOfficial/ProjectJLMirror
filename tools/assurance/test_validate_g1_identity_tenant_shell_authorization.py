@@ -30,8 +30,14 @@ def main() -> int:
     must_fail(lambda d: d["authorized_capability_scope"].append("g2_monitoring_source_onboarding"), "capability scope drift")
     must_fail(lambda d: d["required_invariants"].remove("client_tenant_id_not_tenant_authority"), "required invariant drift")
     must_fail(lambda d: d["authorized_g0_bootstrap_scope"].append("generic_shared_platform_framework"), "G0 bootstrap scope drift")
+    must_fail(lambda d: d["consumed_existing_authority"].append("provider_native_identity_authority"), "consumed authority drift")
+    must_fail(lambda d: d["authority_source_paths"].remove("implementation/wave-1/AUTHORITY_BOUNDARY.md"), "authority source corpus drift")
+    must_fail(lambda d: d["explicitly_not_authorized"].remove("monitoring_product_ui"), "explicit exclusion drift")
+    must_fail(lambda d: d.__setitem__("effective_rule", "effective_immediately"), "effective rule drift")
+    must_fail(lambda d: d.__setitem__("historical_authority_rule", "rewrite_predecessors"), "historical authority rule drift")
+    must_fail(lambda d: d.__setitem__("implementation_boundary_rule", "implementation_may_begin_before_merge"), "implementation boundary drift")
     must_fail(lambda d: d.__setitem__("schema_version", True), "schema_version drift")
-    print("g1_identity_tenant_shell_authorization_falsification=PASS authority_escalation=blocked scope_expansion=blocked invariant_loss=blocked bootstrap_expansion=blocked")
+    print("g1_identity_tenant_shell_authorization_falsification=PASS authority_escalation=blocked scope_expansion=blocked invariant_loss=blocked bootstrap_expansion=blocked authority_source_drift=blocked exclusion_removal=blocked successor_rule_weakening=blocked")
     return 0
 
 

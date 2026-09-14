@@ -1,0 +1,47 @@
+name: JLMIRROR G1 Identity Tenant Shell Implementation Scope
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  g1-implementation-scope:
+    runs-on: ubuntu-24.04
+    env:
+      PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+    steps:
+      - name: Resolve exact PR coordinates
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$PR_BASE_SHA"
+          test -n "$PR_HEAD_SHA"
+          test -n "$PR_HEAD_REF"
+
+      - name: Checkout exact PR HEAD
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+          allow-unsafe-pr-checkout: false
+
+      - name: Verify exact PR HEAD
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$PR_HEAD_SHA"
+          git cat-file -e "${PR_BASE_SHA}^{commit}"
+
+      - name: Enforce canonical G1 implementation path policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/assurance/validate_g1_identity_tenant_shell_implementation_scope.py \
+            --base "$PR_BASE_SHA" \
+            --head "$PR_HEAD_SHA" \
+            --head-ref "$PR_HEAD_REF"

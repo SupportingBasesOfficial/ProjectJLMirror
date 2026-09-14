@@ -1,0 +1,27 @@
+{
+  "implementation_id": "wave4.monitoring-alerting-publication-runtime@1",
+  "authorization_id": "wave4.monitoring-alerting-publication@1",
+  "canonical_base": "fb7d2e6309df432b133105aa081dc1ef37784820",
+  "migration": "sql/integration/001_monitoring_alerting_publication.sql",
+  "producer_domain": "monitoring",
+  "contracts": [
+    "monitoring.problem-state.changed",
+    "monitoring.health-projection.changed"
+  ],
+  "reuses_wave2_outbox": true,
+  "creates_new_outbox_substrate": false,
+  "problem_trigger_table": "monitoring.monitoring_problem_transition",
+  "health_trigger_table": "monitoring.health_projection_transition",
+  "same_transaction_publication": true,
+  "rollback_removes_publication_obligation": true,
+  "stable_message_identity": true,
+  "message_id_not_correlation_id": true,
+  "causation_bound_to_owning_transition": true,
+  "non_equivalent_identity_collision_fails_closed": true,
+  "payload_contains_semantic_problem_or_health_state": false,
+  "dispatch_bookkeeping_recoverable": true,
+  "recovery_reuses_transition_identity": true,
+  "alerting_business_mutation_authorized": false,
+  "broker_selection_authorized": false,
+  "production_authority": "none"
+}

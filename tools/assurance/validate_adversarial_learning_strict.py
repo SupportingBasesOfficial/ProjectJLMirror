@@ -22,6 +22,7 @@ NEGATIVE_HELPERS = {
     Path('tools/assurance/d4b_wire_schema/test_source_evidence.py'): {'must_fail'},
     Path('tools/assurance/test_validate_adversarial_learning.py'): {'expect_failure', 'expect_repository_failure'},
     Path('tools/assurance/test_validate_d4d_trace_context_source.py'): {'mutate_and_expect_failure'},
+    Path('tools/assurance/test_validate_g1_identity_tenant_shell_authorization.py'): {'must_fail'},
 }
 D4C_CURRENT_WORKFLOWS = (
     Path('.github/workflows/d4-eventing-async-entry-gate.yml'),

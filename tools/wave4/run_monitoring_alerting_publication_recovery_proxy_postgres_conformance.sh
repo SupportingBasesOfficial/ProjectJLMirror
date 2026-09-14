@@ -126,6 +126,7 @@ fi
 
 docker exec -i "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" <<'SQL' >/dev/null
 DROP TABLE monitoring.jlmirror_recovery_member_trigger_probe CASCADE;
+DROP FUNCTION monitoring.jlmirror_recovery_member_trigger_proxy();
 REVOKE jlmirror_wave4_recovery_authority FROM jlmirror_recovery_inheriting_member;
 DROP ROLE jlmirror_recovery_inheriting_member;
 SQL

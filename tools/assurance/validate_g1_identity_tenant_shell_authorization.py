@@ -17,12 +17,16 @@ LEARNING_STRICT = "tools/assurance/validate_adversarial_learning_strict.py"
 LEARNING_FALSIFIER = "tools/assurance/test_validate_adversarial_learning.py"
 IMPLEMENTATION_SCOPE_VALIDATOR = "tools/assurance/validate_g1_identity_tenant_shell_implementation_scope.py"
 IMPLEMENTATION_SCOPE_FALSIFIER = "tools/assurance/test_validate_g1_identity_tenant_shell_implementation_scope.py"
+READINESS_VALIDATOR = "tools/assurance/validate_g1_identity_tenant_shell_scope_readiness.py"
+READINESS_FALSIFIER = "tools/assurance/test_validate_g1_identity_tenant_shell_scope_readiness.py"
 IMPLEMENTATION_SCOPE_WORKFLOW = ".github/workflows/g1-identity-tenant-shell-implementation-scope.yml"
 EXPECTED_HEAD_PREFIX = "impl/g1-identity-tenant-protected-shell"
 EXPECTED_LABEL = "jlmirror-slice:g1-identity-tenant-shell"
 EXPECTED_CLAIM_PATH = "implementation/g1-identity-tenant-shell/IMPLEMENTATION_CLAIM.json"
 EXPECTED_COMMAND = "/jlmirror-g1-scope-attest"
+EXPECTED_READY_COMMAND = "/jlmirror-g1-scope-ready"
 EXPECTED_STATUS_CONTEXT = "JLMIRROR / g1-identity-tenant-shell-implementation-scope"
+EXPECTED_READY_CONTEXT = "JLMIRROR / g1-identity-tenant-shell-merge-readiness"
 EXPECTED_PREFIXES = {
     "apps/g1-identity-tenant-shell/", "contracts/g1-identity-tenant-shell/",
     "implementation/g1-identity-tenant-shell/", "sql/g1/", "src/jlmirror_g1/",
@@ -75,7 +79,8 @@ ALLOWED_PATHS = {
     "implementation/g1-identity-tenant-shell-authorization/TASK_PACKET.md",
     "tools/assurance/validate_g1_identity_tenant_shell_authorization.py",
     "tools/assurance/test_validate_g1_identity_tenant_shell_authorization.py",
-    IMPLEMENTATION_SCOPE_VALIDATOR, IMPLEMENTATION_SCOPE_FALSIFIER, IMPLEMENTATION_SCOPE_WORKFLOW,
+    IMPLEMENTATION_SCOPE_VALIDATOR, IMPLEMENTATION_SCOPE_FALSIFIER,
+    READINESS_VALIDATOR, READINESS_FALSIFIER, IMPLEMENTATION_SCOPE_WORKFLOW,
     LEARNING_RESOLVER, LEARNING_STRICT, LEARNING_FALSIFIER,
     "tools/assurance/validate_repository.py",
     ".github/workflows/g1-identity-tenant-shell-authorization.yml", LEARNING,
@@ -83,7 +88,8 @@ ALLOWED_PATHS = {
 
 
 def req(condition: bool, message: str) -> None:
-    if not condition: raise AssertionError(message)
+    if not condition:
+        raise AssertionError(message)
 
 
 def git(*args: str) -> str:
@@ -105,7 +111,8 @@ def validate_manifest(data: dict) -> None:
     req(data.get("implementation_authority_after_merge") == "granted_for_exact_g1_identity_tenant_protected_shell_only", "post-merge implementation authority drift")
     req(data.get("authorized_program_gate") == "G1", "program gate drift")
     req(data.get("authorized_slice") == {"slice_id":"g1.identity-tenant-protected-shell@1","capability":"identity_tenant_protected_application_shell"}, "authorized slice drift")
-    policy = data.get("implementation_path_policy"); req(isinstance(policy, dict), "implementation path policy missing")
+    policy = data.get("implementation_path_policy")
+    req(isinstance(policy, dict), "implementation path policy missing")
     exact = {
         "mode": "exact_prefix_allowlist",
         "shared_existing_paths_policy": "read_only_unless_separate_successor_authorization",
@@ -119,19 +126,28 @@ def validate_manifest(data: dict) -> None:
         "diff_policy_source": "pull_request_exact_base_commit",
         "trusted_evaluator_event": "issue_comment",
         "trusted_scope_attestation_command": EXPECTED_COMMAND,
+        "trusted_scope_readiness_command": EXPECTED_READY_COMMAND,
         "trusted_evaluator_source": "default_branch_issue_comment_workflow_plus_exact_default_branch_base_git_object",
         "trusted_scope_status_context": EXPECTED_STATUS_CONTEXT,
-        "trusted_scope_status_publication": "pending_then_final_on_resolved_pr_head",
-        "trusted_scope_freshness_rule": "final_success_requires_unchanged_head_base_sha_and_default_branch_ref",
-        "trusted_scope_base_advance_invalidation": "default_branch_push_replaces_prior_success_with_pending_on_affected_open_pr_heads",
-        "trusted_scope_concurrency_rule": "per_pr_or_default_branch_push_cancel_in_progress",
+        "trusted_scope_readiness_status_context": EXPECTED_READY_CONTEXT,
+        "trusted_scope_status_publication": "pending_then_final_coordinate_bound_evidence_on_resolved_pr_head",
+        "trusted_scope_status_evidence_role": "evidence_only_not_standalone_merge_authority",
+        "trusted_scope_freshness_rule": "merge_readiness_revalidates_live_head_base_default_tip_label_and_trusted_status_run_provenance",
+        "trusted_scope_concurrency_rule": "per_pr_cancel_in_progress",
+        "trusted_status_creator_login": "github-actions[bot]",
+        "trusted_status_creator_id": 41898282,
+        "trusted_scope_merge_preflight_rule": "live_revalidate_ready_evidence_current_coordinates_label_and_workflow_run_immediately_before_merge",
         "diff_enforcement_validator": IMPLEMENTATION_SCOPE_VALIDATOR,
+        "trusted_scope_readiness_validator": READINESS_VALIDATOR,
         "diff_enforcement_workflow": IMPLEMENTATION_SCOPE_WORKFLOW,
         "implementation_pr_must_validate_diff_against_this_policy": True,
         "implementation_pr_requires_trusted_scope_attestation_on_exact_head": True,
+        "implementation_pr_requires_trusted_scope_readiness_on_exact_head_base": True,
         "candidate_controlled_relevance_inference": "forbidden",
     }
-    for key, expected in exact.items(): req(policy.get(key) == expected, f"implementation path policy drift: {key}")
+    for key, expected in exact.items():
+        req(policy.get(key) == expected, f"implementation path policy drift: {key}")
+    req("trusted_scope_base_advance_invalidation" not in policy, "skippable base-advance invalidation must not be canonical authority")
     req(set(policy.get("allowed_prefixes", [])) == EXPECTED_PREFIXES, "implementation allowed prefix drift")
     req(set(policy.get("allowed_exact_paths", [])) == EXPECTED_EXACT, "implementation exact path drift")
     req(not any(key.startswith("bootstrap_authorization_") for key in policy), "implementation path policy must not contain reusable authorization bootstrap")
@@ -150,7 +166,8 @@ def validate_manifest(data: dict) -> None:
 
 
 def validate_predecessor_truth() -> None:
-    for rel in EXPECTED_AUTHORITY_PATHS: req((ROOT / rel).is_file(), f"authority source missing: {rel}")
+    for rel in EXPECTED_AUTHORITY_PATHS:
+        req((ROOT / rel).is_file(), f"authority source missing: {rel}")
     wave1 = (ROOT / "implementation/wave-1/AUTHORITY_BOUNDARY.md").read_text(encoding="utf-8")
     req("`impl.identity-bff@1`" in wave1 and "SESSION VALID != CURRENT AUTHORITY" in wave1, "Wave 1 authority substrate drift")
     d3 = (ROOT / "docs/16-implementation-readiness/20-d3-identity-security-acceptance-propagation.md").read_text(encoding="utf-8")
@@ -158,35 +175,45 @@ def validate_predecessor_truth() -> None:
 
 
 def validate_enforcement_artifacts() -> None:
-    for rel in (IMPLEMENTATION_SCOPE_VALIDATOR, IMPLEMENTATION_SCOPE_FALSIFIER, IMPLEMENTATION_SCOPE_WORKFLOW): req((ROOT / rel).is_file(), f"implementation scope enforcement artifact missing: {rel}")
+    for rel in (IMPLEMENTATION_SCOPE_VALIDATOR, IMPLEMENTATION_SCOPE_FALSIFIER, READINESS_VALIDATOR, READINESS_FALSIFIER, IMPLEMENTATION_SCOPE_WORKFLOW):
+        req((ROOT / rel).is_file(), f"implementation scope enforcement artifact missing: {rel}")
     validator = (ROOT / IMPLEMENTATION_SCOPE_VALIDATOR).read_text(encoding="utf-8")
+    readiness = (ROOT / READINESS_VALIDATOR).read_text(encoding="utf-8")
+    readiness_falsifier = (ROOT / READINESS_FALSIFIER).read_text(encoding="utf-8")
     workflow = (ROOT / IMPLEMENTATION_SCOPE_WORKFLOW).read_text(encoding="utf-8")
     for marker in ("policy_from_base(root, base_sha)", '"--no-renames"', "unauthorized G1 implementation path", "G1 implementation PR missing required canonical label", "G1 implementation PR missing required canonical head prefix", "G1 implementation PR missing or malformed required claim", "no candidate-controlled relevance inference"):
         req(marker in validator, f"implementation scope validator missing marker: {marker}")
+    for marker in ("TRUSTED_CREATOR_LOGIN = \"github-actions[bot]\"", "TRUSTED_CREATOR_ID = 41898282", "base SHA is not the current default-branch tip", "missing current required canonical label", "target_url is not a canonical workflow run", "workflow event must be issue_comment", "workflow path drift", "evidence=", "READY_CONTEXT"):
+        req(marker in readiness, f"readiness validator missing provenance/live marker: {marker}")
+    for marker in ("falsify_live_readiness_guards", "spoof", "stale_tip", "missing_label", "wrong_event", "wrong_path"):
+        req(marker in readiness_falsifier, f"readiness falsifier missing executable case: {marker}")
+
     req("issue_comment:" in workflow, "implementation scope workflow must be default-branch issue_comment caller")
-    req("push:" in workflow, "implementation scope workflow must invalidate stale success on default-branch advance")
-    req(EXPECTED_COMMAND in workflow, "implementation scope workflow missing canonical attestation command")
+    req("push:" not in workflow, "implementation scope workflow must not depend on skippable push invalidation")
+    req(EXPECTED_COMMAND in workflow and EXPECTED_READY_COMMAND in workflow, "implementation scope workflow missing canonical trusted commands")
     req("pull_request_target:" not in workflow, "implementation scope workflow must not use privileged pull_request_target")
     req("pull_request:" not in workflow, "implementation scope workflow must not use candidate-controlled pull_request orchestration")
     req("permissions: {}" in workflow, "implementation scope workflow must default to zero workflow-level permissions")
-    for job in ("  resolve:", "  publish-pending:", "  analyze:", "  publish-final:"):
+    for job in ("  resolve:", "  publish-pending:", "  analyze:", "  verify-ready:", "  publish-final:"):
         req(job in workflow, f"implementation scope workflow missing isolated job: {job.strip()}")
-    req("group: g1-identity-tenant-shell-scope-${{ github.event_name }}-${{ github.event.issue.number || github.ref_name }}" in workflow and "cancel-in-progress: true" in workflow, "implementation scope workflow missing freshness concurrency")
+    req("group: g1-identity-tenant-shell-scope-${{ github.event.issue.number }}" in workflow and "cancel-in-progress: true" in workflow, "implementation scope workflow missing per-PR freshness concurrency")
     req("github.event.issue.number" in workflow, "implementation scope workflow missing trusted PR identity binding")
-    req("github.event_name == 'push' && github.ref_name == github.event.repository.default_branch" in workflow, "implementation scope workflow must limit automatic invalidation to default-branch push")
-    req("commits/${PR_HEAD_SHA}/statuses?per_page=100" in workflow, "implementation scope workflow must discover prior exact-head G1 success before invalidation")
-    req("mode=invalidate-base-advance" in workflow and "stale after default-branch advance; rerun required" in workflow, "implementation scope workflow missing base-advance stale-status replacement")
+    req("branches/${DEFAULT_BRANCH}" in workflow and 'test "$PR_BASE_SHA" = "$DEFAULT_BRANCH_SHA"' in workflow, "trusted command must bind PR base to live default-branch tip")
     req("repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" in workflow, "implementation scope workflow must resolve PR coordinates through GitHub API")
     req('test "$PR_BASE_REF" = "$DEFAULT_BRANCH"' in workflow, "implementation scope workflow must require default-branch base ref")
     req('test "$PR_BASE_REPO" = "$GITHUB_REPOSITORY"' in workflow, "implementation scope workflow must require canonical base repository")
-    req('git show "${PR_BASE_SHA}:${G1_SCOPE_VALIDATOR}" > "$trusted_validator"' in workflow, "implementation scope workflow must materialize validator from exact default-branch base Git object")
-    req('python3 "$TRUSTED_VALIDATOR"' in workflow, "implementation scope workflow must execute materialized base validator")
+    req('git show "${PR_BASE_SHA}:${G1_SCOPE_VALIDATOR}" > "$trusted_validator"' in workflow, "implementation scope workflow must materialize scope validator from exact default-branch base Git object")
+    req("contents/${G1_READINESS_VALIDATOR}?ref=${PR_BASE_SHA}" in workflow, "implementation scope workflow must materialize readiness validator from exact current base object")
+    req('python3 "$TRUSTED_VALIDATOR"' in workflow, "implementation scope workflow must execute materialized base scope validator")
+    req('python3 "$TRUSTED_READINESS_VALIDATOR"' in workflow, "implementation scope workflow must execute materialized trusted readiness validator")
     req("persist-credentials: false" in workflow, "implementation scope workflow must not persist checkout credentials")
     req('test "$(git rev-parse HEAD)" != "$PR_HEAD_SHA"' in workflow, "implementation scope workflow must not checkout candidate code")
-    req(workflow.count("uses: actions/checkout@") == 1, "implementation scope workflow must checkout code only in isolated read-only analysis")
+    req(workflow.count("uses: actions/checkout@") == 1, "implementation scope workflow must checkout code only in isolated read-only scope analysis")
     req(workflow.count("statuses: write") == 2, "implementation scope workflow must isolate exactly two status publisher jobs")
     req(workflow.count('statuses/${PR_HEAD_SHA}') == 2, "implementation scope workflow must retain exactly two parsed status POST sites")
-    req(EXPECTED_STATUS_CONTEXT in workflow, "implementation scope workflow missing stable exact-head status context")
+    req(EXPECTED_STATUS_CONTEXT in workflow and EXPECTED_READY_CONTEXT in workflow, "implementation scope workflow missing stable scope/readiness status contexts")
+    req("G1 scope PASS base=${PR_BASE_SHA} head=${PR_HEAD_SHA}" in workflow and "G1 ready PASS base=${PR_BASE_SHA} head=${PR_HEAD_SHA}" in workflow, "implementation scope workflow must bind final evidence descriptions to exact base/head")
+    req("CURRENT_LABELS_JSON" in workflow and "CURRENT_DEFAULT_SHA" in workflow, "implementation scope workflow must re-read mutable label and default-tip state before final success")
     req("state=pending" in workflow, "implementation scope workflow missing exact-head pending status")
     for marker in ("CURRENT_HEAD_SHA", "CURRENT_BASE_SHA", "CURRENT_BASE_REF", 'test "$state" = success'):
         req(marker in workflow, f"implementation scope workflow missing final freshness guard: {marker}")
@@ -195,31 +222,41 @@ def validate_enforcement_artifacts() -> None:
 
 def validate_document() -> None:
     text, packet = DOC.read_text(encoding="utf-8"), PACKET.read_text(encoding="utf-8")
-    for marker in ("implementation_authority_before_merge = blocked", "implementation_authority_after_merge = granted_for_exact_g1_identity_tenant_protected_shell_only", "JWT_VALIDITY != CURRENT_AUTHORIZATION", "SUCCESSOR_G1_AUTHORIZATION != GLOBAL_PRODUCT_AUTHORITY", "G1_AUTHORIZED != G2_AUTHORIZED", "READY_FOR_MERGE != AUTHORIZED_TO_MERGE", "All existing shared paths", "read-only under this authorization", EXPECTED_LABEL, EXPECTED_CLAIM_PATH, EXPECTED_COMMAND, "issue_comment", EXPECTED_STATUS_CONTEXT, "default branch", "There is no candidate-controlled `relevance=not-g1` success path", "default-branch advance"):
+    for marker in ("implementation_authority_before_merge = blocked", "implementation_authority_after_merge = granted_for_exact_g1_identity_tenant_protected_shell_only", "JWT_VALIDITY != CURRENT_AUTHORIZATION", "SUCCESSOR_G1_AUTHORIZATION != GLOBAL_PRODUCT_AUTHORITY", "G1_AUTHORIZED != G2_AUTHORIZED", "READY_FOR_MERGE != AUTHORIZED_TO_MERGE", "All existing shared paths", "read-only under this authorization", EXPECTED_LABEL, EXPECTED_CLAIM_PATH, EXPECTED_COMMAND, EXPECTED_READY_COMMAND, "issue_comment", EXPECTED_STATUS_CONTEXT, EXPECTED_READY_CONTEXT, "github-actions[bot]", "41898282", "evidence", "default branch", "There is no candidate-controlled `relevance=not-g1` success path"):
         req(marker in text, f"authorization document missing marker: {marker}")
-    for marker in ("SLICE: g1.identity-tenant-protected-shell@1", "BASE SHA: " + BASE, "No new identity or authorization semantics.", "Client tenant identifiers are never authority.", "SHARED EXISTING PATHS: read-only unless a separate successor authorization", EXPECTED_LABEL, EXPECTED_CLAIM_PATH, EXPECTED_COMMAND, "issue_comment workflow loaded from the default branch", EXPECTED_STATUS_CONTEXT, "default-branch advance", "STOP IF:", "G2+"):
+    for marker in ("SLICE: g1.identity-tenant-protected-shell@1", "BASE SHA: " + BASE, "No new identity or authorization semantics.", "Client tenant identifiers are never authority.", "SHARED EXISTING PATHS: read-only unless a separate successor authorization", EXPECTED_LABEL, EXPECTED_CLAIM_PATH, EXPECTED_COMMAND, EXPECTED_READY_COMMAND, "issue_comment workflow loaded from the default branch", EXPECTED_STATUS_CONTEXT, EXPECTED_READY_CONTEXT, "github-actions[bot]", "41898282", "STOP IF:", "G2+"):
         req(marker in packet, f"task packet missing marker: {marker}")
-    for prefix in EXPECTED_PREFIXES: req(prefix in text and prefix in packet, f"implementation allowed prefix not rendered consistently: {prefix}")
-    for path in EXPECTED_EXACT: req(path in text and path in packet, f"implementation exact path not rendered consistently: {path}")
+    for prefix in EXPECTED_PREFIXES:
+        req(prefix in text and prefix in packet, f"implementation allowed prefix not rendered consistently: {prefix}")
+    for path in EXPECTED_EXACT:
+        req(path in text and path in packet, f"implementation exact path not rendered consistently: {path}")
 
 
 def validate_changed_paths() -> None:
     changed = [p for p in git("diff", "--name-only", f"{BASE}...HEAD").splitlines() if p]
     req(changed, "authorization branch must contain an explicit delta")
-    for path in changed: req(path in ALLOWED_PATHS, f"authorization PR touched forbidden path: {path}")
+    for path in changed:
+        req(path in ALLOWED_PATHS, f"authorization PR touched forbidden path: {path}")
 
 
 def validate() -> None:
     req(MANIFEST.is_file() and DOC.is_file() and PACKET.is_file(), "missing G1 authorization artifact")
-    validate_manifest(load()); validate_predecessor_truth(); validate_enforcement_artifacts(); validate_document(); validate_changed_paths()
+    validate_manifest(load())
+    validate_predecessor_truth()
+    validate_enforcement_artifacts()
+    validate_document()
+    validate_changed_paths()
 
 
 def main() -> int:
-    try: validate()
+    try:
+        validate()
     except AssertionError as exc:
-        print(f"g1_identity_tenant_shell_authorization=FAIL reason={exc}", file=sys.stderr); return 1
-    print("g1_identity_tenant_shell_authorization=PASS gate=G1 implementation_transition=blocked->exact-g1 implementation_paths=pinned trusted_scope=default-branch-issue-comment exact_head_status=pending+fresh-final+base-advance-invalidated default_base=required candidate_relevance=forbidden authority_corpus=pinned exclusions=exact production=none merge_authority=not_granted")
+        print(f"g1_identity_tenant_shell_authorization=FAIL reason={exc}", file=sys.stderr)
+        return 1
+    print("g1_identity_tenant_shell_authorization=PASS gate=G1 implementation_transition=blocked->exact-g1 implementation_paths=pinned trusted_scope=default-branch-issue-comment status=evidence-only readiness=live-source-authenticated default_base=live-tip-required candidate_relevance=forbidden authority_corpus=pinned exclusions=exact production=none merge_authority=not_granted")
     return 0
 
 
-if __name__ == "__main__": raise SystemExit(main())
+if __name__ == "__main__":
+    raise SystemExit(main())

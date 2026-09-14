@@ -144,13 +144,16 @@ END;
 $$;
 
 -- The Wave 4 recovery authority is intentionally shared across accepted recovery
--- slices and legitimately owns their closed SECURITY DEFINER entry points. Before
--- this bridge delegates two additional recovery functions to that role, prove that
--- every existing recovery-owned routine is both ACL-closed and free of persistent
--- inbound invocation dependencies. Owner-only EXECUTE by itself is not sufficient:
--- an already-attached trigger or expression can invoke a preserved routine OID
--- without a runtime EXECUTE check, and that routine may dynamically resolve a call
--- to one of the new recovery entry points after this migration grants it.
+-- slices and legitimately owns closed SECURITY DEFINER entry points. Before this
+-- bridge delegates two additional recovery functions, prove that every routine
+-- owned either by the recovery role itself or by a non-superuser principal that
+-- currently inherits that role is both ACL-closed and free of persistent inbound
+-- invocation dependencies. pg_has_role(...,'USAGE') models authority available
+-- immediately without SET ROLE, including transitive inheriting memberships; a
+-- membership that is not usable without SET ROLE is intentionally not treated as
+-- an implicit SECURITY DEFINER proxy path. Owner-only EXECUTE is still insufficient
+-- when a retained trigger/expression can invoke the routine without a runtime
+-- EXECUTE check and the routine can dynamically resolve a new recovery call.
 DO $$
 DECLARE
     v_recovery_oid OID;
@@ -161,37 +164,57 @@ BEGIN
       FROM pg_roles
      WHERE rolname='jlmirror_wave4_recovery_authority';
 
+    WITH inheriting_principals AS (
+        SELECT v_recovery_oid AS principal_oid
+        UNION
+        SELECT r.oid
+          FROM pg_roles r
+         WHERE r.oid<>v_recovery_oid
+           AND NOT r.rolsuper
+           AND pg_has_role(r.oid,v_recovery_oid,'USAGE')
+    )
     SELECT format(
-               'routine=%s,grantee=%s,grantable=%s',
+               'owner=%s,routine=%s,grantee=%s,grantable=%s',
+               pg_get_userbyid(p.proowner),
                p.oid::regprocedure::TEXT,
                CASE WHEN a.grantee=0 THEN 'PUBLIC' ELSE pg_get_userbyid(a.grantee) END,
                a.is_grantable
            )
       INTO v_proxy
       FROM pg_proc p
+      JOIN inheriting_principals ip ON ip.principal_oid=p.proowner
       CROSS JOIN LATERAL aclexplode(COALESCE(p.proacl, acldefault('f', p.proowner))) a
-     WHERE p.proowner=v_recovery_oid
-       AND a.privilege_type='EXECUTE'
+     WHERE a.privilege_type='EXECUTE'
        AND a.grantee<>p.proowner
-     ORDER BY p.oid,a.grantee
+     ORDER BY p.proowner,p.oid,a.grantee
      LIMIT 1;
 
     IF v_proxy IS NOT NULL THEN
         RAISE EXCEPTION 'monitoring.publication_recovery_authority_callable_proxy_unsafe:%', v_proxy;
     END IF;
 
+    WITH inheriting_principals AS (
+        SELECT v_recovery_oid AS principal_oid
+        UNION
+        SELECT r.oid
+          FROM pg_roles r
+         WHERE r.oid<>v_recovery_oid
+           AND NOT r.rolsuper
+           AND pg_has_role(r.oid,v_recovery_oid,'USAGE')
+    )
     SELECT format(
-               'routine=%s,class=%s,objid=%s,objsubid=%s,deptype=%s',
+               'owner=%s,routine=%s,class=%s,objid=%s,objsubid=%s,deptype=%s',
+               pg_get_userbyid(p.proowner),
                p.oid::regprocedure::TEXT,
                d.classid::regclass::TEXT,d.objid,d.objsubid,d.deptype
            )
       INTO v_dependency
       FROM pg_proc p
+      JOIN inheriting_principals ip ON ip.principal_oid=p.proowner
       JOIN pg_depend d
         ON d.refclassid='pg_proc'::regclass
        AND d.refobjid=p.oid
-     WHERE p.proowner=v_recovery_oid
-     ORDER BY p.oid,d.classid,d.objid,d.objsubid,d.deptype
+     ORDER BY p.proowner,p.oid,d.classid,d.objid,d.objsubid,d.deptype
      LIMIT 1;
 
     IF v_dependency IS NOT NULL THEN

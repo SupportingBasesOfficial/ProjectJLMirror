@@ -63,7 +63,11 @@ def falsify_trusted_scope_publication_contract() -> None:
     must_fail(lambda d: d["implementation_path_policy"].__setitem__("trusted_scope_status_context", "optional"), "implementation path policy drift: trusted_scope_status_context")
     must_fail(lambda d: d["implementation_path_policy"].__setitem__("trusted_scope_status_publication", "workflow_run_only"), "implementation path policy drift: trusted_scope_status_publication")
     must_fail(lambda d: d["implementation_path_policy"].__setitem__("trusted_scope_freshness_rule", "none"), "implementation path policy drift: trusted_scope_freshness_rule")
+    must_fail(lambda d: d["implementation_path_policy"].__setitem__("trusted_scope_base_advance_invalidation", "none"), "implementation path policy drift: trusted_scope_base_advance_invalidation")
     must_fail(lambda d: d["implementation_path_policy"].__setitem__("trusted_scope_concurrency_rule", "parallel_unordered"), "implementation path policy drift: trusted_scope_concurrency_rule")
+    workflow = (ROOT / validator.IMPLEMENTATION_SCOPE_WORKFLOW).read_text(encoding="utf-8")
+    for marker in ("push:", "github.event_name == 'push' && github.ref_name == github.event.repository.default_branch", "commits/${PR_HEAD_SHA}/statuses?per_page=100", "mode=invalidate-base-advance", "stale after default-branch advance; rerun required"):
+        assert marker in workflow, f"trusted scope base-advance invalidation marker missing: {marker}"
 
 
 def falsify_implementation_scope_gate_execution() -> None:
@@ -111,7 +115,7 @@ def main() -> int:
     falsify_g1_scope_and_invariants()
     falsify_merge_and_production_boundaries()
     falsify_successor_governance_rules()
-    print("g1_identity_tenant_shell_authorization_falsification=PASS authority_escalation=blocked implementation_path_expansion=blocked trusted_default_branch_caller=bound default_base=required exact_head_status=pending+fresh-final candidate_workflow_authority=blocked candidate_relevance_bypass=blocked real_git_diff=executed metadata=label+branch+claim_fail_closed")
+    print("g1_identity_tenant_shell_authorization_falsification=PASS authority_escalation=blocked implementation_path_expansion=blocked trusted_default_branch_caller=bound default_base=required exact_head_status=pending+fresh-final+base-advance-invalidated candidate_workflow_authority=blocked candidate_relevance_bypass=blocked real_git_diff=executed metadata=label+branch+claim_fail_closed")
     return 0
 
 

@@ -17,6 +17,7 @@ EXPECTED_AUTHORIZATION_ID = "g1.identity-tenant-protected-shell@1"
 EXPECTED_SLICE_ID = "g1.identity-tenant-protected-shell@1"
 EXPECTED_RULE = "every_changed_path_must_match_canonical_base_policy"
 EXPECTED_ATTESTATION_COMMAND = "/jlmirror-g1-scope-attest"
+EXPECTED_STATUS_CONTEXT = "JLMIRROR / g1-identity-tenant-shell-implementation-scope"
 EXPECTED_PREFIXES = (
     "apps/g1-identity-tenant-shell/", "contracts/g1-identity-tenant-shell/",
     "implementation/g1-identity-tenant-shell/", "sql/g1/", "src/jlmirror_g1/",
@@ -66,11 +67,17 @@ def configured_policy(policy: dict[str, Any]) -> None:
         (policy.get("implementation_pr_required_label") == EXPECTED_LABEL, "implementation PR required label drift"),
         (policy.get("implementation_claim_path") == EXPECTED_CLAIM_PATH, "implementation claim path drift"),
         (policy.get("implementation_claim_authorization_id") == EXPECTED_AUTHORIZATION_ID, "implementation claim authorization id drift"),
+        (policy.get("implementation_pr_base_ref_policy") == "must_equal_repository_default_branch", "implementation PR base ref policy drift"),
         (policy.get("trusted_evaluator_event") == "issue_comment", "trusted evaluator event drift"),
         (policy.get("trusted_scope_attestation_command") == EXPECTED_ATTESTATION_COMMAND, "trusted scope attestation command drift"),
-        (policy.get("trusted_evaluator_source") == "default_branch_issue_comment_workflow_plus_exact_base_git_object", "trusted evaluator source drift"),
+        (policy.get("trusted_evaluator_source") == "default_branch_issue_comment_workflow_plus_exact_default_branch_base_git_object", "trusted evaluator source drift"),
+        (policy.get("trusted_scope_status_context") == EXPECTED_STATUS_CONTEXT, "trusted scope status context drift"),
+        (policy.get("trusted_scope_status_publication") == "pending_then_final_on_resolved_pr_head", "trusted scope status publication drift"),
+        (policy.get("trusted_scope_freshness_rule") == "final_success_requires_unchanged_head_base_sha_and_default_branch_ref", "trusted scope freshness rule drift"),
+        (policy.get("trusted_scope_concurrency_rule") == "per_pr_cancel_in_progress", "trusted scope concurrency rule drift"),
         (policy.get("same_repository_required") is True, "same-repository requirement drift"),
         (policy.get("implementation_pr_requires_trusted_scope_attestation_on_exact_head") is True, "trusted scope attestation requirement drift"),
+        (policy.get("candidate_controlled_relevance_inference") == "forbidden", "candidate relevance inference drift"),
         (tuple(policy.get("allowed_prefixes", [])) == EXPECTED_PREFIXES, "implementation allowed prefixes drift"),
         (tuple(policy.get("allowed_exact_paths", [])) == EXPECTED_EXACT, "implementation exact paths drift"),
         (policy.get("diff_enforcement_rule") == EXPECTED_RULE, "implementation diff enforcement rule drift"),
@@ -141,7 +148,7 @@ def main() -> int:
     _classified, errors = validate(args.base, args.head, args.head_ref, labels, args.head_repo, args.base_repo, root=args.repo_root)
     for error in errors: print(f"G1_IMPLEMENTATION_SCOPE_ERROR: {error}", file=sys.stderr)
     if errors: return 1
-    print("g1_implementation_scope=PASS classification=trusted_explicit_attestation metadata=label+branch+claim complete_diff=allowlisted")
+    print("g1_implementation_scope=PASS classification=trusted_explicit_attestation default_base=required exact_head_status=external_caller metadata=label+branch+claim complete_diff=allowlisted")
     return 0
 
 

@@ -38,6 +38,17 @@
     "product_execution_roadmap",
     "vertical_slice_delivery_model"
   ],
+  "authority_source_paths": [
+    "implementation/wave-1/AUTHORITY_BOUNDARY.md",
+    "docs/16-implementation-readiness/20-d3-identity-security-acceptance-propagation.md",
+    "docs/09-api-contracts/authentication-authorization-and-tenant-context.md",
+    "docs/09-api-contracts/surface-routing-and-resource-identity.md",
+    "docs/07-system-design/request-auth-and-authorization-lifecycle.md",
+    "docs/00-foundation/ai-e2e-delivery/AI-E2E-DELIVERY-CONSTITUTION.md",
+    "docs/00-foundation/ai-e2e-delivery/PRODUCT-EXECUTION-ROADMAP.md",
+    "docs/00-foundation/ai-e2e-delivery/VERTICAL-SLICE-DELIVERY-MODEL.md",
+    "docs/00-foundation/ai-e2e-delivery/DAY-1-IMPLEMENTATION-BOOTSTRAP.md"
+  ],
   "required_invariants": [
     "jwt_validity_not_current_authorization",
     "idp_identity_not_platform_membership_authority",

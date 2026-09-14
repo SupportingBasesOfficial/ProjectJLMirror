@@ -6,11 +6,14 @@ on:
       - 'implementation/g1-identity-tenant-shell-authorization/**'
       - 'tools/assurance/validate_g1_identity_tenant_shell_authorization.py'
       - 'tools/assurance/test_validate_g1_identity_tenant_shell_authorization.py'
+      - 'tools/assurance/validate_g1_identity_tenant_shell_implementation_scope.py'
+      - 'tools/assurance/test_validate_g1_identity_tenant_shell_implementation_scope.py'
       - 'tools/assurance/validate_adversarial_learning.py'
       - 'tools/assurance/validate_adversarial_learning_strict.py'
       - 'tools/assurance/test_validate_adversarial_learning.py'
       - 'governance/adversarial/learning-ledger.d/pr-153-g1-authorization-review-findings.json'
       - '.github/workflows/g1-identity-tenant-shell-authorization.yml'
+      - '.github/workflows/g1-identity-tenant-shell-implementation-scope.yml'
       - 'implementation/wave-1/AUTHORITY_BOUNDARY.md'
       - 'docs/00-foundation/ai-e2e-delivery/**'
       - 'docs/07-system-design/request-auth-and-authorization-lifecycle.md'
@@ -23,11 +26,14 @@ on:
       - 'implementation/g1-identity-tenant-shell-authorization/**'
       - 'tools/assurance/validate_g1_identity_tenant_shell_authorization.py'
       - 'tools/assurance/test_validate_g1_identity_tenant_shell_authorization.py'
+      - 'tools/assurance/validate_g1_identity_tenant_shell_implementation_scope.py'
+      - 'tools/assurance/test_validate_g1_identity_tenant_shell_implementation_scope.py'
       - 'tools/assurance/validate_adversarial_learning.py'
       - 'tools/assurance/validate_adversarial_learning_strict.py'
       - 'tools/assurance/test_validate_adversarial_learning.py'
       - 'governance/adversarial/learning-ledger.d/pr-153-g1-authorization-review-findings.json'
       - '.github/workflows/g1-identity-tenant-shell-authorization.yml'
+      - '.github/workflows/g1-identity-tenant-shell-implementation-scope.yml'
       - 'implementation/wave-1/AUTHORITY_BOUNDARY.md'
       - 'docs/00-foundation/ai-e2e-delivery/**'
       - 'docs/07-system-design/request-auth-and-authorization-lifecycle.md'
@@ -80,6 +86,9 @@ jobs:
 
       - name: Falsify G1 authorization boundaries
         run: PYTHONPATH=tools/assurance python3 tools/assurance/test_validate_g1_identity_tenant_shell_authorization.py
+
+      - name: Falsify future G1 implementation diff scope
+        run: PYTHONPATH=tools/assurance python3 tools/assurance/test_validate_g1_identity_tenant_shell_implementation_scope.py
 
       - name: Validate strict adversarial-learning falsifier effects
         run: PYTHONPATH=tools/assurance python3 tools/assurance/validate_adversarial_learning_strict.py --root .

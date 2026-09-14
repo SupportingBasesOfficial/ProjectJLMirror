@@ -33,6 +33,8 @@ GUARDRAIL_FILES = [
     Path("tools/assurance/test_validate_g1_identity_tenant_shell_authorization.py"),
     Path("tools/assurance/test_validate_g1_identity_tenant_shell_implementation_scope.py"),
     Path("tools/assurance/validate_g1_identity_tenant_shell_implementation_scope.py"),
+    Path("tools/assurance/test_validate_g1_identity_tenant_shell_scope_readiness.py"),
+    Path("tools/assurance/validate_g1_identity_tenant_shell_scope_readiness.py"),
     Path("tools/assurance/validate_adversarial_learning_strict.py"),
     Path("tools/assurance/validate_repository.py"),
     Path("tools/assurance/test_validate_d4d_selection.py"),

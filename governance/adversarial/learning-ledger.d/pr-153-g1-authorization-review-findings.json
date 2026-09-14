@@ -39,6 +39,32 @@
       "guardrails": [{"path":"tools/assurance/test_validate_g1_identity_tenant_shell_authorization.py","probe":"falsify_exact_exclusion_set"}],
       "systemic_guardrail_updated": true,
       "guardrail_generation": 71
+    },
+    {
+      "id": "LEARN-PR153-004",
+      "pr": 153,
+      "source": "external_review",
+      "review_comment_id": 4005397642,
+      "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP",
+      "invariant_ids": ["INV-LEARNING-002"],
+      "root_cause": "The G1 task packet delegated repository path selection to the later implementation PR, so post-merge implementation authority had a bounded capability but no pre-reviewed machine-readable file boundary. That allowed a future implementation to self-classify shared runtime, authority, contract, or governance paths as G1-specific without successor authorization.",
+      "horizontal_audit": ["AI task packet allowed-path fields", "vertical-slice path authority", "shared Wave 1-3 substrate mutation", "future product-slice implementation PRs", "exact versus prefix path policies"],
+      "guardrails": [{"path":"tools/assurance/test_validate_g1_identity_tenant_shell_authorization.py","probe":"falsify_implementation_path_policy"}],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 72
+    },
+    {
+      "id": "LEARN-PR153-005",
+      "pr": 153,
+      "source": "external_review",
+      "review_comment_id": 4005397656,
+      "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP",
+      "invariant_ids": ["INV-LEARNING-002"],
+      "root_cause": "The base learning resolver credited newly registered G1 falsifiers from entrypoint reachability alone. Without registering G1's must_fail helper in the strict falsifier-effects layer, a credited G1 function could be reduced to a no-op body while retaining its name and main-call shape, leaving the ledger apparently guarded.",
+      "horizontal_audit": ["all registered falsification files", "negative-helper registries", "credited main-reachable falsifiers", "no-op and assert-true guardrail regressions", "future product authorization falsifiers"],
+      "guardrails": [{"path":"tools/assurance/test_validate_g1_identity_tenant_shell_authorization.py","probe":"falsify_effective_rule"}],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 73
     }
   ]
 }

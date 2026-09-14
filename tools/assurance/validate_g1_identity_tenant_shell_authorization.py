@@ -21,10 +21,11 @@ IMPLEMENTATION_SCOPE_WORKFLOW = ".github/workflows/g1-identity-tenant-shell-impl
 EXPECTED_HEAD_PREFIX = "impl/g1-identity-tenant-protected-shell"
 EXPECTED_LABEL = "jlmirror-slice:g1-identity-tenant-shell"
 EXPECTED_CLAIM_PATH = "implementation/g1-identity-tenant-shell/IMPLEMENTATION_CLAIM.json"
+BOOTSTRAP_HEAD_REF = "governance/g1-identity-tenant-shell-authorization"
+BOOTSTRAP_RULE = "only_when_base_lacks_scope_validator_and_pr_has_no_g1_label_or_implementation_claim"
 EXPECTED_PREFIXES = {
     "apps/g1-identity-tenant-shell/", "contracts/g1-identity-tenant-shell/",
-    "implementation/g1-identity-tenant-shell/", "sql/g1/", "src/jlmirror_g1/",
-    "tests/g1/", "tools/g1/",
+    "implementation/g1-identity-tenant-shell/", "sql/g1/", "src/jlmirror_g1/", "tests/g1/", "tools/g1/",
 }
 EXPECTED_EXACT = {".github/workflows/g1-identity-tenant-shell-runtime.yml"}
 EXPECTED_SCOPE = {
@@ -118,6 +119,9 @@ def validate_manifest(data: dict) -> None:
         "diff_enforcement_validator": IMPLEMENTATION_SCOPE_VALIDATOR,
         "diff_enforcement_workflow": IMPLEMENTATION_SCOPE_WORKFLOW,
         "implementation_pr_must_validate_diff_against_this_policy": True,
+        "bootstrap_authorization_base_commit": BASE,
+        "bootstrap_authorization_head_ref": BOOTSTRAP_HEAD_REF,
+        "bootstrap_authorization_rule": BOOTSTRAP_RULE,
     }
     for key, expected in exact.items(): req(policy.get(key) == expected, f"implementation path policy drift: {key}")
     req(set(policy.get("allowed_prefixes", [])) == EXPECTED_PREFIXES, "implementation allowed prefix drift")
@@ -163,11 +167,13 @@ def validate_enforcement_artifacts() -> None:
     req("pull_request:" in workflow, "implementation scope workflow must run in secretless pull_request context")
     req("paths:" not in workflow, "implementation scope workflow must not be path-filtered")
     req("github.event.pull_request.base.sha" in workflow and "github.event.pull_request.head.sha" in workflow, "implementation scope workflow missing exact base/head binding")
-    req('git show "${PR_BASE_SHA}:tools/assurance/validate_g1_identity_tenant_shell_implementation_scope.py" > "$trusted_validator"' in workflow, "implementation scope workflow must materialize validator from exact base Git object")
+    req('git show "${PR_BASE_SHA}:${G1_SCOPE_VALIDATOR}" > "$trusted_validator"' in workflow, "implementation scope workflow must materialize validator from exact base Git object")
     req('python3 "$TRUSTED_VALIDATOR"' in workflow, "implementation scope workflow must execute materialized base validator")
     req('--repo-root "$GITHUB_WORKSPACE"' in workflow, "implementation scope workflow must inspect exact candidate checkout as data")
     req("persist-credentials: false" in workflow, "implementation scope workflow must not persist checkout credentials")
     req("PR_LABELS_JSON" in workflow and "PR_HEAD_REPO" in workflow and "PR_BASE_REPO" in workflow, "implementation scope workflow missing independent PR metadata")
+    for marker in (BASE, BOOTSTRAP_HEAD_REF, "bootstrap authorization PR must not carry G1 implementation label", "bootstrap authorization PR must not carry G1 implementation claim", "G1_SCOPE_BOOTSTRAP=true"):
+        req(marker in workflow, f"implementation scope workflow missing closed bootstrap marker: {marker}")
 
 
 def validate_document() -> None:
@@ -195,7 +201,7 @@ def main() -> int:
     try: validate()
     except AssertionError as exc:
         print(f"g1_identity_tenant_shell_authorization=FAIL reason={exc}", file=sys.stderr); return 1
-    print("g1_identity_tenant_shell_authorization=PASS gate=G1 implementation_transition=blocked->exact-g1 implementation_paths=pinned+base-object-diff-gate metadata=label+branch+claim authority_corpus=pinned exclusions=exact production=none merge_authority=not_granted")
+    print("g1_identity_tenant_shell_authorization=PASS gate=G1 implementation_transition=blocked->exact-g1 implementation_paths=pinned+base-object-diff-gate bootstrap=one-time+closed metadata=label+branch+claim authority_corpus=pinned exclusions=exact production=none merge_authority=not_granted")
     return 0
 
 

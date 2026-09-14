@@ -18,6 +18,9 @@ LEARNING_FALSIFIER = "tools/assurance/test_validate_adversarial_learning.py"
 IMPLEMENTATION_SCOPE_VALIDATOR = "tools/assurance/validate_g1_identity_tenant_shell_implementation_scope.py"
 IMPLEMENTATION_SCOPE_FALSIFIER = "tools/assurance/test_validate_g1_identity_tenant_shell_implementation_scope.py"
 IMPLEMENTATION_SCOPE_WORKFLOW = ".github/workflows/g1-identity-tenant-shell-implementation-scope.yml"
+EXPECTED_HEAD_PREFIX = "impl/g1-identity-tenant-protected-shell"
+EXPECTED_LABEL = "jlmirror-slice:g1-identity-tenant-shell"
+EXPECTED_CLAIM_PATH = "implementation/g1-identity-tenant-shell/IMPLEMENTATION_CLAIM.json"
 
 EXPECTED_SCOPE = {
     "oidc_authorization_code_pkce_s256_through_confidential_bff",
@@ -144,9 +147,15 @@ def validate_manifest(data: dict) -> None:
     req(set(path_policy.get("allowed_prefixes", [])) == EXPECTED_IMPLEMENTATION_PREFIXES, "implementation allowed prefix drift")
     req(set(path_policy.get("allowed_exact_paths", [])) == EXPECTED_IMPLEMENTATION_EXACT_PATHS, "implementation exact path drift")
     req(path_policy.get("shared_existing_paths_policy") == "read_only_unless_separate_successor_authorization", "shared existing path policy drift")
-    req(path_policy.get("implementation_pr_head_prefix") == "impl/g1-identity-tenant-protected-shell", "implementation PR head prefix drift")
+    req(path_policy.get("implementation_pr_head_prefix") == EXPECTED_HEAD_PREFIX, "implementation PR head prefix drift")
+    req(path_policy.get("implementation_pr_required_label") == EXPECTED_LABEL, "implementation PR required label drift")
+    req(path_policy.get("implementation_claim_path") == EXPECTED_CLAIM_PATH, "implementation claim path drift")
+    req(path_policy.get("implementation_claim_authorization_id") == "g1.identity-tenant-protected-shell@1", "implementation claim authorization id drift")
+    req(path_policy.get("same_repository_required") is True, "same-repository requirement drift")
     req(path_policy.get("diff_enforcement_rule") == "every_changed_path_must_match_canonical_base_policy", "implementation diff enforcement rule drift")
     req(path_policy.get("diff_policy_source") == "pull_request_exact_base_commit", "implementation diff policy source drift")
+    req(path_policy.get("trusted_evaluator_event") == "pull_request_target", "trusted evaluator event drift")
+    req(path_policy.get("trusted_evaluator_source") == "pull_request_exact_base_commit", "trusted evaluator source drift")
     req(path_policy.get("diff_enforcement_validator") == IMPLEMENTATION_SCOPE_VALIDATOR, "implementation diff validator drift")
     req(path_policy.get("diff_enforcement_workflow") == IMPLEMENTATION_SCOPE_WORKFLOW, "implementation diff workflow drift")
     req(path_policy.get("implementation_pr_must_validate_diff_against_this_policy") is True, "implementation PR path validation requirement drift")
@@ -199,13 +208,20 @@ def validate_enforcement_artifacts() -> None:
         req((ROOT / relative).is_file(), f"implementation scope enforcement artifact missing: {relative}")
     validator = (ROOT / IMPLEMENTATION_SCOPE_VALIDATOR).read_text(encoding="utf-8")
     workflow = (ROOT / IMPLEMENTATION_SCOPE_WORKFLOW).read_text(encoding="utf-8")
-    req("policy_from_base(base_sha)" in validator, "implementation scope validator does not consume canonical base policy")
+    req("policy_from_base(root, base_sha)" in validator, "implementation scope validator does not consume canonical base policy")
     req('"--no-renames"' in validator, "implementation scope validator must expose both sides of rename/copy boundary changes")
     req("unauthorized G1 implementation path" in validator, "implementation scope validator missing path rejection")
-    req("pull_request:" in workflow, "implementation scope workflow must run on pull requests")
+    req("G1 implementation PR missing required canonical label" in validator, "implementation scope validator missing label fail-closed rule")
+    req("G1 implementation PR missing required canonical head prefix" in validator, "implementation scope validator missing head-prefix fail-closed rule")
+    req("G1 implementation PR missing or malformed required claim" in validator, "implementation scope validator missing claim fail-closed rule")
+    req("pull_request_target:" in workflow, "implementation scope workflow must use trusted-base pull_request_target")
+    req("\n  pull_request:\n" not in workflow, "implementation scope workflow must not execute from candidate pull_request definition")
     req("paths:" not in workflow, "implementation scope workflow must not be path-filtered")
     req("github.event.pull_request.base.sha" in workflow and "github.event.pull_request.head.sha" in workflow, "implementation scope workflow missing exact base/head binding")
-    req("validate_g1_identity_tenant_shell_implementation_scope.py" in workflow, "implementation scope workflow missing executable validator")
+    req("path: trusted-base" in workflow and "path: candidate" in workflow, "implementation scope workflow must isolate trusted base from candidate checkout")
+    req('python3 "$GITHUB_WORKSPACE/trusted-base/tools/assurance/validate_g1_identity_tenant_shell_implementation_scope.py"' in workflow, "implementation scope workflow must execute validator from trusted base checkout")
+    req('--repo-root "$GITHUB_WORKSPACE/candidate"' in workflow, "implementation scope workflow must inspect candidate as data")
+    req("PR_LABELS_JSON" in workflow and "PR_HEAD_REPO" in workflow and "PR_BASE_REPO" in workflow, "implementation scope workflow missing independently supplied PR metadata")
 
 
 def validate_document() -> None:
@@ -220,6 +236,9 @@ def validate_document() -> None:
         "READY_FOR_MERGE != AUTHORIZED_TO_MERGE",
         "All existing shared paths",
         "read-only under this authorization",
+        EXPECTED_LABEL,
+        EXPECTED_CLAIM_PATH,
+        "pull_request_target",
     ):
         req(marker in text, f"authorization document missing marker: {marker}")
     for marker in (
@@ -228,6 +247,8 @@ def validate_document() -> None:
         "No new identity or authorization semantics.",
         "Client tenant identifiers are never authority.",
         "SHARED EXISTING PATHS: read-only unless a separate successor authorization",
+        EXPECTED_LABEL,
+        EXPECTED_CLAIM_PATH,
         "STOP IF:",
         "G2+",
     ):
@@ -262,7 +283,7 @@ def main() -> int:
     except AssertionError as exc:
         print(f"g1_identity_tenant_shell_authorization=FAIL reason={exc}", file=sys.stderr)
         return 1
-    print("g1_identity_tenant_shell_authorization=PASS gate=G1 implementation_transition=blocked->exact-g1 implementation_paths=pinned+executable-diff-gate authority_corpus=pinned exclusions=exact production=none merge_authority=not_granted")
+    print("g1_identity_tenant_shell_authorization=PASS gate=G1 implementation_transition=blocked->exact-g1 implementation_paths=pinned+trusted-base-diff-gate metadata=label+branch+claim authority_corpus=pinned exclusions=exact production=none merge_authority=not_granted")
     return 0
 
 

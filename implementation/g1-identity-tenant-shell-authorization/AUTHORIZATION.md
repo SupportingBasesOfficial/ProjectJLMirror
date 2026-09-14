@@ -56,7 +56,9 @@ A PR may exercise this G1 implementation authority only when all of the followin
 - its head contains `implementation/g1-identity-tenant-shell/IMPLEMENTATION_CLAIM.json` with `authorization_id = g1.identity-tenant-protected-shell@1` and `slice_id = g1.identity-tenant-protected-shell@1`;
 - head and base belong to the same canonical repository.
 
-The enforcement workflow is `.github/workflows/g1-identity-tenant-shell-implementation-scope.yml` and uses `pull_request_target`. That is intentional: the workflow definition and `tools/assurance/validate_g1_identity_tenant_shell_implementation_scope.py` are executed from the exact trusted PR base commit, while the candidate HEAD is checked out separately and inspected only as data. A candidate PR therefore cannot replace its own evaluator and then claim a green scope gate.
+The enforcement workflow `.github/workflows/g1-identity-tenant-shell-implementation-scope.yml` runs in the repository-standard secretless `pull_request` context. It checks out the exact candidate HEAD with credentials disabled, verifies the exact base object is present, then materializes the evaluator directly from the exact base Git object with `git show "${PR_BASE_SHA}:tools/assurance/validate_g1_identity_tenant_shell_implementation_scope.py"`. The temporary base-owned evaluator is executed against the candidate checkout; the candidate copy of the evaluator is never executed by the scope-enforcement step.
+
+This design intentionally does **not** use `pull_request_target`: the v1 deterministic-assurance profile forbids privileged PR execution. Trust comes from the exact base Git object, not from a privileged workflow context.
 
 The trusted evaluator loads this policy from the exact base commit, compares the complete `base...head` diff with rename detection disabled, and fails closed on mixed allowed/shared-core changes, missing canonical label, missing canonical branch prefix, missing/malformed implementation claim, cross-repository origin, or any path outside the allowlist.
 

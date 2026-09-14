@@ -12,6 +12,23 @@
     "slice_id": "g1.identity-tenant-protected-shell@1",
     "capability": "identity_tenant_protected_application_shell"
   },
+  "implementation_path_policy": {
+    "mode": "exact_prefix_allowlist",
+    "allowed_prefixes": [
+      "apps/g1-identity-tenant-shell/",
+      "contracts/g1-identity-tenant-shell/",
+      "implementation/g1-identity-tenant-shell/",
+      "sql/g1/",
+      "src/jlmirror_g1/",
+      "tests/g1/",
+      "tools/g1/"
+    ],
+    "allowed_exact_paths": [
+      ".github/workflows/g1-identity-tenant-shell-runtime.yml"
+    ],
+    "shared_existing_paths_policy": "read_only_unless_separate_successor_authorization",
+    "implementation_pr_must_validate_diff_against_this_policy": true
+  },
   "authorized_g0_bootstrap_scope": [
     "g1_local_dependency_stack",
     "g1_database_bootstrap_or_migration_entrypoint",

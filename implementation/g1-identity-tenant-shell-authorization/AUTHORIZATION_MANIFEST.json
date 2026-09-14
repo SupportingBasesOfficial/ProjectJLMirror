@@ -27,6 +27,11 @@
       ".github/workflows/g1-identity-tenant-shell-runtime.yml"
     ],
     "shared_existing_paths_policy": "read_only_unless_separate_successor_authorization",
+    "implementation_pr_head_prefix": "impl/g1-identity-tenant-protected-shell",
+    "diff_enforcement_rule": "every_changed_path_must_match_canonical_base_policy",
+    "diff_policy_source": "pull_request_exact_base_commit",
+    "diff_enforcement_validator": "tools/assurance/validate_g1_identity_tenant_shell_implementation_scope.py",
+    "diff_enforcement_workflow": ".github/workflows/g1-identity-tenant-shell-implementation-scope.yml",
     "implementation_pr_must_validate_diff_against_this_policy": true
   },
   "authorized_g0_bootstrap_scope": [

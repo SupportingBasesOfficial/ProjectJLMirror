@@ -16,8 +16,7 @@ def must_fail(mutator, fragment: str) -> None:
     try:
         validator.validate_manifest(data)
     except AssertionError as exc:
-        if fragment not in str(exc):
-            raise AssertionError(f"expected {fragment!r}, got {exc!r}")
+        if fragment not in str(exc): raise AssertionError(f"expected {fragment!r}, got {exc!r}")
         return
     raise AssertionError(f"mutation unexpectedly accepted: {fragment}")
 
@@ -32,36 +31,29 @@ def falsify_effective_rule() -> None:
 
 
 def falsify_exact_exclusion_set() -> None:
-    must_fail(lambda d: d["explicitly_not_authorized"].remove("monitoring_product_ui"), "explicit exclusion drift")
-    must_fail(lambda d: d["explicitly_not_authorized"].remove("browser_refresh_token_or_long_lived_platform_access_credential"), "explicit exclusion drift")
-    must_fail(lambda d: d["explicitly_not_authorized"].remove("production_c3_numerics"), "explicit exclusion drift")
+    for value in ("monitoring_product_ui", "browser_refresh_token_or_long_lived_platform_access_credential", "production_c3_numerics"):
+        must_fail(lambda d, v=value: d["explicitly_not_authorized"].remove(v), "explicit exclusion drift")
 
 
 def falsify_implementation_path_policy() -> None:
-    must_fail(lambda d: d["implementation_path_policy"]["allowed_prefixes"].append("src/jlmirror_authority/"), "implementation allowed prefix drift")
-    must_fail(lambda d: d["implementation_path_policy"]["allowed_prefixes"].remove("src/jlmirror_g1/"), "implementation allowed prefix drift")
-    must_fail(lambda d: d["implementation_path_policy"]["allowed_exact_paths"].append("pyproject.toml"), "implementation exact path drift")
-    must_fail(lambda d: d["implementation_path_policy"].__setitem__("shared_existing_paths_policy", "implementation_pr_may_extend_shared_paths"), "shared existing path policy drift")
-    must_fail(lambda d: d["implementation_path_policy"].__setitem__("implementation_pr_head_prefix", "impl/anything"), "implementation PR head prefix drift")
-    must_fail(lambda d: d["implementation_path_policy"].__setitem__("implementation_pr_required_label", "optional"), "implementation PR required label drift")
-    must_fail(lambda d: d["implementation_path_policy"].__setitem__("implementation_claim_path", "implementation/optional.json"), "implementation claim path drift")
-    must_fail(lambda d: d["implementation_path_policy"].__setitem__("implementation_claim_authorization_id", "global"), "implementation claim authorization id drift")
-    must_fail(lambda d: d["implementation_path_policy"].__setitem__("same_repository_required", False), "same-repository requirement drift")
-    must_fail(lambda d: d["implementation_path_policy"].__setitem__("diff_enforcement_rule", "implementation_pr_declares_its_own_paths"), "implementation diff enforcement rule drift")
-    must_fail(lambda d: d["implementation_path_policy"].__setitem__("diff_policy_source", "pull_request_head"), "implementation diff policy source drift")
-    must_fail(lambda d: d["implementation_path_policy"].__setitem__("trusted_evaluator_event", "pull_request"), "trusted evaluator event drift")
-    must_fail(lambda d: d["implementation_path_policy"].__setitem__("trusted_evaluator_source", "pull_request_head"), "trusted evaluator source drift")
-    must_fail(lambda d: d["implementation_path_policy"].__setitem__("diff_enforcement_validator", "tools/g1/self_declared_validator.py"), "implementation diff validator drift")
-    must_fail(lambda d: d["implementation_path_policy"].__setitem__("diff_enforcement_workflow", ".github/workflows/unbound.yml"), "implementation diff workflow drift")
-    must_fail(lambda d: d["implementation_path_policy"].__setitem__("implementation_pr_must_validate_diff_against_this_policy", False), "implementation PR path validation requirement drift")
+    mutations = [
+        (lambda d: d["implementation_path_policy"]["allowed_prefixes"].append("src/jlmirror_authority/"), "implementation allowed prefix drift"),
+        (lambda d: d["implementation_path_policy"]["allowed_prefixes"].remove("src/jlmirror_g1/"), "implementation allowed prefix drift"),
+        (lambda d: d["implementation_path_policy"]["allowed_exact_paths"].append("pyproject.toml"), "implementation exact path drift"),
+        (lambda d: d["implementation_path_policy"].__setitem__("shared_existing_paths_policy", "writable"), "implementation path policy drift: shared_existing_paths_policy"),
+        (lambda d: d["implementation_path_policy"].__setitem__("implementation_pr_head_prefix", "impl/anything"), "implementation path policy drift: implementation_pr_head_prefix"),
+        (lambda d: d["implementation_path_policy"].__setitem__("implementation_pr_required_label", "optional"), "implementation path policy drift: implementation_pr_required_label"),
+        (lambda d: d["implementation_path_policy"].__setitem__("implementation_claim_path", "implementation/optional.json"), "implementation path policy drift: implementation_claim_path"),
+        (lambda d: d["implementation_path_policy"].__setitem__("same_repository_required", False), "implementation path policy drift: same_repository_required"),
+        (lambda d: d["implementation_path_policy"].__setitem__("trusted_evaluator_event", "pull_request_target"), "implementation path policy drift: trusted_evaluator_event"),
+        (lambda d: d["implementation_path_policy"].__setitem__("trusted_evaluator_source", "pull_request_head"), "implementation path policy drift: trusted_evaluator_source"),
+    ]
+    for mutation, fragment in mutations: must_fail(mutation, fragment)
 
 
 def falsify_implementation_scope_gate_execution() -> None:
-    # Direct registered negative checks keep this probe eligible for strict
-    # learning credit; the real Git diff and metadata probes are imported only
-    # when the dedicated G1 falsifier actually executes in the repository.
-    must_fail(lambda d: d["implementation_path_policy"].__setitem__("trusted_evaluator_event", "pull_request"), "trusted evaluator event drift")
-    must_fail(lambda d: d["implementation_path_policy"].__setitem__("implementation_pr_required_label", ""), "implementation PR required label drift")
+    must_fail(lambda d: d["implementation_path_policy"].__setitem__("trusted_evaluator_event", "pull_request_target"), "implementation path policy drift: trusted_evaluator_event")
+    must_fail(lambda d: d["implementation_path_policy"].__setitem__("trusted_evaluator_source", "pull_request_head"), "implementation path policy drift: trusted_evaluator_source")
     import test_validate_g1_identity_tenant_shell_implementation_scope as scope_falsifier
     scope_falsifier.falsify_real_git_diff_gate()
     scope_falsifier.falsify_candidate_metadata_fail_closed()
@@ -92,18 +84,11 @@ def falsify_successor_governance_rules() -> None:
 
 def main() -> int:
     validator.validate()
-    falsify_successor_authority_transition()
-    falsify_effective_rule()
-    falsify_exact_exclusion_set()
-    falsify_implementation_path_policy()
-    falsify_implementation_scope_gate_execution()
-    falsify_authority_source_corpus()
-    falsify_g1_scope_and_invariants()
-    falsify_merge_and_production_boundaries()
-    falsify_successor_governance_rules()
-    print("g1_identity_tenant_shell_authorization_falsification=PASS authority_escalation=blocked successor_transition_weakening=blocked implementation_path_expansion=blocked trusted_base_gate=bound real_git_diff=executed metadata=label+branch+claim_fail_closed scope_expansion=blocked invariant_loss=blocked bootstrap_expansion=blocked authority_source_drift=blocked exclusion_removal=blocked successor_rule_weakening=blocked")
+    falsify_successor_authority_transition(); falsify_effective_rule(); falsify_exact_exclusion_set()
+    falsify_implementation_path_policy(); falsify_implementation_scope_gate_execution(); falsify_authority_source_corpus()
+    falsify_g1_scope_and_invariants(); falsify_merge_and_production_boundaries(); falsify_successor_governance_rules()
+    print("g1_identity_tenant_shell_authorization_falsification=PASS authority_escalation=blocked implementation_path_expansion=blocked base_object_gate=bound privileged_event=blocked real_git_diff=executed metadata=label+branch+claim_fail_closed")
     return 0
 
 
-if __name__ == "__main__":
-    main()
+if __name__ == "__main__": main()

@@ -34,8 +34,8 @@
     "same_repository_required": true,
     "diff_enforcement_rule": "every_changed_path_must_match_canonical_base_policy",
     "diff_policy_source": "pull_request_exact_base_commit",
-    "trusted_evaluator_event": "pull_request_target",
-    "trusted_evaluator_source": "pull_request_exact_base_commit",
+    "trusted_evaluator_event": "pull_request",
+    "trusted_evaluator_source": "git_object_from_pull_request_exact_base_commit",
     "diff_enforcement_validator": "tools/assurance/validate_g1_identity_tenant_shell_implementation_scope.py",
     "diff_enforcement_workflow": ".github/workflows/g1-identity-tenant-shell-implementation-scope.yml",
     "implementation_pr_must_validate_diff_against_this_policy": true

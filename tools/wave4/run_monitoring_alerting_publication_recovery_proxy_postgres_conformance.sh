@@ -131,10 +131,54 @@ REVOKE jlmirror_wave4_recovery_authority FROM jlmirror_recovery_inheriting_membe
 DROP ROLE jlmirror_recovery_inheriting_member;
 SQL
 
-# Scenario C: a NOINHERIT member is not an implicit proxy principal. Its public
+# Scenario C: a direct recovery membership with ADMIN OPTION is a delegation root.
+# A second role can SET ROLE to that delegator, proving the root creates a transitive
+# path that can grant the recovery capability onward. The migration must reject the
+# root before either new cross-tenant recovery entry point or outbox storage authority
+# is installed.
+docker exec -i "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" <<'SQL' >/dev/null
+CREATE ROLE jlmirror_recovery_admin_delegate NOLOGIN NOINHERIT;
+CREATE ROLE jlmirror_recovery_admin_delegate_user NOLOGIN NOINHERIT;
+GRANT jlmirror_wave4_recovery_authority TO jlmirror_recovery_admin_delegate WITH ADMIN OPTION;
+GRANT jlmirror_recovery_admin_delegate TO jlmirror_recovery_admin_delegate_user;
+SQL
+
+admin_root="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "SELECT m.admin_option::int FROM pg_auth_members m WHERE m.roleid=(SELECT oid FROM pg_roles WHERE rolname='jlmirror_wave4_recovery_authority') AND m.member=(SELECT oid FROM pg_roles WHERE rolname='jlmirror_recovery_admin_delegate');")"
+test "$admin_root" = "1"
+admin_transitive_set="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "SELECT pg_has_role('jlmirror_recovery_admin_delegate_user','jlmirror_recovery_admin_delegate','SET')::int;")"
+test "$admin_transitive_set" = "1"
+
+log="$(mktemp)"
+trap - ERR
+set +e
+docker exec -i "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" < sql/integration/001_monitoring_alerting_publication.sql >"$log" 2>&1
+status=$?
+set -e
+trap 'status=$?; echo "wave4_monitoring_alerting_publication_recovery_proxy_postgres=FAIL line=$LINENO status=$status" >&2; exit "$status"' ERR
+output="$(cat "$log")"
+rm -f "$log"
+test "$status" -ne 0
+grep -Fq 'monitoring.publication_recovery_authority_delegable_membership_unsafe:' <<<"$output"
+grep -Fq 'member=jlmirror_recovery_admin_delegate' <<<"$output"
+
+executor_exists="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "SELECT count(*) FROM pg_roles WHERE rolname='jlmirror_wave4_monitoring_publication_executor';")"
+if [[ "$executor_exists" = "1" ]]; then
+  executor_privs="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "SELECT has_table_privilege('jlmirror_wave4_monitoring_publication_executor','system.async_outbox_message','SELECT')::int||':'||has_table_privilege('jlmirror_wave4_monitoring_publication_executor','system.async_outbox_message','INSERT')::int;")"
+  test "$executor_privs" = "0:0"
+fi
+
+docker exec -i "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" <<'SQL' >/dev/null
+REVOKE jlmirror_recovery_admin_delegate FROM jlmirror_recovery_admin_delegate_user;
+REVOKE ADMIN OPTION FOR jlmirror_wave4_recovery_authority FROM jlmirror_recovery_admin_delegate;
+REVOKE jlmirror_wave4_recovery_authority FROM jlmirror_recovery_admin_delegate;
+DROP ROLE jlmirror_recovery_admin_delegate_user;
+DROP ROLE jlmirror_recovery_admin_delegate;
+SQL
+
+# Scenario D: a NOINHERIT member is not an implicit proxy principal. Its public
 # wrapper may exist, but pg_has_role(...,'USAGE') is false and the wrapper owner
 # cannot exercise the recovery grant without an explicit SET ROLE. Preserve that
-# distinction instead of rejecting every membership indiscriminately.
+# distinction instead of rejecting every non-delegable membership indiscriminately.
 docker exec -i "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" <<'SQL' >/dev/null
 CREATE ROLE jlmirror_recovery_noninheriting_member NOLOGIN NOINHERIT;
 GRANT jlmirror_wave4_recovery_authority TO jlmirror_recovery_noninheriting_member;
@@ -171,4 +215,4 @@ test "$status" -ne 0
 grep -Eq 'permission denied|not permitted' "$log"
 rm -f "$log"
 
-echo "wave4_monitoring_alerting_publication_recovery_proxy_postgres=PASS inherited_callable_proxy=blocked inherited_trigger_proxy=blocked noninheriting_membership=preserved runtime_resolved_recovery_call=no-pg-depend publication_authority=guarded"
+echo "wave4_monitoring_alerting_publication_recovery_proxy_postgres=PASS inherited_callable_proxy=blocked inherited_trigger_proxy=blocked delegable_admin_membership=blocked transitive_delegation_root=blocked noninheriting_membership=preserved runtime_resolved_recovery_call=no-pg-depend publication_authority=guarded"

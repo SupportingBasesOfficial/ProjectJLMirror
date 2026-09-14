@@ -39,6 +39,44 @@ EXPECTED_BOOTSTRAP = {
     "g1_exact_head_local_ci_parity_commands",
     "g1_container_runtime_proof",
 }
+EXPECTED_CONSUMED = {
+    "accepted_wave1_identity_bff_current_authorization_substrate",
+    "d3_identity_security_separately_accepted",
+    "canonical_api_bff_security_contracts",
+    "canonical_tenant_current_authority_rules",
+    "ai_e2e_delivery_constitution",
+    "product_execution_roadmap",
+    "vertical_slice_delivery_model",
+}
+EXPECTED_AUTHORITY_PATHS = {
+    "implementation/wave-1/AUTHORITY_BOUNDARY.md",
+    "docs/16-implementation-readiness/20-d3-identity-security-acceptance-propagation.md",
+    "docs/09-api-contracts/authentication-authorization-and-tenant-context.md",
+    "docs/09-api-contracts/surface-routing-and-resource-identity.md",
+    "docs/07-system-design/request-auth-and-authorization-lifecycle.md",
+    "docs/00-foundation/ai-e2e-delivery/AI-E2E-DELIVERY-CONSTITUTION.md",
+    "docs/00-foundation/ai-e2e-delivery/PRODUCT-EXECUTION-ROADMAP.md",
+    "docs/00-foundation/ai-e2e-delivery/VERTICAL-SLICE-DELIVERY-MODEL.md",
+    "docs/00-foundation/ai-e2e-delivery/DAY-1-IMPLEMENTATION-BOOTSTRAP.md",
+}
+EXPECTED_EXCLUSIONS = {
+    "g2_monitoring_source_onboarding",
+    "monitoring_product_ui",
+    "resource_metric_problem_health_product_surfaces",
+    "alert_creation_or_alert_policy_evaluation",
+    "ack_notification_escalation",
+    "itsm_product_vertical",
+    "automation_product_vertical",
+    "aiops_product_vertical",
+    "finops_product_vertical",
+    "commercial_product_vertical",
+    "production_deployment",
+    "production_c3_numerics",
+    "provider_native_authorization_truth",
+    "browser_refresh_token_or_long_lived_platform_access_credential",
+    "client_supplied_tenant_as_authorization_proof",
+    "speculative_generic_frontend_information_architecture",
+}
 ALLOWED_PATHS = {
     "implementation/g1-identity-tenant-shell-authorization/AUTHORIZATION.md",
     "implementation/g1-identity-tenant-shell-authorization/AUTHORIZATION_MANIFEST.json",
@@ -67,32 +105,47 @@ def validate_manifest(data: dict) -> None:
     req(data.get("authorization_id") == "g1.identity-tenant-protected-shell@1", "authorization id drift")
     req(data.get("canonical_base_main_commit") == BASE, "canonical base drift")
     req(data.get("authorization_state") == "proposed_exact_scope_authorization", "authorization state drift")
+    req(data.get("effective_rule") == "becomes_canonical_only_after_exact_head_review_and_separately_authorized_merge", "effective rule drift")
     req(data.get("canonical_effect_after_merge") == "authorized_to_implement_exact_g1_identity_tenant_protected_shell_only", "canonical effect drift")
     req(data.get("authorized_program_gate") == "G1", "program gate drift")
     req(data.get("authorized_slice") == {"slice_id":"g1.identity-tenant-protected-shell@1","capability":"identity_tenant_protected_application_shell"}, "authorized slice drift")
     req(set(data.get("authorized_capability_scope", [])) == EXPECTED_SCOPE, "capability scope drift")
     req(set(data.get("required_invariants", [])) == EXPECTED_INVARIANTS, "required invariant drift")
     req(set(data.get("authorized_g0_bootstrap_scope", [])) == EXPECTED_BOOTSTRAP, "G0 bootstrap scope drift")
+    req(set(data.get("consumed_existing_authority", [])) == EXPECTED_CONSUMED, "consumed authority drift")
+    req(set(data.get("authority_source_paths", [])) == EXPECTED_AUTHORITY_PATHS, "authority source corpus drift")
+    req(set(data.get("explicitly_not_authorized", [])) == EXPECTED_EXCLUSIONS, "explicit exclusion drift")
     req(data.get("frontend_authority") == "g1_protected_shell_only", "frontend authority escalation")
     req(data.get("production_authority") == "none", "production authority escalation")
     req(data.get("c3_production_state") == "open", "C3 production state escalation")
+    req(data.get("historical_authority_rule") == "earlier_not_granted_snapshots_remain_immutable_source_time_truth_and_are_not_rewritten_by_this_successor_g1_authorization", "historical authority rule drift")
+    req(data.get("implementation_boundary_rule") == "canonical_g1_product_code_may_begin_only_after_this_exact_scope_authorization_becomes_canonical", "implementation boundary drift")
     req(data.get("merge_authorization") == "not_granted", "merge authority escalation")
-    blocked = set(data.get("explicitly_not_authorized", []))
-    for marker in (
-        "g2_monitoring_source_onboarding",
-        "monitoring_product_ui",
-        "alert_creation_or_alert_policy_evaluation",
-        "production_deployment",
-        "provider_native_authorization_truth",
-        "client_supplied_tenant_as_authorization_proof",
-    ):
-        req(marker in blocked, f"missing explicit exclusion: {marker}")
 
 
 def validate_predecessor_truth() -> None:
+    for relative in EXPECTED_AUTHORITY_PATHS:
+        req((ROOT / relative).is_file(), f"authority source missing: {relative}")
+
+    wave1 = (ROOT / "implementation/wave-1/AUTHORITY_BOUNDARY.md").read_text(encoding="utf-8")
+    req("`impl.identity-bff@1`" in wave1, "Wave 1 identity/BFF substrate missing")
+    req("SESSION VALID != CURRENT AUTHORITY" in wave1, "Wave 1 current-authority law missing")
+
     d3 = (ROOT / "docs/16-implementation-readiness/20-d3-identity-security-acceptance-propagation.md").read_text(encoding="utf-8")
-    req("separately_accepted" in d3, "D3 acceptance missing")
+    req("gate_state: per_track_conformed -> separately_accepted" in d3, "D3 separate acceptance transition missing")
     req("canonical_product_implementation_authority = not_granted" in d3, "historical D3 Product not-granted snapshot missing")
+
+    auth = (ROOT / "docs/09-api-contracts/authentication-authorization-and-tenant-context.md").read_text(encoding="utf-8")
+    req("A valid credential does not imply tenant access." in auth, "credential/tenant non-equivalence missing")
+    req("Browser JavaScript SHALL NOT intentionally receive or persist long-lived platform access credentials or refresh credentials." in auth, "browser credential boundary missing")
+    req("current membership / machine tenant scope" in auth, "current membership authority sequence missing")
+
+    routing = (ROOT / "docs/09-api-contracts/surface-routing-and-resource-identity.md").read_text(encoding="utf-8")
+    req("evaluate current membership or machine tenant scope" in routing, "surface current-authorization order missing")
+
+    lifecycle = (ROOT / "docs/07-system-design/request-auth-and-authorization-lifecycle.md").read_text(encoding="utf-8")
+    req("current authorization" in lifecycle, "request authorization lifecycle currentness missing")
+
     roadmap = (ROOT / "docs/00-foundation/ai-e2e-delivery/PRODUCT-EXECUTION-ROADMAP.md").read_text(encoding="utf-8")
     req("### G1 — Identity + tenant + shell golden path" in roadmap, "G1 roadmap authority missing")
     day1 = (ROOT / "docs/00-foundation/ai-e2e-delivery/DAY-1-IMPLEMENTATION-BOOTSTRAP.md").read_text(encoding="utf-8")
@@ -112,6 +165,8 @@ def validate_document() -> None:
     for marker in (
         "SLICE: g1.identity-tenant-protected-shell@1",
         "BASE SHA: " + BASE,
+        "No new identity or authorization semantics.",
+        "Client tenant identifiers are never authority.",
         "STOP IF:",
         "G2+",
     ):
@@ -141,7 +196,7 @@ def main() -> int:
     except AssertionError as exc:
         print(f"g1_identity_tenant_shell_authorization=FAIL reason={exc}", file=sys.stderr)
         return 1
-    print("g1_identity_tenant_shell_authorization=PASS gate=G1 product_scope=identity-tenant-protected-shell production=none merge_authority=not_granted")
+    print("g1_identity_tenant_shell_authorization=PASS gate=G1 product_scope=identity-tenant-protected-shell authority_corpus=pinned exclusions=exact production=none merge_authority=not_granted")
     return 0
 
 

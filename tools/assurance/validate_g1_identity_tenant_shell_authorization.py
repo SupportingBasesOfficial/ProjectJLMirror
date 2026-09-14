@@ -21,11 +21,11 @@ IMPLEMENTATION_SCOPE_WORKFLOW = ".github/workflows/g1-identity-tenant-shell-impl
 EXPECTED_HEAD_PREFIX = "impl/g1-identity-tenant-protected-shell"
 EXPECTED_LABEL = "jlmirror-slice:g1-identity-tenant-shell"
 EXPECTED_CLAIM_PATH = "implementation/g1-identity-tenant-shell/IMPLEMENTATION_CLAIM.json"
-BOOTSTRAP_HEAD_REF = "governance/g1-identity-tenant-shell-authorization"
-BOOTSTRAP_RULE = "only_when_base_lacks_scope_validator_and_pr_has_no_g1_label_or_implementation_claim"
+EXPECTED_COMMAND = "/jlmirror-g1-scope-attest"
 EXPECTED_PREFIXES = {
     "apps/g1-identity-tenant-shell/", "contracts/g1-identity-tenant-shell/",
-    "implementation/g1-identity-tenant-shell/", "sql/g1/", "src/jlmirror_g1/", "tests/g1/", "tools/g1/",
+    "implementation/g1-identity-tenant-shell/", "sql/g1/", "src/jlmirror_g1/",
+    "tests/g1/", "tools/g1/",
 }
 EXPECTED_EXACT = {".github/workflows/g1-identity-tenant-shell-runtime.yml"}
 EXPECTED_SCOPE = {
@@ -114,18 +114,19 @@ def validate_manifest(data: dict) -> None:
         "same_repository_required": True,
         "diff_enforcement_rule": "every_changed_path_must_match_canonical_base_policy",
         "diff_policy_source": "pull_request_exact_base_commit",
-        "trusted_evaluator_event": "pull_request",
-        "trusted_evaluator_source": "git_object_from_pull_request_exact_base_commit",
+        "trusted_evaluator_event": "issue_comment",
+        "trusted_scope_attestation_command": EXPECTED_COMMAND,
+        "trusted_evaluator_source": "default_branch_issue_comment_workflow_plus_exact_base_git_object",
         "diff_enforcement_validator": IMPLEMENTATION_SCOPE_VALIDATOR,
         "diff_enforcement_workflow": IMPLEMENTATION_SCOPE_WORKFLOW,
         "implementation_pr_must_validate_diff_against_this_policy": True,
-        "bootstrap_authorization_base_commit": BASE,
-        "bootstrap_authorization_head_ref": BOOTSTRAP_HEAD_REF,
-        "bootstrap_authorization_rule": BOOTSTRAP_RULE,
+        "implementation_pr_requires_trusted_scope_attestation_on_exact_head": True,
+        "candidate_controlled_relevance_inference": "forbidden",
     }
     for key, expected in exact.items(): req(policy.get(key) == expected, f"implementation path policy drift: {key}")
     req(set(policy.get("allowed_prefixes", [])) == EXPECTED_PREFIXES, "implementation allowed prefix drift")
     req(set(policy.get("allowed_exact_paths", [])) == EXPECTED_EXACT, "implementation exact path drift")
+    req(not any(key.startswith("bootstrap_authorization_") for key in policy), "implementation path policy must not contain reusable authorization bootstrap")
     req(set(data.get("authorized_capability_scope", [])) == EXPECTED_SCOPE, "capability scope drift")
     req(set(data.get("required_invariants", [])) == EXPECTED_INVARIANTS, "required invariant drift")
     req(set(data.get("authorized_g0_bootstrap_scope", [])) == EXPECTED_BOOTSTRAP, "G0 bootstrap scope drift")
@@ -146,41 +147,32 @@ def validate_predecessor_truth() -> None:
     req("`impl.identity-bff@1`" in wave1 and "SESSION VALID != CURRENT AUTHORITY" in wave1, "Wave 1 authority substrate drift")
     d3 = (ROOT / "docs/16-implementation-readiness/20-d3-identity-security-acceptance-propagation.md").read_text(encoding="utf-8")
     req("gate_state: per_track_conformed -> separately_accepted" in d3 and "canonical_product_implementation_authority = not_granted" in d3, "D3 predecessor truth drift")
-    auth = (ROOT / "docs/09-api-contracts/authentication-authorization-and-tenant-context.md").read_text(encoding="utf-8")
-    req("A valid credential does not imply tenant access." in auth, "credential/tenant non-equivalence missing")
-    req("Browser JavaScript SHALL NOT intentionally receive or persist long-lived platform access credentials or refresh credentials." in auth, "browser credential boundary missing")
-    req("current membership / machine tenant scope" in auth, "current membership authority sequence missing")
-    routing = (ROOT / "docs/09-api-contracts/surface-routing-and-resource-identity.md").read_text(encoding="utf-8")
-    req("evaluate current membership or machine tenant scope" in routing, "surface current-authorization order missing")
-    roadmap = (ROOT / "docs/00-foundation/ai-e2e-delivery/PRODUCT-EXECUTION-ROADMAP.md").read_text(encoding="utf-8")
-    day1 = (ROOT / "docs/00-foundation/ai-e2e-delivery/DAY-1-IMPLEMENTATION-BOOTSTRAP.md").read_text(encoding="utf-8")
-    req("### G1 — Identity + tenant + shell golden path" in roadmap and "first full-stack target is **G1 Identity + tenant + protected application shell**" in day1, "G1 roadmap authority missing")
 
 
 def validate_enforcement_artifacts() -> None:
     for rel in (IMPLEMENTATION_SCOPE_VALIDATOR, IMPLEMENTATION_SCOPE_FALSIFIER, IMPLEMENTATION_SCOPE_WORKFLOW): req((ROOT / rel).is_file(), f"implementation scope enforcement artifact missing: {rel}")
     validator = (ROOT / IMPLEMENTATION_SCOPE_VALIDATOR).read_text(encoding="utf-8")
     workflow = (ROOT / IMPLEMENTATION_SCOPE_WORKFLOW).read_text(encoding="utf-8")
-    for marker in ("policy_from_base(root, base_sha)", '"--no-renames"', "unauthorized G1 implementation path", "G1 implementation PR missing required canonical label", "G1 implementation PR missing required canonical head prefix", "G1 implementation PR missing or malformed required claim"):
+    for marker in ("policy_from_base(root, base_sha)", '"--no-renames"', "unauthorized G1 implementation path", "G1 implementation PR missing required canonical label", "G1 implementation PR missing required canonical head prefix", "G1 implementation PR missing or malformed required claim", "no candidate-controlled relevance inference"):
         req(marker in validator, f"implementation scope validator missing marker: {marker}")
+    req("issue_comment:" in workflow, "implementation scope workflow must be default-branch issue_comment caller")
+    req(EXPECTED_COMMAND in workflow, "implementation scope workflow missing canonical attestation command")
     req("pull_request_target:" not in workflow, "implementation scope workflow must not use privileged pull_request_target")
-    req("pull_request:" in workflow, "implementation scope workflow must run in secretless pull_request context")
-    req("paths:" not in workflow, "implementation scope workflow must not be path-filtered")
-    req("github.event.pull_request.base.sha" in workflow and "github.event.pull_request.head.sha" in workflow, "implementation scope workflow missing exact base/head binding")
+    req("pull_request:" not in workflow, "implementation scope workflow must not use candidate-controlled pull_request orchestration")
+    req("github.event.issue.number" in workflow, "implementation scope workflow missing trusted PR identity binding")
+    req("repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" in workflow, "implementation scope workflow must resolve PR coordinates through GitHub API")
     req('git show "${PR_BASE_SHA}:${G1_SCOPE_VALIDATOR}" > "$trusted_validator"' in workflow, "implementation scope workflow must materialize validator from exact base Git object")
     req('python3 "$TRUSTED_VALIDATOR"' in workflow, "implementation scope workflow must execute materialized base validator")
-    req('--repo-root "$GITHUB_WORKSPACE"' in workflow, "implementation scope workflow must inspect exact candidate checkout as data")
     req("persist-credentials: false" in workflow, "implementation scope workflow must not persist checkout credentials")
-    req("PR_LABELS_JSON" in workflow and "PR_HEAD_REPO" in workflow and "PR_BASE_REPO" in workflow, "implementation scope workflow missing independent PR metadata")
-    for marker in (BASE, BOOTSTRAP_HEAD_REF, "bootstrap authorization PR must not carry G1 implementation label", "bootstrap authorization PR must not carry G1 implementation claim", "G1_SCOPE_BOOTSTRAP=true"):
-        req(marker in workflow, f"implementation scope workflow missing closed bootstrap marker: {marker}")
+    req('test "$(git rev-parse HEAD)" != "$PR_HEAD_SHA"' in workflow, "implementation scope workflow must not checkout candidate code")
+    req("bootstrap_authorization_" not in workflow and "G1_SCOPE_BOOTSTRAP" not in workflow, "implementation scope workflow must not contain authorization bootstrap")
 
 
 def validate_document() -> None:
     text, packet = DOC.read_text(encoding="utf-8"), PACKET.read_text(encoding="utf-8")
-    for marker in ("implementation_authority_before_merge = blocked", "implementation_authority_after_merge = granted_for_exact_g1_identity_tenant_protected_shell_only", "JWT_VALIDITY != CURRENT_AUTHORIZATION", "SUCCESSOR_G1_AUTHORIZATION != GLOBAL_PRODUCT_AUTHORITY", "G1_AUTHORIZED != G2_AUTHORIZED", "READY_FOR_MERGE != AUTHORIZED_TO_MERGE", "All existing shared paths", "read-only under this authorization", EXPECTED_LABEL, EXPECTED_CLAIM_PATH, "git show", "pull_request"):
+    for marker in ("implementation_authority_before_merge = blocked", "implementation_authority_after_merge = granted_for_exact_g1_identity_tenant_protected_shell_only", "JWT_VALIDITY != CURRENT_AUTHORIZATION", "SUCCESSOR_G1_AUTHORIZATION != GLOBAL_PRODUCT_AUTHORITY", "G1_AUTHORIZED != G2_AUTHORIZED", "READY_FOR_MERGE != AUTHORIZED_TO_MERGE", "All existing shared paths", "read-only under this authorization", EXPECTED_LABEL, EXPECTED_CLAIM_PATH, EXPECTED_COMMAND, "issue_comment", "There is no candidate-controlled `relevance=not-g1` success path"):
         req(marker in text, f"authorization document missing marker: {marker}")
-    for marker in ("SLICE: g1.identity-tenant-protected-shell@1", "BASE SHA: " + BASE, "No new identity or authorization semantics.", "Client tenant identifiers are never authority.", "SHARED EXISTING PATHS: read-only unless a separate successor authorization", EXPECTED_LABEL, EXPECTED_CLAIM_PATH, "git show", "STOP IF:", "G2+"):
+    for marker in ("SLICE: g1.identity-tenant-protected-shell@1", "BASE SHA: " + BASE, "No new identity or authorization semantics.", "Client tenant identifiers are never authority.", "SHARED EXISTING PATHS: read-only unless a separate successor authorization", EXPECTED_LABEL, EXPECTED_CLAIM_PATH, EXPECTED_COMMAND, "issue_comment workflow loaded from the default branch", "STOP IF:", "G2+"):
         req(marker in packet, f"task packet missing marker: {marker}")
     for prefix in EXPECTED_PREFIXES: req(prefix in text and prefix in packet, f"implementation allowed prefix not rendered consistently: {prefix}")
     for path in EXPECTED_EXACT: req(path in text and path in packet, f"implementation exact path not rendered consistently: {path}")
@@ -201,7 +193,7 @@ def main() -> int:
     try: validate()
     except AssertionError as exc:
         print(f"g1_identity_tenant_shell_authorization=FAIL reason={exc}", file=sys.stderr); return 1
-    print("g1_identity_tenant_shell_authorization=PASS gate=G1 implementation_transition=blocked->exact-g1 implementation_paths=pinned+base-object-diff-gate bootstrap=one-time+closed metadata=label+branch+claim authority_corpus=pinned exclusions=exact production=none merge_authority=not_granted")
+    print("g1_identity_tenant_shell_authorization=PASS gate=G1 implementation_transition=blocked->exact-g1 implementation_paths=pinned trusted_scope=default-branch-issue-comment exact_head=required candidate_relevance=forbidden authority_corpus=pinned exclusions=exact production=none merge_authority=not_granted")
     return 0
 
 

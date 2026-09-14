@@ -77,6 +77,7 @@ ALLOWED_PATHS = {
     "tools/assurance/test_validate_g1_identity_tenant_shell_authorization.py",
     IMPLEMENTATION_SCOPE_VALIDATOR, IMPLEMENTATION_SCOPE_FALSIFIER, IMPLEMENTATION_SCOPE_WORKFLOW,
     LEARNING_RESOLVER, LEARNING_STRICT, LEARNING_FALSIFIER,
+    "tools/assurance/validate_repository.py",
     ".github/workflows/g1-identity-tenant-shell-authorization.yml", LEARNING,
 }
 

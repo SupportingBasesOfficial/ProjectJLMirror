@@ -22,6 +22,7 @@ EXPECTED_HEAD_PREFIX = "impl/g1-identity-tenant-protected-shell"
 EXPECTED_LABEL = "jlmirror-slice:g1-identity-tenant-shell"
 EXPECTED_CLAIM_PATH = "implementation/g1-identity-tenant-shell/IMPLEMENTATION_CLAIM.json"
 EXPECTED_COMMAND = "/jlmirror-g1-scope-attest"
+EXPECTED_STATUS_CONTEXT = "JLMIRROR / g1-identity-tenant-shell-implementation-scope"
 EXPECTED_PREFIXES = {
     "apps/g1-identity-tenant-shell/", "contracts/g1-identity-tenant-shell/",
     "implementation/g1-identity-tenant-shell/", "sql/g1/", "src/jlmirror_g1/",
@@ -112,11 +113,16 @@ def validate_manifest(data: dict) -> None:
         "implementation_claim_path": EXPECTED_CLAIM_PATH,
         "implementation_claim_authorization_id": "g1.identity-tenant-protected-shell@1",
         "same_repository_required": True,
+        "implementation_pr_base_ref_policy": "must_equal_repository_default_branch",
         "diff_enforcement_rule": "every_changed_path_must_match_canonical_base_policy",
         "diff_policy_source": "pull_request_exact_base_commit",
         "trusted_evaluator_event": "issue_comment",
         "trusted_scope_attestation_command": EXPECTED_COMMAND,
-        "trusted_evaluator_source": "default_branch_issue_comment_workflow_plus_exact_base_git_object",
+        "trusted_evaluator_source": "default_branch_issue_comment_workflow_plus_exact_default_branch_base_git_object",
+        "trusted_scope_status_context": EXPECTED_STATUS_CONTEXT,
+        "trusted_scope_status_publication": "pending_then_final_on_resolved_pr_head",
+        "trusted_scope_freshness_rule": "final_success_requires_unchanged_head_base_sha_and_default_branch_ref",
+        "trusted_scope_concurrency_rule": "per_pr_cancel_in_progress",
         "diff_enforcement_validator": IMPLEMENTATION_SCOPE_VALIDATOR,
         "diff_enforcement_workflow": IMPLEMENTATION_SCOPE_WORKFLOW,
         "implementation_pr_must_validate_diff_against_this_policy": True,
@@ -159,20 +165,33 @@ def validate_enforcement_artifacts() -> None:
     req(EXPECTED_COMMAND in workflow, "implementation scope workflow missing canonical attestation command")
     req("pull_request_target:" not in workflow, "implementation scope workflow must not use privileged pull_request_target")
     req("pull_request:" not in workflow, "implementation scope workflow must not use candidate-controlled pull_request orchestration")
+    req("permissions: {}" in workflow, "implementation scope workflow must default to zero workflow-level permissions")
+    for job in ("  resolve:", "  publish-pending:", "  analyze:", "  publish-final:"):
+        req(job in workflow, f"implementation scope workflow missing isolated job: {job.strip()}")
+    req("group: g1-identity-tenant-shell-scope-${{ github.event.issue.number }}" in workflow and "cancel-in-progress: true" in workflow, "implementation scope workflow missing per-PR freshness concurrency")
     req("github.event.issue.number" in workflow, "implementation scope workflow missing trusted PR identity binding")
     req("repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" in workflow, "implementation scope workflow must resolve PR coordinates through GitHub API")
-    req('git show "${PR_BASE_SHA}:${G1_SCOPE_VALIDATOR}" > "$trusted_validator"' in workflow, "implementation scope workflow must materialize validator from exact base Git object")
+    req('test "$PR_BASE_REF" = "$DEFAULT_BRANCH"' in workflow, "implementation scope workflow must require default-branch base ref")
+    req('test "$PR_BASE_REPO" = "$GITHUB_REPOSITORY"' in workflow, "implementation scope workflow must require canonical base repository")
+    req('git show "${PR_BASE_SHA}:${G1_SCOPE_VALIDATOR}" > "$trusted_validator"' in workflow, "implementation scope workflow must materialize validator from exact default-branch base Git object")
     req('python3 "$TRUSTED_VALIDATOR"' in workflow, "implementation scope workflow must execute materialized base validator")
     req("persist-credentials: false" in workflow, "implementation scope workflow must not persist checkout credentials")
     req('test "$(git rev-parse HEAD)" != "$PR_HEAD_SHA"' in workflow, "implementation scope workflow must not checkout candidate code")
+    req(workflow.count("uses: actions/checkout@") == 1, "implementation scope workflow must checkout code only in isolated read-only analysis")
+    req(workflow.count("statuses: write") == 2, "implementation scope workflow must isolate exactly two status publisher jobs")
+    req(workflow.count('statuses/${PR_HEAD_SHA}') == 2, "implementation scope workflow must publish pending and final status to exact resolved PR head")
+    req(EXPECTED_STATUS_CONTEXT in workflow, "implementation scope workflow missing stable exact-head status context")
+    req("state=pending" in workflow, "implementation scope workflow missing exact-head pending status")
+    for marker in ("CURRENT_HEAD_SHA", "CURRENT_BASE_SHA", "CURRENT_BASE_REF", 'test "$state" = success'):
+        req(marker in workflow, f"implementation scope workflow missing final freshness guard: {marker}")
     req("bootstrap_authorization_" not in workflow and "G1_SCOPE_BOOTSTRAP" not in workflow, "implementation scope workflow must not contain authorization bootstrap")
 
 
 def validate_document() -> None:
     text, packet = DOC.read_text(encoding="utf-8"), PACKET.read_text(encoding="utf-8")
-    for marker in ("implementation_authority_before_merge = blocked", "implementation_authority_after_merge = granted_for_exact_g1_identity_tenant_protected_shell_only", "JWT_VALIDITY != CURRENT_AUTHORIZATION", "SUCCESSOR_G1_AUTHORIZATION != GLOBAL_PRODUCT_AUTHORITY", "G1_AUTHORIZED != G2_AUTHORIZED", "READY_FOR_MERGE != AUTHORIZED_TO_MERGE", "All existing shared paths", "read-only under this authorization", EXPECTED_LABEL, EXPECTED_CLAIM_PATH, EXPECTED_COMMAND, "issue_comment", "There is no candidate-controlled `relevance=not-g1` success path"):
+    for marker in ("implementation_authority_before_merge = blocked", "implementation_authority_after_merge = granted_for_exact_g1_identity_tenant_protected_shell_only", "JWT_VALIDITY != CURRENT_AUTHORIZATION", "SUCCESSOR_G1_AUTHORIZATION != GLOBAL_PRODUCT_AUTHORITY", "G1_AUTHORIZED != G2_AUTHORIZED", "READY_FOR_MERGE != AUTHORIZED_TO_MERGE", "All existing shared paths", "read-only under this authorization", EXPECTED_LABEL, EXPECTED_CLAIM_PATH, EXPECTED_COMMAND, "issue_comment", EXPECTED_STATUS_CONTEXT, "default branch", "There is no candidate-controlled `relevance=not-g1` success path"):
         req(marker in text, f"authorization document missing marker: {marker}")
-    for marker in ("SLICE: g1.identity-tenant-protected-shell@1", "BASE SHA: " + BASE, "No new identity or authorization semantics.", "Client tenant identifiers are never authority.", "SHARED EXISTING PATHS: read-only unless a separate successor authorization", EXPECTED_LABEL, EXPECTED_CLAIM_PATH, EXPECTED_COMMAND, "issue_comment workflow loaded from the default branch", "STOP IF:", "G2+"):
+    for marker in ("SLICE: g1.identity-tenant-protected-shell@1", "BASE SHA: " + BASE, "No new identity or authorization semantics.", "Client tenant identifiers are never authority.", "SHARED EXISTING PATHS: read-only unless a separate successor authorization", EXPECTED_LABEL, EXPECTED_CLAIM_PATH, EXPECTED_COMMAND, "issue_comment workflow loaded from the default branch", EXPECTED_STATUS_CONTEXT, "STOP IF:", "G2+"):
         req(marker in packet, f"task packet missing marker: {marker}")
     for prefix in EXPECTED_PREFIXES: req(prefix in text and prefix in packet, f"implementation allowed prefix not rendered consistently: {prefix}")
     for path in EXPECTED_EXACT: req(path in text and path in packet, f"implementation exact path not rendered consistently: {path}")
@@ -193,7 +212,7 @@ def main() -> int:
     try: validate()
     except AssertionError as exc:
         print(f"g1_identity_tenant_shell_authorization=FAIL reason={exc}", file=sys.stderr); return 1
-    print("g1_identity_tenant_shell_authorization=PASS gate=G1 implementation_transition=blocked->exact-g1 implementation_paths=pinned trusted_scope=default-branch-issue-comment exact_head=required candidate_relevance=forbidden authority_corpus=pinned exclusions=exact production=none merge_authority=not_granted")
+    print("g1_identity_tenant_shell_authorization=PASS gate=G1 implementation_transition=blocked->exact-g1 implementation_paths=pinned trusted_scope=default-branch-issue-comment exact_head_status=pending+fresh-final default_base=required candidate_relevance=forbidden authority_corpus=pinned exclusions=exact production=none merge_authority=not_granted")
     return 0
 
 

@@ -11,6 +11,7 @@ BASE = "7c20c9301711e9a4bf355517d7aa23faad7a05b7"
 MANIFEST = ROOT / "implementation/g1-identity-tenant-shell-authorization/AUTHORIZATION_MANIFEST.json"
 DOC = ROOT / "implementation/g1-identity-tenant-shell-authorization/AUTHORIZATION.md"
 PACKET = ROOT / "implementation/g1-identity-tenant-shell-authorization/TASK_PACKET.md"
+LEARNING = "governance/adversarial/learning-ledger.d/pr-153-g1-authorization-review-findings.json"
 
 EXPECTED_SCOPE = {
     "oidc_authorization_code_pkce_s256_through_confidential_bff",
@@ -84,6 +85,7 @@ ALLOWED_PATHS = {
     "tools/assurance/validate_g1_identity_tenant_shell_authorization.py",
     "tools/assurance/test_validate_g1_identity_tenant_shell_authorization.py",
     ".github/workflows/g1-identity-tenant-shell-authorization.yml",
+    LEARNING,
 }
 
 
@@ -107,6 +109,8 @@ def validate_manifest(data: dict) -> None:
     req(data.get("authorization_state") == "proposed_exact_scope_authorization", "authorization state drift")
     req(data.get("effective_rule") == "becomes_canonical_only_after_exact_head_review_and_separately_authorized_merge", "effective rule drift")
     req(data.get("canonical_effect_after_merge") == "authorized_to_implement_exact_g1_identity_tenant_protected_shell_only", "canonical effect drift")
+    req(data.get("implementation_authority_before_merge") == "blocked", "pre-merge implementation authority drift")
+    req(data.get("implementation_authority_after_merge") == "granted_for_exact_g1_identity_tenant_protected_shell_only", "post-merge implementation authority drift")
     req(data.get("authorized_program_gate") == "G1", "program gate drift")
     req(data.get("authorized_slice") == {"slice_id":"g1.identity-tenant-protected-shell@1","capability":"identity_tenant_protected_application_shell"}, "authorized slice drift")
     req(set(data.get("authorized_capability_scope", [])) == EXPECTED_SCOPE, "capability scope drift")
@@ -156,6 +160,8 @@ def validate_document() -> None:
     text = DOC.read_text(encoding="utf-8")
     packet = PACKET.read_text(encoding="utf-8")
     for marker in (
+        "implementation_authority_before_merge = blocked",
+        "implementation_authority_after_merge = granted_for_exact_g1_identity_tenant_protected_shell_only",
         "JWT_VALIDITY != CURRENT_AUTHORIZATION",
         "SUCCESSOR_G1_AUTHORIZATION != GLOBAL_PRODUCT_AUTHORITY",
         "G1_AUTHORIZED != G2_AUTHORIZED",
@@ -196,7 +202,7 @@ def main() -> int:
     except AssertionError as exc:
         print(f"g1_identity_tenant_shell_authorization=FAIL reason={exc}", file=sys.stderr)
         return 1
-    print("g1_identity_tenant_shell_authorization=PASS gate=G1 product_scope=identity-tenant-protected-shell authority_corpus=pinned exclusions=exact production=none merge_authority=not_granted")
+    print("g1_identity_tenant_shell_authorization=PASS gate=G1 implementation_transition=blocked->exact-g1 authority_corpus=pinned exclusions=exact production=none merge_authority=not_granted")
     return 0
 
 

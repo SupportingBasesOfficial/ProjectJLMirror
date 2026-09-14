@@ -217,11 +217,16 @@ def _status_publisher_policy_errors(text: str) -> list[str]:
 def _g1_status_publisher_policy_errors(text: str) -> list[str]:
     errors = _publisher_common_errors(
         text,
-        group_marker="group: g1-identity-tenant-shell-scope-${{ github.event.issue.number }}",
+        group_marker="group: g1-identity-tenant-shell-scope-${{ github.event_name }}-${{ github.event.issue.number || github.ref_name }}",
         head_output="needs.resolve.outputs.head_sha",
     )
     required_markers = (
         "github.event.comment.body == '/jlmirror-g1-scope-attest'",
+        "push:",
+        "github.event_name == 'push' && github.ref_name == github.event.repository.default_branch",
+        "commits/${PR_HEAD_SHA}/statuses?per_page=100",
+        "mode=invalidate-base-advance",
+        "stale after default-branch advance; rerun required",
         'test "$PR_BASE_REF" = "$DEFAULT_BRANCH"',
         'test "$PR_BASE_REPO" = "$GITHUB_REPOSITORY"',
         'test "$PR_HEAD_REPO" = "$GITHUB_REPOSITORY"',

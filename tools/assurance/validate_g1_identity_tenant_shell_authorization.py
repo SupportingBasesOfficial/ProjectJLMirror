@@ -13,6 +13,7 @@ DOC = ROOT / "implementation/g1-identity-tenant-shell-authorization/AUTHORIZATIO
 PACKET = ROOT / "implementation/g1-identity-tenant-shell-authorization/TASK_PACKET.md"
 LEARNING = "governance/adversarial/learning-ledger.d/pr-153-g1-authorization-review-findings.json"
 LEARNING_RESOLVER = "tools/assurance/validate_adversarial_learning.py"
+LEARNING_STRICT = "tools/assurance/validate_adversarial_learning_strict.py"
 LEARNING_FALSIFIER = "tools/assurance/test_validate_adversarial_learning.py"
 
 EXPECTED_SCOPE = {
@@ -62,6 +63,18 @@ EXPECTED_AUTHORITY_PATHS = {
     "docs/00-foundation/ai-e2e-delivery/VERTICAL-SLICE-DELIVERY-MODEL.md",
     "docs/00-foundation/ai-e2e-delivery/DAY-1-IMPLEMENTATION-BOOTSTRAP.md",
 }
+EXPECTED_IMPLEMENTATION_PREFIXES = {
+    "apps/g1-identity-tenant-shell/",
+    "contracts/g1-identity-tenant-shell/",
+    "implementation/g1-identity-tenant-shell/",
+    "sql/g1/",
+    "src/jlmirror_g1/",
+    "tests/g1/",
+    "tools/g1/",
+}
+EXPECTED_IMPLEMENTATION_EXACT_PATHS = {
+    ".github/workflows/g1-identity-tenant-shell-runtime.yml",
+}
 EXPECTED_EXCLUSIONS = {
     "g2_monitoring_source_onboarding",
     "monitoring_product_ui",
@@ -87,6 +100,7 @@ ALLOWED_PATHS = {
     "tools/assurance/validate_g1_identity_tenant_shell_authorization.py",
     "tools/assurance/test_validate_g1_identity_tenant_shell_authorization.py",
     LEARNING_RESOLVER,
+    LEARNING_STRICT,
     LEARNING_FALSIFIER,
     ".github/workflows/g1-identity-tenant-shell-authorization.yml",
     LEARNING,
@@ -117,6 +131,15 @@ def validate_manifest(data: dict) -> None:
     req(data.get("implementation_authority_after_merge") == "granted_for_exact_g1_identity_tenant_protected_shell_only", "post-merge implementation authority drift")
     req(data.get("authorized_program_gate") == "G1", "program gate drift")
     req(data.get("authorized_slice") == {"slice_id":"g1.identity-tenant-protected-shell@1","capability":"identity_tenant_protected_application_shell"}, "authorized slice drift")
+
+    path_policy = data.get("implementation_path_policy")
+    req(isinstance(path_policy, dict), "implementation path policy missing")
+    req(path_policy.get("mode") == "exact_prefix_allowlist", "implementation path policy mode drift")
+    req(set(path_policy.get("allowed_prefixes", [])) == EXPECTED_IMPLEMENTATION_PREFIXES, "implementation allowed prefix drift")
+    req(set(path_policy.get("allowed_exact_paths", [])) == EXPECTED_IMPLEMENTATION_EXACT_PATHS, "implementation exact path drift")
+    req(path_policy.get("shared_existing_paths_policy") == "read_only_unless_separate_successor_authorization", "shared existing path policy drift")
+    req(path_policy.get("implementation_pr_must_validate_diff_against_this_policy") is True, "implementation PR path validation requirement drift")
+
     req(set(data.get("authorized_capability_scope", [])) == EXPECTED_SCOPE, "capability scope drift")
     req(set(data.get("required_invariants", [])) == EXPECTED_INVARIANTS, "required invariant drift")
     req(set(data.get("authorized_g0_bootstrap_scope", [])) == EXPECTED_BOOTSTRAP, "G0 bootstrap scope drift")
@@ -170,6 +193,8 @@ def validate_document() -> None:
         "SUCCESSOR_G1_AUTHORIZATION != GLOBAL_PRODUCT_AUTHORITY",
         "G1_AUTHORIZED != G2_AUTHORIZED",
         "READY_FOR_MERGE != AUTHORIZED_TO_MERGE",
+        "All existing shared paths",
+        "read-only under this authorization",
     ):
         req(marker in text, f"authorization document missing marker: {marker}")
     for marker in (
@@ -177,10 +202,15 @@ def validate_document() -> None:
         "BASE SHA: " + BASE,
         "No new identity or authorization semantics.",
         "Client tenant identifiers are never authority.",
+        "SHARED EXISTING PATHS: read-only unless a separate successor authorization",
         "STOP IF:",
         "G2+",
     ):
         req(marker in packet, f"task packet missing marker: {marker}")
+    for prefix in EXPECTED_IMPLEMENTATION_PREFIXES:
+        req(prefix in text and prefix in packet, f"implementation allowed prefix not rendered consistently: {prefix}")
+    for exact_path in EXPECTED_IMPLEMENTATION_EXACT_PATHS:
+        req(exact_path in text and exact_path in packet, f"implementation exact path not rendered consistently: {exact_path}")
 
 
 def validate_changed_paths() -> None:
@@ -206,7 +236,7 @@ def main() -> int:
     except AssertionError as exc:
         print(f"g1_identity_tenant_shell_authorization=FAIL reason={exc}", file=sys.stderr)
         return 1
-    print("g1_identity_tenant_shell_authorization=PASS gate=G1 implementation_transition=blocked->exact-g1 authority_corpus=pinned exclusions=exact production=none merge_authority=not_granted")
+    print("g1_identity_tenant_shell_authorization=PASS gate=G1 implementation_transition=blocked->exact-g1 implementation_paths=pinned authority_corpus=pinned exclusions=exact production=none merge_authority=not_granted")
     return 0
 
 

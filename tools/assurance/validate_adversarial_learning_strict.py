@@ -183,6 +183,47 @@ def _validate_g1_readiness_delegation(root: Path) -> list[str]:
     return [f'credited G1 authorization readiness probe does not directly delegate to executed readiness probe: {G1_AUTHORIZATION_READINESS_PROBE}->{G1_READINESS_PROBE}']
 
 
+def _validate_g1_authorization_readiness_outer_effect(root: Path) -> list[str]:
+    path = root / G1_AUTHORIZATION_TEST
+    module_name = '_jlmirror_g1_authorization_readiness_outer_effect'
+    delegated_name = 'test_validate_g1_identity_tenant_shell_scope_readiness'
+    saved_delegated = sys.modules.pop(delegated_name, None)
+    sentinel = type(sys)(delegated_name)
+    marker = '__strict_readiness_delegate_called__'
+    def delegated_probe() -> None:
+        raise RuntimeError(marker)
+    sentinel.falsify_live_readiness_guards = delegated_probe
+    sys.modules[delegated_name] = sentinel
+    errors: list[str] = []
+    try:
+        spec = importlib.util.spec_from_file_location(module_name, path)
+        if spec is None or spec.loader is None:
+            return ['cannot load credited G1 authorization readiness outer probe module']
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[module_name] = module
+        spec.loader.exec_module(module)
+        probe = getattr(module, G1_AUTHORIZATION_READINESS_PROBE, None)
+        if not callable(probe):
+            return [f'credited G1 authorization readiness outer probe missing: {G1_AUTHORIZATION_READINESS_PROBE}']
+        try:
+            probe()
+        except RuntimeError as exc:
+            if str(exc) != marker:
+                errors.append(f'credited G1 authorization readiness outer probe raised unexpected runtime error: {exc}')
+        except Exception as exc:
+            errors.append(f'credited G1 authorization readiness outer probe failed before executing delegated sentinel: {type(exc).__name__}: {exc}')
+        else:
+            errors.append('credited G1 authorization readiness outer probe did not execute delegated readiness sentinel')
+    except Exception as exc:
+        errors.append(f'credited G1 authorization readiness outer probe could not execute: {type(exc).__name__}: {exc}')
+    finally:
+        sys.modules.pop(module_name, None)
+        sys.modules.pop(delegated_name, None)
+        if saved_delegated is not None:
+            sys.modules[delegated_name] = saved_delegated
+    return errors
+
+
 def _validate_g1_readiness_probe_effects(root: Path) -> list[str]:
     path = root / G1_READINESS_TEST; module_name = '_jlmirror_g1_readiness_probe_effects'; errors: list[str] = []
     try:
@@ -214,7 +255,7 @@ def _validate_falsifier_effects(root: Path) -> list[str]:
         functions = {n.name: n for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
         if rel == D4C_SELECTION_TEST: errors.extend(_validate_delivery_negative_helper(root, path))
         if rel == G1_AUTHORIZATION_TEST:
-            errors.extend(_validate_g1_negative_helper(root, path)); errors.extend(_validate_g1_scope_probe_effects(root)); errors.extend(_validate_g1_readiness_delegation(root)); errors.extend(_validate_g1_readiness_probe_effects(root))
+            errors.extend(_validate_g1_negative_helper(root, path)); errors.extend(_validate_g1_scope_probe_effects(root)); errors.extend(_validate_g1_readiness_delegation(root)); errors.extend(_validate_g1_authorization_readiness_outer_effect(root)); errors.extend(_validate_g1_readiness_probe_effects(root))
         credited, credited_errors = base._reachable_main_falsifiers(path); errors.extend(credited_errors)
         for name in sorted(credited):
             function = functions.get(name)
@@ -272,6 +313,6 @@ def main() -> None:
     parser=argparse.ArgumentParser(); parser.add_argument('--root',type=Path,default=Path.cwd()); parser.add_argument('--review-comments',type=Path); args=parser.parse_args(); errors=validate(args.root,args.review_comments)
     for error in errors: print('ADVERSARIAL_LEARNING_STRICT_ERROR:',error)
     if errors: raise SystemExit(1)
-    print('adversarial_learning_strict=PASS head_status=isolated+fresh reviewer_identity=external-only material_formats=badge+priority-prefix d4c_current_projection=terminal-governed-surfaces falsifier_effects=executed-negative-helper g1_negative_helper=executed-reject+accept g1_scope_probes=permissive-evaluator-rejected g1_readiness_delegation=bound g1_readiness_probe=permissive-verifier-rejected')
+    print('adversarial_learning_strict=PASS head_status=isolated+fresh reviewer_identity=external-only material_formats=badge+priority-prefix d4c_current_projection=terminal-governed-surfaces falsifier_effects=executed-negative-helper g1_negative_helper=executed-reject+accept g1_scope_probes=permissive-evaluator-rejected g1_readiness_delegation=bound+runtime-sentinel g1_readiness_probe=permissive-verifier-rejected')
 
 if __name__=='__main__': main()

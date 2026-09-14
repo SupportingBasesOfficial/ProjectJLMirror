@@ -27,6 +27,7 @@ def falsify_ai_e2e_delivery_heading_binding():
   path=root/rel; text=path.read_text(encoding='utf-8'); assert old in text; path.write_text(text.replace(old,new,1),encoding='utf-8')
  roadmap=Path('docs/00-foundation/ai-e2e-delivery/PRODUCT-EXECUTION-ROADMAP.md')
  slices=Path('docs/00-foundation/ai-e2e-delivery/VERTICAL-SLICE-DELIVERY-MODEL.md')
+ constitution=Path('docs/00-foundation/ai-e2e-delivery/AI-E2E-DELIVERY-CONSTITUTION.md')
  def remove_g2(root): mutate_doc(root,roadmap,'### G2 — Monitoring source onboarding golden path','### renamed monitoring source section')
  _delivery_must_fail(remove_g2,'roadmap_heading_missing:G2 — Monitoring source onboarding golden path')
  def demote_g2(root): mutate_doc(root,roadmap,'### G2 — Monitoring source onboarding golden path','#### G2 — Monitoring source onboarding golden path')
@@ -93,6 +94,14 @@ def falsify_ai_e2e_delivery_heading_binding():
  _delivery_must_fail(corrupt_optimization_target,'manifest_optimization_target')
  def rewrite_optimization_sentence(root): mutate_doc(root,roadmap,'Optimize for **lead time from accepted requirement to verified executable user outcome**, not lines of code, commit count or number of parallel agents.','Optimize for raw commit throughput.')
  _delivery_must_fail(rewrite_optimization_sentence,'roadmap_optimization_target_missing')
+ def hide_optimization_sentence(root): mutate_doc(root,roadmap,'Optimize for **lead time from accepted requirement to verified executable user outcome**, not lines of code, commit count or number of parallel agents.','<!--\nOptimize for **lead time from accepted requirement to verified executable user outcome**, not lines of code, commit count or number of parallel agents.\n-->\nOptimize for raw commit throughput.')
+ _delivery_must_fail(hide_optimization_sentence,'roadmap_optimization_target_missing')
+ def hide_merge_authority(root): mutate_doc(root,constitution,'READY_FOR_MERGE is not merge authorization','```text\nREADY_FOR_MERGE is not merge authorization\n```\nREADY_FOR_MERGE authorizes merge automatically')
+ _delivery_must_fail(hide_merge_authority,'constitution_missing:READY_FOR_MERGE is not merge authorization')
+ def boolean_schema(root):
+  import json
+  path=root/'implementation/e2e-delivery/EXECUTION_MANIFEST.json'; data=json.loads(path.read_text(encoding='utf-8')); data['schema_version']=True; path.write_text(json.dumps(data),encoding='utf-8')
+ _delivery_must_fail(boolean_schema,'manifest_schema')
 def main():
  values=baseline(); errors=validator.validate_records(*values)
  if errors: raise AssertionError(f'canonical D4-C selection failed validation: {errors!r}')
@@ -112,6 +121,6 @@ def main():
  must_fail(regress_d4_acceptance,'state D4 gate authority drift')
  falsify_selection_record_product_authority()
  falsify_ai_e2e_delivery_heading_binding()
- print('d4c_selection_falsification=PASS profile_drift=blocked historical_rewrite=blocked evidence_regression=blocked authority_escalation=blocked gate_acceptance_regression=blocked ai_e2e_governance=semantic-negative-mutated+raw-html-complete+quoted-attributes+optimization-bound')
+ print('d4c_selection_falsification=PASS profile_drift=blocked historical_rewrite=blocked evidence_regression=blocked authority_escalation=blocked gate_acceptance_regression=blocked ai_e2e_governance=semantic-negative-mutated+raw-html-complete+quoted-attributes+visible-prose+typed-schema+optimization-bound')
  return 0
 if __name__=='__main__': main()

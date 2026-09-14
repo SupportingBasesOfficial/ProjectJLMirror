@@ -15,6 +15,9 @@ LEARNING = "governance/adversarial/learning-ledger.d/pr-153-g1-authorization-rev
 LEARNING_RESOLVER = "tools/assurance/validate_adversarial_learning.py"
 LEARNING_STRICT = "tools/assurance/validate_adversarial_learning_strict.py"
 LEARNING_FALSIFIER = "tools/assurance/test_validate_adversarial_learning.py"
+IMPLEMENTATION_SCOPE_VALIDATOR = "tools/assurance/validate_g1_identity_tenant_shell_implementation_scope.py"
+IMPLEMENTATION_SCOPE_FALSIFIER = "tools/assurance/test_validate_g1_identity_tenant_shell_implementation_scope.py"
+IMPLEMENTATION_SCOPE_WORKFLOW = ".github/workflows/g1-identity-tenant-shell-implementation-scope.yml"
 
 EXPECTED_SCOPE = {
     "oidc_authorization_code_pkce_s256_through_confidential_bff",
@@ -99,6 +102,9 @@ ALLOWED_PATHS = {
     "implementation/g1-identity-tenant-shell-authorization/TASK_PACKET.md",
     "tools/assurance/validate_g1_identity_tenant_shell_authorization.py",
     "tools/assurance/test_validate_g1_identity_tenant_shell_authorization.py",
+    IMPLEMENTATION_SCOPE_VALIDATOR,
+    IMPLEMENTATION_SCOPE_FALSIFIER,
+    IMPLEMENTATION_SCOPE_WORKFLOW,
     LEARNING_RESOLVER,
     LEARNING_STRICT,
     LEARNING_FALSIFIER,
@@ -138,6 +144,11 @@ def validate_manifest(data: dict) -> None:
     req(set(path_policy.get("allowed_prefixes", [])) == EXPECTED_IMPLEMENTATION_PREFIXES, "implementation allowed prefix drift")
     req(set(path_policy.get("allowed_exact_paths", [])) == EXPECTED_IMPLEMENTATION_EXACT_PATHS, "implementation exact path drift")
     req(path_policy.get("shared_existing_paths_policy") == "read_only_unless_separate_successor_authorization", "shared existing path policy drift")
+    req(path_policy.get("implementation_pr_head_prefix") == "impl/g1-identity-tenant-protected-shell", "implementation PR head prefix drift")
+    req(path_policy.get("diff_enforcement_rule") == "every_changed_path_must_match_canonical_base_policy", "implementation diff enforcement rule drift")
+    req(path_policy.get("diff_policy_source") == "pull_request_exact_base_commit", "implementation diff policy source drift")
+    req(path_policy.get("diff_enforcement_validator") == IMPLEMENTATION_SCOPE_VALIDATOR, "implementation diff validator drift")
+    req(path_policy.get("diff_enforcement_workflow") == IMPLEMENTATION_SCOPE_WORKFLOW, "implementation diff workflow drift")
     req(path_policy.get("implementation_pr_must_validate_diff_against_this_policy") is True, "implementation PR path validation requirement drift")
 
     req(set(data.get("authorized_capability_scope", [])) == EXPECTED_SCOPE, "capability scope drift")
@@ -183,6 +194,20 @@ def validate_predecessor_truth() -> None:
     req("first full-stack target is **G1 Identity + tenant + protected application shell**" in day1, "G1 Day-1 target missing")
 
 
+def validate_enforcement_artifacts() -> None:
+    for relative in (IMPLEMENTATION_SCOPE_VALIDATOR, IMPLEMENTATION_SCOPE_FALSIFIER, IMPLEMENTATION_SCOPE_WORKFLOW):
+        req((ROOT / relative).is_file(), f"implementation scope enforcement artifact missing: {relative}")
+    validator = (ROOT / IMPLEMENTATION_SCOPE_VALIDATOR).read_text(encoding="utf-8")
+    workflow = (ROOT / IMPLEMENTATION_SCOPE_WORKFLOW).read_text(encoding="utf-8")
+    req("policy_from_base(base_sha)" in validator, "implementation scope validator does not consume canonical base policy")
+    req('"--no-renames"' in validator, "implementation scope validator must expose both sides of rename/copy boundary changes")
+    req("unauthorized G1 implementation path" in validator, "implementation scope validator missing path rejection")
+    req("pull_request:" in workflow, "implementation scope workflow must run on pull requests")
+    req("paths:" not in workflow, "implementation scope workflow must not be path-filtered")
+    req("github.event.pull_request.base.sha" in workflow and "github.event.pull_request.head.sha" in workflow, "implementation scope workflow missing exact base/head binding")
+    req("validate_g1_identity_tenant_shell_implementation_scope.py" in workflow, "implementation scope workflow missing executable validator")
+
+
 def validate_document() -> None:
     text = DOC.read_text(encoding="utf-8")
     packet = PACKET.read_text(encoding="utf-8")
@@ -226,6 +251,7 @@ def validate() -> None:
     req(PACKET.is_file(), "missing task packet")
     validate_manifest(load())
     validate_predecessor_truth()
+    validate_enforcement_artifacts()
     validate_document()
     validate_changed_paths()
 
@@ -236,7 +262,7 @@ def main() -> int:
     except AssertionError as exc:
         print(f"g1_identity_tenant_shell_authorization=FAIL reason={exc}", file=sys.stderr)
         return 1
-    print("g1_identity_tenant_shell_authorization=PASS gate=G1 implementation_transition=blocked->exact-g1 implementation_paths=pinned authority_corpus=pinned exclusions=exact production=none merge_authority=not_granted")
+    print("g1_identity_tenant_shell_authorization=PASS gate=G1 implementation_transition=blocked->exact-g1 implementation_paths=pinned+executable-diff-gate authority_corpus=pinned exclusions=exact production=none merge_authority=not_granted")
     return 0
 
 

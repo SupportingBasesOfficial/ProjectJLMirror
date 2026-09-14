@@ -91,6 +91,32 @@
       "guardrails": [{"path":"tools/assurance/test_validate_g1_identity_tenant_shell_authorization.py","probe":"falsify_trusted_scope_readiness_execution"}],
       "systemic_guardrail_updated": true,
       "guardrail_generation": 96
+    },
+    {
+      "id": "LEARN-PR153-029",
+      "pr": 153,
+      "source": "external_review",
+      "review_comment_id": 4010071925,
+      "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP",
+      "invariant_ids": ["INV-LEARNING-002"],
+      "root_cause": "Even unique exception identity was insufficient while the delegation sentinel state spanned module import and credited-probe invocation. Candidate test code could call and catch the injected sentinel during import, retain that exception object, suppress the real delegated call later, and replay the captured exception while the accumulated call counter still appeared valid.",
+      "horizontal_audit": ["module import side effects","sentinel call-state lifetime","exception-object replay","credited probe invocation phase","runtime delegation provenance","import-time versus invocation-time authority"],
+      "guardrails": [{"path":"tools/assurance/test_validate_g1_identity_tenant_shell_authorization.py","probe":"falsify_trusted_scope_readiness_execution"}],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 97
+    },
+    {
+      "id": "LEARN-PR153-030",
+      "pr": 153,
+      "source": "external_review",
+      "review_comment_id": 4010071935,
+      "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP",
+      "invariant_ids": ["INV-LEARNING-002"],
+      "root_cause": "The strict readiness semantic proof still trusted candidate-controlled fragment labels and call counts rather than authenticating the actual readiness arguments. A weakened probe could label arbitrary permissive-verifier calls with the expected fragments while omitting every canonical fixture mutation, so syntactic case names did not prove the intended negative semantics were exercised.",
+      "horizontal_audit": ["candidate-controlled negative labels","readiness fixture mutation semantics","exact verifier arguments","positive and negative call ordering","must_reject boundaries","semantic probe provenance"],
+      "guardrails": [{"path":"tools/assurance/test_validate_g1_identity_tenant_shell_authorization.py","probe":"falsify_trusted_scope_readiness_execution"}],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 98
     }
   ]
 }

@@ -18,6 +18,11 @@ jobs:
       PR_BASE_REPO: ${{ github.event.pull_request.base.repo.full_name }}
       PR_HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
       PR_LABELS_JSON: ${{ toJson(github.event.pull_request.labels.*.name) }}
+      G1_SCOPE_BOOTSTRAP_BASE: 7c20c9301711e9a4bf355517d7aa23faad7a05b7
+      G1_SCOPE_BOOTSTRAP_HEAD_REF: governance/g1-identity-tenant-shell-authorization
+      G1_SCOPE_LABEL: jlmirror-slice:g1-identity-tenant-shell
+      G1_SCOPE_CLAIM: implementation/g1-identity-tenant-shell/IMPLEMENTATION_CLAIM.json
+      G1_SCOPE_VALIDATOR: tools/assurance/validate_g1_identity_tenant_shell_implementation_scope.py
     steps:
       - name: Resolve exact PR coordinates
         shell: bash
@@ -45,16 +50,35 @@ jobs:
           test "$(git rev-parse HEAD)" = "$PR_HEAD_SHA"
           git cat-file -e "${PR_BASE_SHA}^{commit}"
 
-      - name: Materialize trusted validator from exact PR base object
+      - name: Resolve trusted evaluator or one-time authorization bootstrap
         shell: bash
         run: |
           set -euo pipefail
           trusted_validator="$RUNNER_TEMP/g1-implementation-scope-validator.py"
-          git show "${PR_BASE_SHA}:tools/assurance/validate_g1_identity_tenant_shell_implementation_scope.py" > "$trusted_validator"
-          test -s "$trusted_validator"
-          printf 'TRUSTED_VALIDATOR=%s\n' "$trusted_validator" >> "$GITHUB_ENV"
+          if git cat-file -e "${PR_BASE_SHA}:${G1_SCOPE_VALIDATOR}" 2>/dev/null; then
+            git show "${PR_BASE_SHA}:${G1_SCOPE_VALIDATOR}" > "$trusted_validator"
+            test -s "$trusted_validator"
+            printf 'TRUSTED_VALIDATOR=%s\n' "$trusted_validator" >> "$GITHUB_ENV"
+            printf 'G1_SCOPE_BOOTSTRAP=false\n' >> "$GITHUB_ENV"
+          else
+            test "$PR_BASE_SHA" = "$G1_SCOPE_BOOTSTRAP_BASE"
+            test "$PR_HEAD_REF" = "$G1_SCOPE_BOOTSTRAP_HEAD_REF"
+            test "$PR_BASE_REPO" = "$PR_HEAD_REPO"
+            python3 - <<'PY'
+          import json, os, sys
+          labels=json.loads(os.environ['PR_LABELS_JSON'])
+          if os.environ['G1_SCOPE_LABEL'] in labels:
+              sys.exit('bootstrap authorization PR must not carry G1 implementation label')
+          PY
+            if git cat-file -e "${PR_HEAD_SHA}:${G1_SCOPE_CLAIM}" 2>/dev/null; then
+              echo 'bootstrap authorization PR must not carry G1 implementation claim' >&2
+              exit 1
+            fi
+            printf 'G1_SCOPE_BOOTSTRAP=true\n' >> "$GITHUB_ENV"
+          fi
 
       - name: Enforce canonical G1 implementation path policy from trusted base code
+        if: env.G1_SCOPE_BOOTSTRAP != 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -66,3 +90,12 @@ jobs:
             --labels-json "$PR_LABELS_JSON" \
             --head-repo "$PR_HEAD_REPO" \
             --base-repo "$PR_BASE_REPO"
+
+      - name: Attest closed one-time bootstrap
+        if: env.G1_SCOPE_BOOTSTRAP == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$PR_BASE_SHA" = "$G1_SCOPE_BOOTSTRAP_BASE"
+          test "$PR_HEAD_REF" = "$G1_SCOPE_BOOTSTRAP_HEAD_REF"
+          echo 'g1_implementation_scope=PASS relevance=authorization-bootstrap one_time=true implementation_authority=blocked'

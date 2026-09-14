@@ -24,6 +24,7 @@ G1_SCOPE_PROBES = (
     'falsify_candidate_metadata_fail_closed',
     'falsify_all_voluntary_metadata_omission',
 )
+G1_AUTHORIZATION_READINESS_PROBE = 'falsify_trusted_scope_readiness_execution'
 G1_READINESS_PROBE = 'falsify_live_readiness_guards'
 NEGATIVE_HELPERS = {
     Path('tools/assurance/test_validate_d4d_selection.py'): {'must_fail'},
@@ -157,6 +158,31 @@ def _validate_g1_scope_probe_effects(root: Path) -> list[str]:
     return errors
 
 
+def _validate_g1_readiness_delegation(root: Path) -> list[str]:
+    path = root / G1_AUTHORIZATION_TEST
+    try:
+        tree = ast.parse(path.read_text(encoding='utf-8'), filename=str(path))
+    except Exception as exc:
+        return [f'cannot parse credited G1 authorization readiness probe: {type(exc).__name__}: {exc}']
+    function = next((node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == G1_AUTHORIZATION_READINESS_PROBE), None)
+    if function is None:
+        return [f'credited G1 authorization readiness probe missing: {G1_AUTHORIZATION_READINESS_PROBE}']
+    alias: str | None = None
+    for statement in function.body:
+        if isinstance(statement, (ast.Return, ast.Raise)):
+            break
+        if isinstance(statement, ast.Import):
+            for imported in statement.names:
+                if imported.name == 'test_validate_g1_identity_tenant_shell_scope_readiness':
+                    alias = imported.asname or imported.name
+                    break
+        if alias and isinstance(statement, ast.Expr) and isinstance(statement.value, ast.Call):
+            call = statement.value
+            if isinstance(call.func, ast.Attribute) and isinstance(call.func.value, ast.Name) and call.func.value.id == alias and call.func.attr == G1_READINESS_PROBE and not call.args and not call.keywords:
+                return []
+    return [f'credited G1 authorization readiness probe does not directly delegate to executed readiness probe: {G1_AUTHORIZATION_READINESS_PROBE}->{G1_READINESS_PROBE}']
+
+
 def _validate_g1_readiness_probe_effects(root: Path) -> list[str]:
     path = root / G1_READINESS_TEST; module_name = '_jlmirror_g1_readiness_probe_effects'; errors: list[str] = []
     try:
@@ -188,7 +214,7 @@ def _validate_falsifier_effects(root: Path) -> list[str]:
         functions = {n.name: n for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
         if rel == D4C_SELECTION_TEST: errors.extend(_validate_delivery_negative_helper(root, path))
         if rel == G1_AUTHORIZATION_TEST:
-            errors.extend(_validate_g1_negative_helper(root, path)); errors.extend(_validate_g1_scope_probe_effects(root)); errors.extend(_validate_g1_readiness_probe_effects(root))
+            errors.extend(_validate_g1_negative_helper(root, path)); errors.extend(_validate_g1_scope_probe_effects(root)); errors.extend(_validate_g1_readiness_delegation(root)); errors.extend(_validate_g1_readiness_probe_effects(root))
         credited, credited_errors = base._reachable_main_falsifiers(path); errors.extend(credited_errors)
         for name in sorted(credited):
             function = functions.get(name)
@@ -246,6 +272,6 @@ def main() -> None:
     parser=argparse.ArgumentParser(); parser.add_argument('--root',type=Path,default=Path.cwd()); parser.add_argument('--review-comments',type=Path); args=parser.parse_args(); errors=validate(args.root,args.review_comments)
     for error in errors: print('ADVERSARIAL_LEARNING_STRICT_ERROR:',error)
     if errors: raise SystemExit(1)
-    print('adversarial_learning_strict=PASS head_status=isolated+fresh reviewer_identity=external-only material_formats=badge+priority-prefix d4c_current_projection=terminal-governed-surfaces falsifier_effects=executed-negative-helper g1_negative_helper=executed-reject+accept g1_scope_probes=permissive-evaluator-rejected g1_readiness_probe=permissive-verifier-rejected')
+    print('adversarial_learning_strict=PASS head_status=isolated+fresh reviewer_identity=external-only material_formats=badge+priority-prefix d4c_current_projection=terminal-governed-surfaces falsifier_effects=executed-negative-helper g1_negative_helper=executed-reject+accept g1_scope_probes=permissive-evaluator-rejected g1_readiness_delegation=bound g1_readiness_probe=permissive-verifier-rejected')
 
 if __name__=='__main__': main()

@@ -193,7 +193,9 @@ def main():
  must_fail(grant_transport,'transport authority escalation')
  def regress_d4_acceptance(selection,ledger,state,evaluation): state['gate_state']='scoped'
  must_fail(regress_d4_acceptance,'state D4 gate authority drift')
- falsify_selection_record_product_authority(); falsify_ai_e2e_delivery_heading_binding(); falsify_project_memory_review_guardrails()
+ falsify_selection_record_product_authority()
+ falsify_ai_e2e_delivery_heading_binding()
+ falsify_project_memory_review_guardrails()
  print('d4c_selection_falsification=PASS profile_drift=blocked historical_rewrite=blocked evidence_regression=blocked authority_escalation=blocked gate_acceptance_regression=blocked ai_e2e_governance=preserved project_memory_review_guardrails=prior-history+exact-step-chain+complete-decision-rows')
  return 0
 if __name__=='__main__': main()

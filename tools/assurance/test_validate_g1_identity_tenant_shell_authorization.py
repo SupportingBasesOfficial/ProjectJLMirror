@@ -58,16 +58,32 @@ def falsify_implementation_path_policy() -> None:
 
 
 def falsify_trusted_scope_publication_contract() -> None:
-    must_fail(lambda d: d["implementation_path_policy"].__setitem__("implementation_pr_base_ref_policy", "any_writable_branch"), "implementation path policy drift: implementation_pr_base_ref_policy")
-    must_fail(lambda d: d["implementation_path_policy"].__setitem__("trusted_evaluator_source", "default_branch_caller_plus_arbitrary_base_object"), "implementation path policy drift: trusted_evaluator_source")
-    must_fail(lambda d: d["implementation_path_policy"].__setitem__("trusted_scope_status_context", "optional"), "implementation path policy drift: trusted_scope_status_context")
-    must_fail(lambda d: d["implementation_path_policy"].__setitem__("trusted_scope_status_publication", "workflow_run_only"), "implementation path policy drift: trusted_scope_status_publication")
-    must_fail(lambda d: d["implementation_path_policy"].__setitem__("trusted_scope_freshness_rule", "none"), "implementation path policy drift: trusted_scope_freshness_rule")
-    must_fail(lambda d: d["implementation_path_policy"].__setitem__("trusted_scope_base_advance_invalidation", "none"), "implementation path policy drift: trusted_scope_base_advance_invalidation")
-    must_fail(lambda d: d["implementation_path_policy"].__setitem__("trusted_scope_concurrency_rule", "parallel_unordered"), "implementation path policy drift: trusted_scope_concurrency_rule")
-    workflow = (ROOT / validator.IMPLEMENTATION_SCOPE_WORKFLOW).read_text(encoding="utf-8")
-    for marker in ("push:", "github.event_name == 'push' && github.ref_name == github.event.repository.default_branch", "commits/${PR_HEAD_SHA}/statuses?per_page=100", "mode=invalidate-base-advance", "stale after default-branch advance; rerun required"):
-        assert marker in workflow, f"trusted scope base-advance invalidation marker missing: {marker}"
+    mutations = [
+        (lambda d: d["implementation_path_policy"].__setitem__("implementation_pr_base_ref_policy", "any_writable_branch"), "implementation path policy drift: implementation_pr_base_ref_policy"),
+        (lambda d: d["implementation_path_policy"].__setitem__("trusted_evaluator_source", "default_branch_caller_plus_arbitrary_base_object"), "implementation path policy drift: trusted_evaluator_source"),
+        (lambda d: d["implementation_path_policy"].__setitem__("trusted_scope_status_context", "optional"), "implementation path policy drift: trusted_scope_status_context"),
+        (lambda d: d["implementation_path_policy"].__setitem__("trusted_scope_status_publication", "green_status_is_authority"), "implementation path policy drift: trusted_scope_status_publication"),
+        (lambda d: d["implementation_path_policy"].__setitem__("trusted_scope_status_evidence_role", "standalone_merge_authority"), "implementation path policy drift: trusted_scope_status_evidence_role"),
+        (lambda d: d["implementation_path_policy"].__setitem__("trusted_scope_freshness_rule", "push_event_invalidation"), "implementation path policy drift: trusted_scope_freshness_rule"),
+        (lambda d: d["implementation_path_policy"].__setitem__("trusted_scope_concurrency_rule", "parallel_unordered"), "implementation path policy drift: trusted_scope_concurrency_rule"),
+    ]
+    for mutation, fragment in mutations:
+        must_fail(mutation, fragment)
+
+
+def falsify_trusted_scope_readiness_execution() -> None:
+    mutations = [
+        (lambda d: d["implementation_path_policy"].__setitem__("trusted_scope_readiness_command", "/optional"), "implementation path policy drift: trusted_scope_readiness_command"),
+        (lambda d: d["implementation_path_policy"].__setitem__("trusted_scope_readiness_status_context", "optional"), "implementation path policy drift: trusted_scope_readiness_status_context"),
+        (lambda d: d["implementation_path_policy"].__setitem__("trusted_status_creator_login", "anyone"), "implementation path policy drift: trusted_status_creator_login"),
+        (lambda d: d["implementation_path_policy"].__setitem__("trusted_status_creator_id", 0), "implementation path policy drift: trusted_status_creator_id"),
+        (lambda d: d["implementation_path_policy"].__setitem__("trusted_scope_merge_preflight_rule", "trust_green_status"), "implementation path policy drift: trusted_scope_merge_preflight_rule"),
+        (lambda d: d["implementation_path_policy"].__setitem__("implementation_pr_requires_trusted_scope_readiness_on_exact_head_base", False), "implementation path policy drift: implementation_pr_requires_trusted_scope_readiness_on_exact_head_base"),
+    ]
+    for mutation, fragment in mutations:
+        must_fail(mutation, fragment)
+    import test_validate_g1_identity_tenant_shell_scope_readiness as readiness_falsifier
+    readiness_falsifier.falsify_live_readiness_guards()
 
 
 def falsify_implementation_scope_gate_execution() -> None:
@@ -110,12 +126,13 @@ def main() -> int:
     falsify_exact_exclusion_set()
     falsify_implementation_path_policy()
     falsify_trusted_scope_publication_contract()
+    falsify_trusted_scope_readiness_execution()
     falsify_implementation_scope_gate_execution()
     falsify_authority_source_corpus()
     falsify_g1_scope_and_invariants()
     falsify_merge_and_production_boundaries()
     falsify_successor_governance_rules()
-    print("g1_identity_tenant_shell_authorization_falsification=PASS authority_escalation=blocked implementation_path_expansion=blocked trusted_default_branch_caller=bound default_base=required exact_head_status=pending+fresh-final+base-advance-invalidated candidate_workflow_authority=blocked candidate_relevance_bypass=blocked real_git_diff=executed metadata=label+branch+claim_fail_closed")
+    print("g1_identity_tenant_shell_authorization_falsification=PASS authority_escalation=blocked implementation_path_expansion=blocked trusted_default_branch_caller=bound status=evidence-only readiness=source-authenticated-live-preflight spoofed_status=blocked skip_ci_stale_base=blocked mutable_label=blocked candidate_workflow_authority=blocked candidate_relevance_bypass=blocked real_git_diff=executed")
     return 0
 
 

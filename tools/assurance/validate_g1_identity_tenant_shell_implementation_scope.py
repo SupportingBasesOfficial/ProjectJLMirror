@@ -12,6 +12,16 @@ ROOT = Path(__file__).resolve().parents[2]
 AUTHORIZATION_MANIFEST = "implementation/g1-identity-tenant-shell-authorization/AUTHORIZATION_MANIFEST.json"
 EXPECTED_HEAD_PREFIX = "impl/g1-identity-tenant-protected-shell"
 EXPECTED_RULE = "every_changed_path_must_match_canonical_base_policy"
+EXPECTED_PREFIXES = (
+    "apps/g1-identity-tenant-shell/",
+    "contracts/g1-identity-tenant-shell/",
+    "implementation/g1-identity-tenant-shell/",
+    "sql/g1/",
+    "src/jlmirror_g1/",
+    "tests/g1/",
+    "tools/g1/",
+)
+EXPECTED_EXACT = (".github/workflows/g1-identity-tenant-shell-runtime.yml",)
 
 
 def git(*args: str) -> str:
@@ -50,10 +60,20 @@ def changed_paths(base_sha: str, head_sha: str) -> list[str]:
     return [line for line in out.splitlines() if line]
 
 
+def is_potentially_g1(head_ref: str, paths: list[str]) -> bool:
+    if head_ref.startswith(EXPECTED_HEAD_PREFIX):
+        return True
+    return any(path in EXPECTED_EXACT or path.startswith(EXPECTED_PREFIXES) for path in paths)
+
+
 def is_relevant(head_ref: str, paths: list[str], policy: dict[str, Any]) -> bool:
     configured = policy.get("implementation_pr_head_prefix")
     if configured != EXPECTED_HEAD_PREFIX:
         raise AssertionError("implementation PR head prefix drift")
+    if tuple(policy.get("allowed_prefixes", [])) != EXPECTED_PREFIXES:
+        raise AssertionError("implementation allowed prefixes drift")
+    if tuple(policy.get("allowed_exact_paths", [])) != EXPECTED_EXACT:
+        raise AssertionError("implementation exact paths drift")
     if head_ref.startswith(EXPECTED_HEAD_PREFIX):
         return True
     return any(matches_policy(path, policy) for path in paths)
@@ -75,8 +95,10 @@ def validate(base_sha: str, head_sha: str, head_ref: str) -> tuple[bool, list[st
     try:
         git("cat-file", "-e", f"{base_sha}^{{commit}}")
         git("cat-file", "-e", f"{head_sha}^{{commit}}")
-        policy = policy_from_base(base_sha)
         paths = changed_paths(base_sha, head_sha)
+        if not is_potentially_g1(head_ref, paths):
+            return False, []
+        policy = policy_from_base(base_sha)
         relevant = is_relevant(head_ref, paths, policy)
         if not relevant:
             return False, []

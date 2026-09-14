@@ -118,10 +118,19 @@ def _validate_delivery_negative_helper(root: Path, path: Path) -> list[str]:
 
 
 def _validate_g1_negative_helper(root: Path, path: Path) -> list[str]:
-    """Execute G1 must_fail against a known rejection and a known acceptance path."""
+    """Execute the real G1 must_fail helper against controlled rejection and acceptance paths."""
     module_name = '_jlmirror_g1_negative_helper_probe'
     dependency_name = 'validate_g1_identity_tenant_shell_authorization'
     saved_dependency = sys.modules.pop(dependency_name, None)
+    fake_dependency = type(sys)(dependency_name)
+    fake_dependency.load = lambda: {'effective_rule': 'expected'}
+
+    def fake_validate_manifest(data: dict[str, Any]) -> None:
+        if data.get('effective_rule') != 'expected':
+            raise AssertionError('effective rule drift')
+
+    fake_dependency.validate_manifest = fake_validate_manifest
+    sys.modules[dependency_name] = fake_dependency
     errors: list[str] = []
     try:
         spec = importlib.util.spec_from_file_location(module_name, path)

@@ -36,8 +36,10 @@ def falsify_exact_exclusion_set() -> None:
 
 
 def falsify_implementation_path_policy() -> None:
+    # Keep one direct registered negative helper call so strict learning can
+    # mechanically prove this credited falsifier has a guaranteed effect.
+    must_fail(lambda d: d["implementation_path_policy"]["allowed_prefixes"].append("src/jlmirror_authority/"), "implementation allowed prefix drift")
     mutations = [
-        (lambda d: d["implementation_path_policy"]["allowed_prefixes"].append("src/jlmirror_authority/"), "implementation allowed prefix drift"),
         (lambda d: d["implementation_path_policy"]["allowed_prefixes"].remove("src/jlmirror_g1/"), "implementation allowed prefix drift"),
         (lambda d: d["implementation_path_policy"]["allowed_exact_paths"].append("pyproject.toml"), "implementation exact path drift"),
         (lambda d: d["implementation_path_policy"].__setitem__("shared_existing_paths_policy", "writable"), "implementation path policy drift: shared_existing_paths_policy"),

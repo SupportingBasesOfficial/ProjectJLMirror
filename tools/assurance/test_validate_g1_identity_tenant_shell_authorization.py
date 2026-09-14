@@ -27,6 +27,8 @@ def main() -> int:
     must_fail(lambda d: d.__setitem__("merge_authorization", "granted"), "merge authority escalation")
     must_fail(lambda d: d.__setitem__("production_authority", "granted"), "production authority escalation")
     must_fail(lambda d: d.__setitem__("frontend_authority", "generic_product_ui"), "frontend authority escalation")
+    must_fail(lambda d: d.__setitem__("implementation_authority_before_merge", "granted"), "pre-merge implementation authority drift")
+    must_fail(lambda d: d.__setitem__("implementation_authority_after_merge", "granted_global_product"), "post-merge implementation authority drift")
     must_fail(lambda d: d["authorized_capability_scope"].append("g2_monitoring_source_onboarding"), "capability scope drift")
     must_fail(lambda d: d["required_invariants"].remove("client_tenant_id_not_tenant_authority"), "required invariant drift")
     must_fail(lambda d: d["authorized_g0_bootstrap_scope"].append("generic_shared_platform_framework"), "G0 bootstrap scope drift")
@@ -37,7 +39,7 @@ def main() -> int:
     must_fail(lambda d: d.__setitem__("historical_authority_rule", "rewrite_predecessors"), "historical authority rule drift")
     must_fail(lambda d: d.__setitem__("implementation_boundary_rule", "implementation_may_begin_before_merge"), "implementation boundary drift")
     must_fail(lambda d: d.__setitem__("schema_version", True), "schema_version drift")
-    print("g1_identity_tenant_shell_authorization_falsification=PASS authority_escalation=blocked scope_expansion=blocked invariant_loss=blocked bootstrap_expansion=blocked authority_source_drift=blocked exclusion_removal=blocked successor_rule_weakening=blocked")
+    print("g1_identity_tenant_shell_authorization_falsification=PASS authority_escalation=blocked successor_transition_weakening=blocked scope_expansion=blocked invariant_loss=blocked bootstrap_expansion=blocked authority_source_drift=blocked exclusion_removal=blocked successor_rule_weakening=blocked")
     return 0
 
 

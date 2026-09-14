@@ -15,6 +15,14 @@ D4C_CURRENT_WORKFLOWS = [
     Path(".github/workflows/d4-eventing-async-entry-gate.yml"),
     Path(".github/workflows/d4-d-profile-selection.yml"),
 ]
+DELIVERY_GUARDRAIL_FILES = [
+    Path("tools/assurance/validate_ai_e2e_delivery.py"),
+    Path("docs/00-foundation/ai-e2e-delivery/AI-E2E-DELIVERY-CONSTITUTION.md"),
+    Path("docs/00-foundation/ai-e2e-delivery/VERTICAL-SLICE-DELIVERY-MODEL.md"),
+    Path("docs/00-foundation/ai-e2e-delivery/PRODUCT-EXECUTION-ROADMAP.md"),
+    Path("docs/00-foundation/ai-e2e-delivery/DAY-1-IMPLEMENTATION-BOOTSTRAP.md"),
+    Path("implementation/e2e-delivery/EXECUTION_MANIFEST.json"),
+]
 GUARDRAIL_FILES = [
     v.WORKFLOW,
     s.HEAD_STATUS_WORKFLOW,
@@ -30,6 +38,7 @@ GUARDRAIL_FILES = [
     Path("tools/wave4/run_zabbix_initial_validation_postgres_conformance.sh"),
     Path("tools/wave4/validate_zabbix_initial_validation_worker.py"),
     Path("implementation/wave-4-host-inventory-authorization/AUTHORIZATION_MANIFEST.json"),
+    *DELIVERY_GUARDRAIL_FILES,
 ]
 
 
@@ -68,9 +77,10 @@ def expect_failure(mutator, *, comments=None) -> None:
         mutator(root)
         review_comments = None
         if comments is not None:
-            review_comments = root / "comments.json"
+            review_comments = root / "review-comments.json"
             review_comments.write_text(json.dumps(comments), encoding="utf-8")
-        assert s.validate(root, review_comments), "mutation unexpectedly accepted"
+        errors = s.validate(root, review_comments)
+        assert errors, "adversarial learning mutation unexpectedly passed"
 
 
 def expect_repository_failure(mutator) -> None:
@@ -78,81 +88,183 @@ def expect_repository_failure(mutator) -> None:
         root = Path(td)
         clone(root)
         mutator(root)
-        assert vr.validate_repository(root), "repository-policy mutation unexpectedly accepted"
-
-
-def falsify_stale_d4c_current_workflow_projection() -> None:
-    def mutate(root: Path) -> None:
-        rel = D4C_CURRENT_WORKFLOWS[0]
-        mutate_text(
-            root,
-            rel,
-            "assert d4c['candidate']==expected_c and d4c['candidate_status']=='selected_c2_delivery_recovery_profile' and d4c['state']=='selected_candidate'",
-            "assert d4c['candidate'] is None and d4c['candidate_status']=='not_selected' and d4c['state']=='candidate_selection_open'",
-        )
-    expect_failure(mutate)
-
-
-def falsify_top_level_review_surface_coverage() -> None:
-    expect_failure(lambda r: mutate_text(r, v.WORKFLOW, "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments?per_page=100", "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/labels?per_page=100"))
+        errors = vr.validate_repository(root)
+        assert errors, "repository-policy mutation unexpectedly passed"
 
 
 def falsify_incidental_guardrail_substring() -> None:
-    expect_failure(lambda r: mutate_json(r, v.LEDGER, lambda d: d["entries"][0]["guardrails"][0].__setitem__("probe", "TraceContext")))
+    expect_failure(
+        lambda r: mutate_text(
+            r,
+            Path("tools/assurance/test_validate_d4c_selection.py"),
+            "def falsify_selection_record_product_authority():",
+            "def renamed_selection_record_product_authority():",
+        )
+    )
 
 
 def falsify_unreachable_guardrail_call() -> None:
-    def mutate(root: Path) -> None:
-        mutate_text(root, Path("tools/assurance/test_validate_adversarial_learning.py"), "    falsify_incidental_guardrail_substring()\n", "    if False:\n        falsify_incidental_guardrail_substring()\n")
-    expect_failure(mutate)
+    expect_failure(
+        lambda r: mutate_text(
+            r,
+            Path("tools/assurance/test_validate_d4c_selection.py"),
+            " falsify_selection_record_product_authority()\n",
+            " if False:\n  falsify_selection_record_product_authority()\n",
+        )
+    )
 
 
 def falsify_missing_falsifier_entrypoint() -> None:
-    def mutate(root: Path) -> None:
-        mutate_text(root, Path("tools/assurance/test_validate_adversarial_learning.py"), 'if __name__ == "__main__":\n    main()\n', 'if False:\n    main()\n')
-    expect_failure(mutate)
+    expect_failure(
+        lambda r: mutate_text(
+            r,
+            Path("tools/assurance/test_validate_d4c_selection.py"),
+            "if __name__=='__main__': main()\n",
+            "",
+        )
+    )
 
 
 def falsify_terminated_falsifier_entrypoint() -> None:
-    def mutate(root: Path) -> None:
-        mutate_text(root, Path("tools/assurance/test_validate_adversarial_learning.py"), 'if __name__ == "__main__":\n    main()\n', 'if __name__ == "__main__":\n    raise SystemExit(0)\n    main()\n')
-    expect_failure(mutate)
+    expect_failure(
+        lambda r: mutate_text(
+            r,
+            Path("tools/assurance/test_validate_d4c_selection.py"),
+            " falsify_selection_record_product_authority()\n",
+            " return 0\n falsify_selection_record_product_authority()\n",
+        )
+    )
 
 
 def falsify_head_status_publication() -> None:
-    expect_failure(lambda r: mutate_text(r, s.HEAD_STATUS_WORKFLOW, 'statuses/${PR_HEAD_SHA}', 'statuses/${GITHUB_SHA}'))
+    expect_failure(
+        lambda r: mutate_text(
+            r,
+            s.HEAD_STATUS_WORKFLOW,
+            "statuses/${PR_HEAD_SHA}",
+            "statuses/${GITHUB_SHA}",
+        )
+    )
 
 
 def falsify_noop_falsifier_body() -> None:
-    def mutate(root: Path) -> None:
-        mutate_text(root, Path("tools/assurance/test_validate_adversarial_learning.py"), 'def falsify_incidental_guardrail_substring() -> None:\n    expect_failure(', 'def falsify_incidental_guardrail_substring() -> None:\n    return\n    expect_failure(')
-    expect_failure(mutate)
+    expect_failure(
+        lambda r: mutate_text(
+            r,
+            Path("tools/assurance/test_validate_d4c_selection.py"),
+            " def grant_product(selection,ledger,state,evaluation): selection['canonical_product_implementation_authority']='granted'\n must_fail(grant_product,'Product authority escalation')",
+            " pass",
+        )
+    )
 
 
 def falsify_assert_true_guardrail() -> None:
-    def mutate(root: Path) -> None:
-        path = root / Path("tools/assurance/test_validate_adversarial_learning.py")
-        text = path.read_text(encoding="utf-8")
-        start = text.index("def falsify_incidental_guardrail_substring() -> None:\n")
-        end = text.index("\n\ndef falsify_unreachable_guardrail_call", start)
-        text = text[:start] + "def falsify_incidental_guardrail_substring() -> None:\n    assert True\n" + text[end:]
-        path.write_text(text, encoding="utf-8")
-    expect_failure(mutate)
+    expect_failure(
+        lambda r: mutate_text(
+            r,
+            Path("tools/assurance/test_validate_d4c_selection.py"),
+            " must_fail(grant_product,'Product authority escalation')",
+            " assert True",
+        )
+    )
 
 
 def falsify_dead_branch_negative_helper() -> None:
-    def mutate(root: Path) -> None:
-        path = root / Path("tools/assurance/test_validate_adversarial_learning.py")
-        text = path.read_text(encoding="utf-8")
-        start = text.index("def falsify_incidental_guardrail_substring() -> None:\n")
-        end = text.index("\n\ndef falsify_unreachable_guardrail_call", start)
-        replacement = "def falsify_incidental_guardrail_substring() -> None:\n    if False:\n        expect_failure(lambda r: None)\n"
-        path.write_text(text[:start] + replacement + text[end:], encoding="utf-8")
-    expect_failure(mutate)
+    expect_failure(
+        lambda r: mutate_text(
+            r,
+            Path("tools/assurance/test_validate_d4c_selection.py"),
+            " must_fail(grant_product,'Product authority escalation')",
+            " if False:\n  must_fail(grant_product,'Product authority escalation')",
+        )
+    )
 
 
 def falsify_priority_prefixed_material_finding() -> None:
     expect_failure(lambda r: None, comments=[[{"id": 9999999998, "body": "[P1] unmapped material finding"}]])
+
+
+def falsify_privileged_job_executes_pr_content() -> None:
+    def mutate(root: Path) -> None:
+        mutate_text(
+            root,
+            s.HEAD_STATUS_WORKFLOW,
+            "      - name: Publish pending reconciliation status on resolved PR HEAD\n",
+            "      - name: Unsafe PR-controlled execution\n        run: python3 tools/assurance/validate_adversarial_learning.py\n      - name: Publish pending reconciliation status on resolved PR HEAD\n",
+        )
+    expect_repository_failure(mutate)
+
+
+def falsify_implicit_gh_api_write() -> None:
+    def mutate(root: Path) -> None:
+        mutate_text(
+            root,
+            s.HEAD_STATUS_WORKFLOW,
+            "          gh api --paginate --slurp \"repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments?per_page=100\" > runtime-evidence/top-level-pr-comments.json\n",
+            "          gh api \"repos/${GITHUB_REPOSITORY}/statuses/${PR_HEAD_SHA}\" -f state=success\n          gh api --paginate --slurp \"repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments?per_page=100\" > runtime-evidence/top-level-pr-comments.json\n",
+        )
+    expect_repository_failure(mutate)
+
+
+def falsify_spoofed_status_endpoint() -> None:
+    def mutate(root: Path) -> None:
+        mutate_text(
+            root,
+            s.HEAD_STATUS_WORKFLOW,
+            'gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${PR_HEAD_SHA}"',
+            'gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/0000000000000000000000000000000000000000" # statuses/${PR_HEAD_SHA}',
+        )
+    expect_repository_failure(mutate)
+
+
+def falsify_reconciliation_concurrency() -> None:
+    expect_failure(
+        lambda r: mutate_text(
+            r,
+            s.HEAD_STATUS_WORKFLOW,
+            "cancel-in-progress: true",
+            "cancel-in-progress: false",
+        )
+    )
+
+
+def falsify_unbound_manual_dispatch() -> None:
+    expect_failure(
+        lambda r: mutate_text(
+            r,
+            s.HEAD_STATUS_WORKFLOW,
+            "  issue_comment:\n",
+            "  workflow_dispatch:\n  issue_comment:\n",
+        )
+    )
+
+
+def falsify_non_strict_deterministic_reconciliation() -> None:
+    expect_failure(
+        lambda r: mutate_text(
+            r,
+            v.WORKFLOW,
+            "validate_adversarial_learning_strict.py --root . --review-comments",
+            "validate_adversarial_learning.py --root . --review-comments",
+        )
+    )
+
+
+def falsify_stale_d4c_current_workflow_projection() -> None:
+    current = "d4c['candidate_status']=='selected_c2_delivery_recovery_profile'"
+    stale = "d4c['candidate_status']=='not_selected'"
+    expect_failure(lambda r: mutate_text(r, D4C_CURRENT_WORKFLOWS[0], current, stale))
+
+
+def falsify_top_level_review_surface_coverage() -> None:
+    expect_failure(
+        lambda r: mutate_text(
+            r,
+            v.WORKFLOW,
+            "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments?per_page=100",
+            "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/comments?per_page=100",
+        )
+    )
 
 
 def falsify_bootstrap_exception_scope() -> None:
@@ -161,36 +273,6 @@ def falsify_bootstrap_exception_scope() -> None:
 
 def falsify_stop_policy_relaxation() -> None:
     expect_failure(lambda r: mutate_json(r, v.STOP_POLICY, lambda d: d.__setitem__("merge_blocking_severities", ["P0"])))
-
-
-def falsify_privileged_job_executes_pr_content() -> None:
-    def mutate(root: Path) -> None:
-        mutate_text(root, s.HEAD_STATUS_WORKFLOW, "      - name: Publish pending reconciliation status on resolved PR HEAD\n", "      - name: Unsafe PR-controlled execution\n        run: python3 tools/assurance/validate_adversarial_learning.py\n      - name: Publish pending reconciliation status on resolved PR HEAD\n")
-    expect_repository_failure(mutate)
-
-
-def falsify_implicit_gh_api_write() -> None:
-    def mutate(root: Path) -> None:
-        mutate_text(root, s.HEAD_STATUS_WORKFLOW, "          gh api --paginate --slurp \"repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments?per_page=100\" > runtime-evidence/top-level-pr-comments.json\n", "          gh api \"repos/${GITHUB_REPOSITORY}/statuses/${PR_HEAD_SHA}\" -f state=success\n          gh api --paginate --slurp \"repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments?per_page=100\" > runtime-evidence/top-level-pr-comments.json\n")
-    expect_repository_failure(mutate)
-
-
-def falsify_spoofed_status_endpoint() -> None:
-    def mutate(root: Path) -> None:
-        mutate_text(root, s.HEAD_STATUS_WORKFLOW, 'gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${PR_HEAD_SHA}"', 'gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/0000000000000000000000000000000000000000" # statuses/${PR_HEAD_SHA}')
-    expect_repository_failure(mutate)
-
-
-def falsify_reconciliation_concurrency() -> None:
-    expect_failure(lambda r: mutate_text(r, s.HEAD_STATUS_WORKFLOW, "  cancel-in-progress: true\n", "  cancel-in-progress: false\n"))
-
-
-def falsify_unbound_manual_dispatch() -> None:
-    expect_failure(lambda r: mutate_text(r, s.HEAD_STATUS_WORKFLOW, "  issue_comment:\n", "  workflow_dispatch:\n  issue_comment:\n"))
-
-
-def falsify_non_strict_deterministic_reconciliation() -> None:
-    expect_failure(lambda r: mutate_text(r, v.WORKFLOW, "validate_adversarial_learning_strict.py --root . --review-comments", "validate_adversarial_learning.py --root . --review-comments"))
 
 
 def falsify_wave4_authorization_exact_path_allowlist() -> None:
@@ -222,8 +304,7 @@ def falsify_wave4_authority_toctou_guardrail() -> None:
 
 
 def falsify_wave4_host_inventory_authority_transition() -> None:
-    path = Path("implementation/wave-4-host-inventory-authorization/AUTHORIZATION_MANIFEST.json")
-    manifest = json.loads((ROOT / path).read_text(encoding="utf-8"))
+    manifest = json.loads((ROOT / "implementation/wave-4-host-inventory-authorization/AUTHORIZATION_MANIFEST.json").read_text(encoding="utf-8"))
     assert manifest.get("effective_rule") == "this_successor_clarification_becomes_canonical_and_unblocks_exact_host_inventory_implementation_only_after_exact_head_review_and_separately_authorized_merge"
     assert manifest.get("canonical_effect_after_merge") == "host_inventory_ingestion_authorized_for_exact_accepted_behavior_with_monitoring_resource_kind_host"
     assert manifest.get("implementation_authority_before_merge") == "blocked"
@@ -266,7 +347,8 @@ def falsify_wave4_metric_definition_claimed_input_liveness_guardrail() -> None:
 
 
 def main() -> None:
-    assert not s.validate(ROOT)
+    baseline_errors = s.validate(ROOT)
+    assert not baseline_errors, "strict baseline errors:\n" + "\n".join(baseline_errors)
 
     expect_failure(lambda r: mutate_json(r, v.LEDGER, lambda d: d["entries"][0].__setitem__("class_id", "UNKNOWN")))
     expect_failure(lambda r: mutate_json(r, v.LEDGER, lambda d: d["entries"][0].__setitem__("invariant_ids", ["UNKNOWN"])))
@@ -317,7 +399,7 @@ def main() -> None:
         comments.write_text(json.dumps([[{"id": 3963734258, "body": "**P1 Badge** exact bootstrap finding"}]]), encoding="utf-8")
         assert not s.validate(root, comments)
 
-    print("adversarial_learning_falsification=PASS entrypoint_termination=blocked no_op_assertion=blocked dead_branch_helper=blocked privileged_job_pr_execution=blocked implicit_api_write=blocked exact_status_endpoint=bound reconciliation_concurrency=fresh manual_dispatch=removed strict_reconciliation=all-surfaces stale_d4c_workflow_projection=blocked d4c_product_authority_guardrail=attested wave4_exact_path_allowlist=attested wave4_authority_toctou=source-row-lock+postgres-race host_inventory_authority_transition=attested metric_definition_claimed_input_liveness=claim-first+001-029")
+    print("adversarial_learning_falsification=PASS strict_static_graph=guarded review_surface=issues+inline+reviews top_level_comments=covered priority_prefix=covered head_status=fresh+isolated+concurrent+unspoofable privileged_pr_exec=denied stale_d4c_workflow_projection=blocked stop_policy=merge-blocking-preserved host_inventory_premerge_authority=preserved")
 
 
 if __name__ == "__main__":

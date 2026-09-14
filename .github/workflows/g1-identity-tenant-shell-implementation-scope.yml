@@ -1,8 +1,8 @@
 name: JLMIRROR G1 Identity Tenant Shell Implementation Scope
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened, labeled, unlabeled, ready_for_review]
+  issue_comment:
+    types: [created]
 
 permissions:
   contents: read
@@ -10,75 +10,75 @@ permissions:
 
 jobs:
   g1-implementation-scope:
+    if: github.event.issue.pull_request && github.event.comment.body == '/jlmirror-g1-scope-attest'
     runs-on: ubuntu-24.04
     env:
-      PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-      PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-      PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
-      PR_BASE_REPO: ${{ github.event.pull_request.base.repo.full_name }}
-      PR_HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
-      PR_LABELS_JSON: ${{ toJson(github.event.pull_request.labels.*.name) }}
-      G1_SCOPE_BOOTSTRAP_BASE: 7c20c9301711e9a4bf355517d7aa23faad7a05b7
-      G1_SCOPE_BOOTSTRAP_HEAD_REF: governance/g1-identity-tenant-shell-authorization
-      G1_SCOPE_LABEL: jlmirror-slice:g1-identity-tenant-shell
-      G1_SCOPE_CLAIM: implementation/g1-identity-tenant-shell/IMPLEMENTATION_CLAIM.json
+      PR_NUMBER: ${{ github.event.issue.number }}
+      G1_SCOPE_COMMAND: /jlmirror-g1-scope-attest
       G1_SCOPE_VALIDATOR: tools/assurance/validate_g1_identity_tenant_shell_implementation_scope.py
     steps:
-      - name: Resolve exact PR coordinates
-        shell: bash
-        run: |
-          set -euo pipefail
-          test -n "$PR_BASE_SHA"
-          test -n "$PR_HEAD_SHA"
-          test -n "$PR_HEAD_REF"
-          test -n "$PR_BASE_REPO"
-          test -n "$PR_HEAD_REPO"
-          test -n "$PR_LABELS_JSON"
-
-      - name: Checkout exact candidate HEAD with full history
+      - name: Checkout trusted default branch only
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ github.event.repository.default_branch }}
           fetch-depth: 0
           persist-credentials: false
           allow-unsafe-pr-checkout: false
 
-      - name: Verify exact PR identities
+      - name: Resolve exact PR coordinates from GitHub API
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test -n "$PR_NUMBER"
+          pr_json="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}")"
+          PR_STATE="$(jq -r '.state' <<<"$pr_json")"
+          PR_BASE_SHA="$(jq -r '.base.sha' <<<"$pr_json")"
+          PR_HEAD_SHA="$(jq -r '.head.sha' <<<"$pr_json")"
+          PR_BASE_REF="$(jq -r '.base.ref' <<<"$pr_json")"
+          PR_HEAD_REF="$(jq -r '.head.ref' <<<"$pr_json")"
+          PR_BASE_REPO="$(jq -r '.base.repo.full_name' <<<"$pr_json")"
+          PR_HEAD_REPO="$(jq -r '.head.repo.full_name' <<<"$pr_json")"
+          PR_LABELS_JSON="$(jq -c '[.labels[].name]' <<<"$pr_json")"
+          test "$PR_STATE" = "open"
+          test -n "$PR_BASE_SHA"
+          test -n "$PR_HEAD_SHA"
+          test -n "$PR_BASE_REF"
+          test -n "$PR_HEAD_REF"
+          test -n "$PR_BASE_REPO"
+          test -n "$PR_HEAD_REPO"
+          test -n "$PR_LABELS_JSON"
+          {
+            printf 'PR_BASE_SHA=%s\n' "$PR_BASE_SHA"
+            printf 'PR_HEAD_SHA=%s\n' "$PR_HEAD_SHA"
+            printf 'PR_BASE_REF=%s\n' "$PR_BASE_REF"
+            printf 'PR_HEAD_REF=%s\n' "$PR_HEAD_REF"
+            printf 'PR_BASE_REPO=%s\n' "$PR_BASE_REPO"
+            printf 'PR_HEAD_REPO=%s\n' "$PR_HEAD_REPO"
+            printf 'PR_LABELS_JSON=%s\n' "$PR_LABELS_JSON"
+          } >> "$GITHUB_ENV"
+          echo "trusted_scope_pr=${PR_NUMBER} base=${PR_BASE_SHA} head=${PR_HEAD_SHA}"
+
+      - name: Fetch exact base and candidate objects as data only
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = "$PR_HEAD_SHA"
+          git fetch --no-tags origin "$PR_BASE_SHA" "$PR_HEAD_SHA"
           git cat-file -e "${PR_BASE_SHA}^{commit}"
+          git cat-file -e "${PR_HEAD_SHA}^{commit}"
+          test "$(git rev-parse HEAD)" != "$PR_HEAD_SHA"
 
-      - name: Resolve trusted evaluator or one-time authorization bootstrap
+      - name: Materialize trusted evaluator from exact PR base object
         shell: bash
         run: |
           set -euo pipefail
           trusted_validator="$RUNNER_TEMP/g1-implementation-scope-validator.py"
-          if git cat-file -e "${PR_BASE_SHA}:${G1_SCOPE_VALIDATOR}" 2>/dev/null; then
-            git show "${PR_BASE_SHA}:${G1_SCOPE_VALIDATOR}" > "$trusted_validator"
-            test -s "$trusted_validator"
-            printf 'TRUSTED_VALIDATOR=%s\n' "$trusted_validator" >> "$GITHUB_ENV"
-            printf 'G1_SCOPE_BOOTSTRAP=false\n' >> "$GITHUB_ENV"
-          else
-            test "$PR_BASE_SHA" = "$G1_SCOPE_BOOTSTRAP_BASE"
-            test "$PR_HEAD_REF" = "$G1_SCOPE_BOOTSTRAP_HEAD_REF"
-            test "$PR_BASE_REPO" = "$PR_HEAD_REPO"
-            python3 - <<'PY'
-          import json, os, sys
-          labels=json.loads(os.environ['PR_LABELS_JSON'])
-          if os.environ['G1_SCOPE_LABEL'] in labels:
-              sys.exit('bootstrap authorization PR must not carry G1 implementation label')
-          PY
-            if git cat-file -e "${PR_HEAD_SHA}:${G1_SCOPE_CLAIM}" 2>/dev/null; then
-              echo 'bootstrap authorization PR must not carry G1 implementation claim' >&2
-              exit 1
-            fi
-            printf 'G1_SCOPE_BOOTSTRAP=true\n' >> "$GITHUB_ENV"
-          fi
+          git show "${PR_BASE_SHA}:${G1_SCOPE_VALIDATOR}" > "$trusted_validator"
+          test -s "$trusted_validator"
+          printf 'TRUSTED_VALIDATOR=%s\n' "$trusted_validator" >> "$GITHUB_ENV"
 
-      - name: Enforce canonical G1 implementation path policy from trusted base code
-        if: env.G1_SCOPE_BOOTSTRAP != 'true'
+      - name: Enforce exact G1 scope on explicitly attested PR
         shell: bash
         run: |
           set -euo pipefail
@@ -90,12 +90,4 @@ jobs:
             --labels-json "$PR_LABELS_JSON" \
             --head-repo "$PR_HEAD_REPO" \
             --base-repo "$PR_BASE_REPO"
-
-      - name: Attest closed one-time bootstrap
-        if: env.G1_SCOPE_BOOTSTRAP == 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          test "$PR_BASE_SHA" = "$G1_SCOPE_BOOTSTRAP_BASE"
-          test "$PR_HEAD_REF" = "$G1_SCOPE_BOOTSTRAP_HEAD_REF"
-          echo 'g1_implementation_scope=PASS relevance=authorization-bootstrap one_time=true implementation_authority=blocked'
+          echo "g1_trusted_scope_attestation=PASS pr=${PR_NUMBER} exact_head=${PR_HEAD_SHA} caller=default_branch_issue_comment"

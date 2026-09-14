@@ -12,6 +12,7 @@ MANIFEST = ROOT / "implementation/g1-identity-tenant-shell-authorization/AUTHORI
 DOC = ROOT / "implementation/g1-identity-tenant-shell-authorization/AUTHORIZATION.md"
 PACKET = ROOT / "implementation/g1-identity-tenant-shell-authorization/TASK_PACKET.md"
 LEARNING = "governance/adversarial/learning-ledger.d/pr-153-g1-authorization-review-findings.json"
+LEARNING_RESOLVER = "tools/assurance/validate_adversarial_learning.py"
 
 EXPECTED_SCOPE = {
     "oidc_authorization_code_pkce_s256_through_confidential_bff",
@@ -84,6 +85,7 @@ ALLOWED_PATHS = {
     "implementation/g1-identity-tenant-shell-authorization/TASK_PACKET.md",
     "tools/assurance/validate_g1_identity_tenant_shell_authorization.py",
     "tools/assurance/test_validate_g1_identity_tenant_shell_authorization.py",
+    LEARNING_RESOLVER,
     ".github/workflows/g1-identity-tenant-shell-authorization.yml",
     LEARNING,
 }

@@ -47,6 +47,9 @@ def falsify_implementation_path_policy() -> None:
         (lambda d: d["implementation_path_policy"].__setitem__("same_repository_required", False), "implementation path policy drift: same_repository_required"),
         (lambda d: d["implementation_path_policy"].__setitem__("trusted_evaluator_event", "pull_request_target"), "implementation path policy drift: trusted_evaluator_event"),
         (lambda d: d["implementation_path_policy"].__setitem__("trusted_evaluator_source", "pull_request_head"), "implementation path policy drift: trusted_evaluator_source"),
+        (lambda d: d["implementation_path_policy"].__setitem__("bootstrap_authorization_base_commit", "HEAD"), "implementation path policy drift: bootstrap_authorization_base_commit"),
+        (lambda d: d["implementation_path_policy"].__setitem__("bootstrap_authorization_head_ref", "impl/g1-identity-tenant-protected-shell"), "implementation path policy drift: bootstrap_authorization_head_ref"),
+        (lambda d: d["implementation_path_policy"].__setitem__("bootstrap_authorization_rule", "allow_when_validator_missing"), "implementation path policy drift: bootstrap_authorization_rule"),
     ]
     for mutation, fragment in mutations: must_fail(mutation, fragment)
 
@@ -54,6 +57,7 @@ def falsify_implementation_path_policy() -> None:
 def falsify_implementation_scope_gate_execution() -> None:
     must_fail(lambda d: d["implementation_path_policy"].__setitem__("trusted_evaluator_event", "pull_request_target"), "implementation path policy drift: trusted_evaluator_event")
     must_fail(lambda d: d["implementation_path_policy"].__setitem__("trusted_evaluator_source", "pull_request_head"), "implementation path policy drift: trusted_evaluator_source")
+    must_fail(lambda d: d["implementation_path_policy"].__setitem__("bootstrap_authorization_base_commit", "HEAD"), "implementation path policy drift: bootstrap_authorization_base_commit")
     import test_validate_g1_identity_tenant_shell_implementation_scope as scope_falsifier
     scope_falsifier.falsify_real_git_diff_gate()
     scope_falsifier.falsify_candidate_metadata_fail_closed()
@@ -87,7 +91,7 @@ def main() -> int:
     falsify_successor_authority_transition(); falsify_effective_rule(); falsify_exact_exclusion_set()
     falsify_implementation_path_policy(); falsify_implementation_scope_gate_execution(); falsify_authority_source_corpus()
     falsify_g1_scope_and_invariants(); falsify_merge_and_production_boundaries(); falsify_successor_governance_rules()
-    print("g1_identity_tenant_shell_authorization_falsification=PASS authority_escalation=blocked implementation_path_expansion=blocked base_object_gate=bound privileged_event=blocked real_git_diff=executed metadata=label+branch+claim_fail_closed")
+    print("g1_identity_tenant_shell_authorization_falsification=PASS authority_escalation=blocked implementation_path_expansion=blocked base_object_gate=bound bootstrap_widening=blocked privileged_event=blocked real_git_diff=executed metadata=label+branch+claim_fail_closed")
     return 0
 
 

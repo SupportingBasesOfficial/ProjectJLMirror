@@ -12,6 +12,7 @@ MANIFEST = ROOT / "implementation/g1-identity-tenant-shell-authorization/AUTHORI
 DOC = ROOT / "implementation/g1-identity-tenant-shell-authorization/AUTHORIZATION.md"
 PACKET = ROOT / "implementation/g1-identity-tenant-shell-authorization/TASK_PACKET.md"
 LEARNING = "governance/adversarial/learning-ledger.d/pr-153-g1-authorization-review-findings.json"
+LEARNING_022_024 = "governance/adversarial/learning-ledger.d/pr-153-g1-authorization-review-findings-022-024.json"
 LEARNING_RESOLVER = "tools/assurance/validate_adversarial_learning.py"
 LEARNING_STRICT = "tools/assurance/validate_adversarial_learning_strict.py"
 LEARNING_FALSIFIER = "tools/assurance/test_validate_adversarial_learning.py"
@@ -83,7 +84,7 @@ ALLOWED_PATHS = {
     READINESS_VALIDATOR, READINESS_FALSIFIER, IMPLEMENTATION_SCOPE_WORKFLOW,
     LEARNING_RESOLVER, LEARNING_STRICT, LEARNING_FALSIFIER,
     "tools/assurance/validate_repository.py",
-    ".github/workflows/g1-identity-tenant-shell-authorization.yml", LEARNING,
+    ".github/workflows/g1-identity-tenant-shell-authorization.yml", LEARNING, LEARNING_022_024,
 }
 
 
@@ -183,9 +184,9 @@ def validate_enforcement_artifacts() -> None:
     workflow = (ROOT / IMPLEMENTATION_SCOPE_WORKFLOW).read_text(encoding="utf-8")
     for marker in ("policy_from_base(root, base_sha)", '"--no-renames"', "unauthorized G1 implementation path", "G1 implementation PR missing required canonical label", "G1 implementation PR missing required canonical head prefix", "G1 implementation PR missing or malformed required claim", "no candidate-controlled relevance inference"):
         req(marker in validator, f"implementation scope validator missing marker: {marker}")
-    for marker in ("TRUSTED_CREATOR_LOGIN = \"github-actions[bot]\"", "TRUSTED_CREATOR_ID = 41898282", "base SHA is not the current default-branch tip", "missing current required canonical label", "target_url is not a canonical workflow run", "workflow event must be issue_comment", "workflow path drift", "evidence=", "READY_CONTEXT"):
+    for marker in ("TRUSTED_CREATOR_LOGIN = \"github-actions[bot]\"", "TRUSTED_CREATOR_ID = 41898282", "REQUIRED_HEAD_PREFIX", "live_default_branch", "base SHA is not the current default-branch tip", "missing current required canonical label", "head ref is not canonical G1 prefix", "target_url is not a canonical workflow run", "workflow event must be issue_comment", "workflow path drift", "expected_publisher_job_name", "exact publisher job identity", "evidence=", "READY_CONTEXT"):
         req(marker in readiness, f"readiness validator missing provenance/live marker: {marker}")
-    for marker in ("falsify_live_readiness_guards", "spoof", "stale_tip", "missing_label", "wrong_event", "wrong_path"):
+    for marker in ("falsify_live_readiness_guards", "spoof", "stale_tip", "missing_label", "renamed_head", "changed_default_branch", "forged_same_bot_wrong_pr", "forged_same_bot_wrong_mode", "forged_same_bot_wrong_ref", "wrong_event", "wrong_path"):
         req(marker in readiness_falsifier, f"readiness falsifier missing executable case: {marker}")
 
     req("issue_comment:" in workflow, "implementation scope workflow must be default-branch issue_comment caller")
@@ -198,9 +199,11 @@ def validate_enforcement_artifacts() -> None:
         req(job in workflow, f"implementation scope workflow missing isolated job: {job.strip()}")
     req("group: g1-identity-tenant-shell-scope-${{ github.event.issue.number }}" in workflow and "cancel-in-progress: true" in workflow, "implementation scope workflow missing per-PR freshness concurrency")
     req("github.event.issue.number" in workflow, "implementation scope workflow missing trusted PR identity binding")
+    req('repo_json="$(gh api "repos/${GITHUB_REPOSITORY}")"' in workflow and "DEFAULT_BRANCH=\"$(jq -r '.default_branch' <<<\"$repo_json\")\"" in workflow, "trusted command must resolve live repository default branch through GitHub API")
     req("branches/${DEFAULT_BRANCH}" in workflow and 'test "$PR_BASE_SHA" = "$DEFAULT_BRANCH_SHA"' in workflow, "trusted command must bind PR base to live default-branch tip")
     req("repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" in workflow, "implementation scope workflow must resolve PR coordinates through GitHub API")
     req('test "$PR_BASE_REF" = "$DEFAULT_BRANCH"' in workflow, "implementation scope workflow must require default-branch base ref")
+    req('[[ "$PR_HEAD_REF" == "$G1_REQUIRED_HEAD_PREFIX"* ]]' in workflow, "implementation scope workflow must require canonical G1 head ref during resolve")
     req('test "$PR_BASE_REPO" = "$GITHUB_REPOSITORY"' in workflow, "implementation scope workflow must require canonical base repository")
     req('git show "${PR_BASE_SHA}:${G1_SCOPE_VALIDATOR}" > "$trusted_validator"' in workflow, "implementation scope workflow must materialize scope validator from exact default-branch base Git object")
     req("contents/${G1_READINESS_VALIDATOR}?ref=${PR_BASE_SHA}" in workflow, "implementation scope workflow must materialize readiness validator from exact current base object")
@@ -213,7 +216,9 @@ def validate_enforcement_artifacts() -> None:
     req(workflow.count('statuses/${PR_HEAD_SHA}') == 2, "implementation scope workflow must retain exactly two parsed status POST sites")
     req(EXPECTED_STATUS_CONTEXT in workflow and EXPECTED_READY_CONTEXT in workflow, "implementation scope workflow missing stable scope/readiness status contexts")
     req("G1 scope PASS base=${PR_BASE_SHA} head=${PR_HEAD_SHA}" in workflow and "G1 ready PASS base=${PR_BASE_SHA} head=${PR_HEAD_SHA}" in workflow, "implementation scope workflow must bind final evidence descriptions to exact base/head")
-    req("CURRENT_LABELS_JSON" in workflow and "CURRENT_DEFAULT_SHA" in workflow, "implementation scope workflow must re-read mutable label and default-tip state before final success")
+    req("name: g1-publish-final pr=${{ needs.resolve.outputs.pr_number }} mode=${{ needs.resolve.outputs.mode }} base=${{ needs.resolve.outputs.base_sha }} head=${{ needs.resolve.outputs.head_sha }} ref=${{ needs.resolve.outputs.head_ref }}" in workflow, "implementation scope workflow must bind publisher job identity to PR/mode/base/head/ref")
+    req("CURRENT_LABELS_JSON" in workflow and "CURRENT_DEFAULT_SHA" in workflow and "CURRENT_DEFAULT_BRANCH" in workflow and "CURRENT_HEAD_REF" in workflow, "implementation scope workflow must re-read mutable label/default-branch/head-ref state before final success")
+    req('"$CURRENT_HEAD_REF" == "$G1_REQUIRED_HEAD_PREFIX"*' in workflow, "implementation scope workflow must revalidate canonical head ref before final success")
     req("state=pending" in workflow, "implementation scope workflow missing exact-head pending status")
     for marker in ("CURRENT_HEAD_SHA", "CURRENT_BASE_SHA", "CURRENT_BASE_REF", 'test "$state" = success'):
         req(marker in workflow, f"implementation scope workflow missing final freshness guard: {marker}")
@@ -254,7 +259,7 @@ def main() -> int:
     except AssertionError as exc:
         print(f"g1_identity_tenant_shell_authorization=FAIL reason={exc}", file=sys.stderr)
         return 1
-    print("g1_identity_tenant_shell_authorization=PASS gate=G1 implementation_transition=blocked->exact-g1 implementation_paths=pinned trusted_scope=default-branch-issue-comment status=evidence-only readiness=live-source-authenticated default_base=live-tip-required candidate_relevance=forbidden authority_corpus=pinned exclusions=exact production=none merge_authority=not_granted")
+    print("g1_identity_tenant_shell_authorization=PASS gate=G1 implementation_transition=blocked->exact-g1 implementation_paths=pinned trusted_scope=default-branch-issue-comment status=evidence-only readiness=live-source-authenticated+publisher-job-bound default_base=live-api-tip-required head_ref=live-canonical candidate_relevance=forbidden authority_corpus=pinned exclusions=exact production=none merge_authority=not_granted")
     return 0
 
 

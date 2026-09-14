@@ -7,7 +7,11 @@ on:
       - 'tools/assurance/validate_g1_identity_tenant_shell_authorization.py'
       - 'tools/assurance/test_validate_g1_identity_tenant_shell_authorization.py'
       - '.github/workflows/g1-identity-tenant-shell-authorization.yml'
+      - 'implementation/wave-1/AUTHORITY_BOUNDARY.md'
       - 'docs/00-foundation/ai-e2e-delivery/**'
+      - 'docs/07-system-design/request-auth-and-authorization-lifecycle.md'
+      - 'docs/09-api-contracts/authentication-authorization-and-tenant-context.md'
+      - 'docs/09-api-contracts/surface-routing-and-resource-identity.md'
       - 'docs/16-implementation-readiness/20-d3-identity-security-acceptance-propagation.md'
   push:
     branches: [main]
@@ -16,7 +20,11 @@ on:
       - 'tools/assurance/validate_g1_identity_tenant_shell_authorization.py'
       - 'tools/assurance/test_validate_g1_identity_tenant_shell_authorization.py'
       - '.github/workflows/g1-identity-tenant-shell-authorization.yml'
+      - 'implementation/wave-1/AUTHORITY_BOUNDARY.md'
       - 'docs/00-foundation/ai-e2e-delivery/**'
+      - 'docs/07-system-design/request-auth-and-authorization-lifecycle.md'
+      - 'docs/09-api-contracts/authentication-authorization-and-tenant-context.md'
+      - 'docs/09-api-contracts/surface-routing-and-resource-identity.md'
       - 'docs/16-implementation-readiness/20-d3-identity-security-acceptance-propagation.md'
 
 permissions:

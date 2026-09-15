@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -21,12 +22,25 @@ EXPECTED_READINESS_COMMAND = "/jlmirror-g1-scope-ready"
 EXPECTED_STATUS_CONTEXT = "JLMIRROR / g1-identity-tenant-shell-implementation-scope"
 EXPECTED_READY_CONTEXT = "JLMIRROR / g1-identity-tenant-shell-merge-readiness"
 EXPECTED_READINESS_VALIDATOR = "tools/assurance/validate_g1_identity_tenant_shell_scope_readiness.py"
+EXPECTED_RUNTIME_WORKFLOW = ".github/workflows/g1-identity-tenant-shell-runtime.yml"
+EXPECTED_RUNTIME_NAME = "JLMIRROR G1 Identity Tenant Shell Runtime"
+EXPECTED_RUNTIME_ENTRYPOINT = "python tools/g1/run_identity_tenant_shell_runtime.py"
 EXPECTED_PREFIXES = (
     "apps/g1-identity-tenant-shell/", "contracts/g1-identity-tenant-shell/",
     "implementation/g1-identity-tenant-shell/", "sql/g1/", "src/jlmirror_g1/",
     "tests/g1/", "tools/g1/",
 )
-EXPECTED_EXACT = (".github/workflows/g1-identity-tenant-shell-runtime.yml",)
+EXPECTED_EXACT = (EXPECTED_RUNTIME_WORKFLOW,)
+RUNTIME_ALLOWED_TRIGGERS = {"pull_request", "workflow_dispatch"}
+RUNTIME_ALLOWED_ACTIONS = {"actions/checkout", "actions/setup-python", "actions/setup-node"}
+PINNED_ACTION_RE = re.compile(r"^(?P<action>actions/(?:checkout|setup-python|setup-node))@(?P<sha>[0-9a-fA-F]{40})$")
+RUNTIME_FORBIDDEN_MARKERS = (
+    "pull_request_target:", "push:", "schedule:", "workflow_run:", "issue_comment:",
+    "deployment:", "environment:", "secrets:", "${{ secrets.", "github.token", "GITHUB_TOKEN",
+    "id-token:", "statuses: write", "checks: write", "contents: write", "actions: write",
+    "packages: write", "deployments: write", "pull-requests: write", "continue-on-error: true",
+    "docker login", "kubectl ", "terraform ", "gh api ", "aws ", "gcloud ", "az ",
+)
 
 
 def git(root: Path, *args: str) -> str:
@@ -130,6 +144,105 @@ def validate_paths(paths: list[str], policy: dict[str, Any]) -> list[str]:
     return errors
 
 
+def _mapping_block(text: str, key: str) -> tuple[list[str], list[str]]:
+    lines = text.splitlines()
+    start: int | None = None
+    for index, line in enumerate(lines):
+        if line == f"{key}:":
+            start = index + 1
+            break
+    if start is None:
+        return [], [f"runtime workflow missing top-level {key} mapping"]
+    block: list[str] = []
+    for line in lines[start:]:
+        if line and not line.startswith((" ", "\t")):
+            break
+        block.append(line)
+    return block, []
+
+
+def _direct_mapping_keys(block: list[str]) -> tuple[set[str], list[str]]:
+    keys: set[str] = set()
+    errors: list[str] = []
+    for line in block:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        indent = len(line) - len(line.lstrip(" "))
+        if indent == 2:
+            if not stripped.endswith(":") or stripped.startswith("-"):
+                errors.append(f"runtime workflow contains unsupported mapping shape: {stripped}")
+                continue
+            keys.add(stripped[:-1].strip())
+        elif indent > 2:
+            errors.append(f"runtime workflow contains nested configuration outside exact contract: {stripped}")
+        else:
+            errors.append(f"runtime workflow contains invalid indentation: {stripped}")
+    return keys, errors
+
+
+def validate_runtime_workflow_text(text: str) -> list[str]:
+    errors: list[str] = []
+    if "\t" in text:
+        errors.append("runtime workflow must not contain tab indentation")
+    lines = text.splitlines()
+    if f"name: {EXPECTED_RUNTIME_NAME}" not in lines:
+        errors.append("runtime workflow name drift")
+    if lines.count("permissions: {}") != 1 or sum(1 for line in lines if "permissions:" in line) != 1:
+        errors.append("runtime workflow must have exactly one zero-permission declaration")
+
+    on_block, on_errors = _mapping_block(text, "on")
+    errors.extend(on_errors)
+    if not on_errors:
+        trigger_keys, trigger_errors = _direct_mapping_keys(on_block)
+        errors.extend(trigger_errors)
+        if trigger_keys != RUNTIME_ALLOWED_TRIGGERS:
+            errors.append(f"runtime workflow trigger set drift: {sorted(trigger_keys)}")
+
+    jobs_block, jobs_errors = _mapping_block(text, "jobs")
+    errors.extend(jobs_errors)
+    if not jobs_errors:
+        job_keys, job_shape_errors = _direct_mapping_keys([line for line in jobs_block if (len(line) - len(line.lstrip(" "))) <= 2 or not line.strip()])
+        errors.extend(job_shape_errors)
+        if job_keys != {"g1-runtime"}:
+            errors.append(f"runtime workflow job set drift: {sorted(job_keys)}")
+
+    lowered = text.lower()
+    for marker in RUNTIME_FORBIDDEN_MARKERS:
+        if marker.lower() in lowered:
+            errors.append(f"runtime workflow forbidden authority/capability marker: {marker}")
+
+    uses_values: list[str] = []
+    run_values: list[str] = []
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("uses:") or stripped.startswith("- uses:"):
+            uses_values.append(stripped.split("uses:", 1)[1].strip())
+        if stripped.startswith("run:") or stripped.startswith("- run:"):
+            run_values.append(stripped.split("run:", 1)[1].strip())
+    for value in uses_values:
+        match = PINNED_ACTION_RE.fullmatch(value)
+        if match is None or match.group("action") not in RUNTIME_ALLOWED_ACTIONS:
+            errors.append(f"runtime workflow action is not an approved SHA-pinned setup action: {value}")
+    if run_values != [EXPECTED_RUNTIME_ENTRYPOINT]:
+        errors.append(f"runtime workflow executable responsibility drift: {run_values}")
+    if "env:" in lowered:
+        errors.append("runtime workflow must not define workflow/job/step env authority")
+    if "if:" in lowered:
+        errors.append("runtime workflow must not conditionally suppress the canonical runtime proof")
+    return errors
+
+
+def validate_runtime_workflow_from_head(root: Path, head_sha: str, paths: list[str]) -> list[str]:
+    if EXPECTED_RUNTIME_WORKFLOW not in paths:
+        return []
+    try:
+        text = git_bytes(root, "show", f"{head_sha}:{EXPECTED_RUNTIME_WORKFLOW}").decode("utf-8")
+    except (subprocess.CalledProcessError, UnicodeDecodeError):
+        return ["allowed G1 runtime workflow path must exist as UTF-8 text on candidate head"]
+    return validate_runtime_workflow_text(text)
+
+
 # no candidate-controlled relevance inference
 
 def validate(base_sha: str, head_sha: str, head_ref: str, labels: set[str], head_repo: str, base_repo: str, *, root: Path = DEFAULT_ROOT) -> tuple[bool, list[str]]:
@@ -148,7 +261,11 @@ def validate(base_sha: str, head_sha: str, head_ref: str, labels: set[str], head
         configured_policy(policy)
         paths = changed_paths(root, base_sha, head_sha)
         errors = validate_candidate_metadata(root, head_sha, head_ref, labels, head_repo, base_repo, policy)
-        errors.extend(["attested G1 implementation PR has no changed paths"] if not paths else validate_paths(paths, policy))
+        if not paths:
+            errors.append("attested G1 implementation PR has no changed paths")
+        else:
+            errors.extend(validate_paths(paths, policy))
+            errors.extend(validate_runtime_workflow_from_head(root, head_sha, paths))
         return True, errors
     except (AssertionError, subprocess.CalledProcessError, json.JSONDecodeError, UnicodeDecodeError) as exc:
         return True, [str(exc)]
@@ -177,7 +294,7 @@ def main() -> int:
         print(f"G1_IMPLEMENTATION_SCOPE_ERROR: {error}", file=sys.stderr)
     if errors:
         return 1
-    print("g1_implementation_scope=PASS classification=trusted_explicit_attestation default_base=required exact_head_status=evidence-only readiness=live-source-authenticated metadata=label+branch+claim complete_diff=allowlisted")
+    print("g1_implementation_scope=PASS classification=trusted_explicit_attestation default_base=required exact_head_status=evidence-only readiness=live-source-authenticated metadata=label+branch+claim complete_diff=allowlisted runtime_workflow=zero-permission+bounded-trigger+single-entrypoint")
     return 0
 
 

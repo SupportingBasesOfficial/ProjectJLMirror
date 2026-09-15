@@ -13,6 +13,7 @@ DOC = ROOT / "implementation/g1-identity-tenant-shell-authorization/AUTHORIZATIO
 PACKET = ROOT / "implementation/g1-identity-tenant-shell-authorization/TASK_PACKET.md"
 LEARNING = "governance/adversarial/learning-ledger.d/pr-153-g1-authorization-review-findings.json"
 LEARNING_022_024 = "governance/adversarial/learning-ledger.d/pr-153-g1-authorization-review-findingsz-022-024.json"
+LEARNING_044_045 = "governance/adversarial/learning-ledger.d/pr-153-g1-authorization-review-findings-044-045.json"
 LEARNING_RESOLVER = "tools/assurance/validate_adversarial_learning.py"
 LEARNING_STRICT = "tools/assurance/validate_adversarial_learning_strict.py"
 LEARNING_FALSIFIER = "tools/assurance/test_validate_adversarial_learning.py"
@@ -84,7 +85,7 @@ ALLOWED_PATHS = {
     READINESS_VALIDATOR, READINESS_FALSIFIER, IMPLEMENTATION_SCOPE_WORKFLOW,
     LEARNING_RESOLVER, LEARNING_STRICT, LEARNING_FALSIFIER,
     "tools/assurance/validate_repository.py",
-    ".github/workflows/g1-identity-tenant-shell-authorization.yml", LEARNING, LEARNING_022_024,
+    ".github/workflows/g1-identity-tenant-shell-authorization.yml", LEARNING, LEARNING_022_024, LEARNING_044_045,
 }
 
 

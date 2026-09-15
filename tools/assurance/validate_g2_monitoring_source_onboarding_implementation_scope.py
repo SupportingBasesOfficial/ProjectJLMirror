@@ -67,7 +67,7 @@ def _persistence_aliases(decoded: str) -> set[str]:
         receiver = "|".join(re.escape(name) for name in sorted(aliases, key=len, reverse=True))
         patterns = (
             rf"\b(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*(?:\(\s*)?(?:{receiver})(?:\s*\))?\s*[;\n]",
-            rf"\b(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*(?:{receiver})\s*(?:\?\.|\.)\s*[A-Za-z_$][A-Za-z0-9_$]*",
+            rf"\b(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*(?:\(\s*)?(?:{receiver})(?:\s*\))?\s*(?:\?\.|\.)\s*[A-Za-z_$][A-Za-z0-9_$]*",
         )
         for pattern in patterns:
             for match in re.finditer(pattern, decoded, flags=re.IGNORECASE):
@@ -94,14 +94,15 @@ def _has_hardened_persistence_write(decoded: str) -> bool:
     receiver = "|".join(re.escape(name) for name in sorted(aliases, key=len, reverse=True))
     write = "|".join(re.escape(name) for name in sorted(_core.PERSISTENCE_WRITES, key=len, reverse=True))
     receiver_expr = rf"(?:\(\s*)?(?:{receiver})(?:\s*\))?"
+    receiver_boundary = rf"(?<![A-Za-z0-9_$]){receiver_expr}"
     direct_patterns = (
-        rf"\b{receiver_expr}\s*(?:\?\.|\.)\s*(?:{write})\s*(?:\(|\.\s*(?:call|apply)\s*\()",
+        rf"{receiver_boundary}\s*(?:\?\.|\.)\s*(?:{write})\s*(?:\(|\.\s*(?:call|apply)\s*\()",
         rf"\b(?:const|let|var)\s+[A-Za-z_$][A-Za-z0-9_$]*\s*=\s*{receiver_expr}\s*(?:\?\.|\.)\s*(?:{write})\b",
         rf"\b(?:const|let|var)\s*\{{[^}}]*\b(?:{write})\b[^}}]*\}}\s*=\s*{receiver_expr}\b",
     )
     if any(re.search(pattern, decoded, flags=re.IGNORECASE) for pattern in direct_patterns):
         return True
-    for match in re.finditer(rf"\b{receiver_expr}\s*(?:\?\.)?\s*\[([^\]]+)\]\s*\(", decoded, flags=re.IGNORECASE):
+    for match in re.finditer(rf"{receiver_boundary}\s*(?:\?\.)?\s*\[([^\]]+)\]\s*\(", decoded, flags=re.IGNORECASE):
         member = _static_computed_member(match.group(1))
         if member in _core.PERSISTENCE_WRITES:
             return True

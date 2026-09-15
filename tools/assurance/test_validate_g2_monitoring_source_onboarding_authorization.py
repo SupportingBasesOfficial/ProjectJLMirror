@@ -48,11 +48,11 @@ def main() -> int:
 
     must_reject_workflow(
         workflow.replace('          python3 "$TRUSTED_VALIDATOR" \\\n', '          # python3 "$TRUSTED_VALIDATOR" \\\n', 1),
-        "trusted validator invocation",
+        "command-only shape",
     )
     must_reject_workflow(
         workflow.replace('          python3 "$TRUSTED_READINESS_VALIDATOR" \\\n', '          # python3 "$TRUSTED_READINESS_VALIDATOR" \\\n', 1),
-        "readiness invocation",
+        "command-only shape",
     )
     must_reject_workflow(
         workflow.replace("          state=failure\n", "          state=success\n", 1),
@@ -63,7 +63,7 @@ def main() -> int:
         "fail-closed control-flow",
     )
 
-    print("g2_authorization_falsifier=PASS manifest_mutations=13 workflow_mutations=4")
+    print("g2_authorization_falsifier=PASS manifest_mutations=13 workflow_mutations=4 command_only=true")
     return 0
 
 

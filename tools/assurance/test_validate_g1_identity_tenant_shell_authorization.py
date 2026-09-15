@@ -262,6 +262,8 @@ def falsify_successor_governance_rules() -> None:
 
 
 def main() -> int:
+    if ISOLATED_READINESS_CHILD_FLAG in sys.argv:
+        return _isolated_readiness_permissive_rejection_child()
     validator.validate()
     falsify_successor_authority_transition()
     falsify_effective_rule()
@@ -279,6 +281,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    if ISOLATED_READINESS_CHILD_FLAG in sys.argv:
-        raise SystemExit(_isolated_readiness_permissive_rejection_child())
-    raise SystemExit(main())
+    main()

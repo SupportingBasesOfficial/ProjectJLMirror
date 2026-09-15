@@ -49,23 +49,24 @@ POLICY = {
     "candidate_controlled_relevance_inference": "forbidden",
 }
 REPO = "SupportingBasesOfficial/ProjectJLMirror"
-SAFE_RUNTIME_WORKFLOW = """name: JLMIRROR G1 Identity Tenant Shell Runtime
 
-on:
-  pull_request:
-  workflow_dispatch:
-
-permissions: {}
-
-jobs:
-  g1-runtime:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@1111111111111111111111111111111111111111
-      - uses: actions/setup-python@2222222222222222222222222222222222222222
-      - uses: actions/setup-node@3333333333333333333333333333333333333333
-      - run: python tools/g1/run_identity_tenant_shell_runtime.py
-"""
+SAFE_RUNTIME_OBJECT = {
+    "name": scope.EXPECTED_RUNTIME_NAME,
+    "on": {"pull_request": {}, "workflow_dispatch": {}},
+    "permissions": {},
+    "jobs": {
+        "g1-runtime": {
+            "runs-on": "ubuntu-latest",
+            "steps": [
+                {"uses": "actions/checkout@1111111111111111111111111111111111111111"},
+                {"uses": "actions/setup-python@2222222222222222222222222222222222222222"},
+                {"uses": "actions/setup-node@3333333333333333333333333333333333333333"},
+                {"run": scope.EXPECTED_RUNTIME_ENTRYPOINT},
+            ],
+        }
+    },
+}
+SAFE_RUNTIME_WORKFLOW = json.dumps(SAFE_RUNTIME_OBJECT, indent=2, sort_keys=False) + "\n"
 
 
 def run_git(root: Path, *args: str) -> str:
@@ -148,15 +149,7 @@ def falsify_real_git_diff_gate() -> None:
         write(root, "src/jlmirror_g1/shell.py", "allowed\n")
         write(root, "src/jlmirror_authority/session.py", "forbidden\n")
         head = commit_head(root, "mixed")
-        classified, errors = scope.validate(
-            base,
-            head,
-            scope.EXPECTED_HEAD_PREFIX + "/slice",
-            {scope.EXPECTED_LABEL},
-            REPO,
-            REPO,
-            root=root,
-        )
+        classified, errors = scope.validate(base, head, scope.EXPECTED_HEAD_PREFIX + "/slice", {scope.EXPECTED_LABEL}, REPO, REPO, root=root)
         assert classified
         assert "unauthorized G1 implementation path: src/jlmirror_authority/session.py" in errors
         changed = scope.changed_paths(root, base, head)
@@ -172,24 +165,13 @@ def falsify_candidate_metadata_fail_closed() -> None:
         write_claim(root)
         write(root, "src/jlmirror_g1/shell.py", "allowed\n")
         head = commit_head(root, "candidate")
-
         classified, errors = scope.validate(base, head, "feature/not-canonical-g1", {scope.EXPECTED_LABEL}, REPO, REPO, root=root)
         assert classified and "G1 implementation PR missing required canonical head prefix" in errors
-
         classified, errors = scope.validate(base, head, scope.EXPECTED_HEAD_PREFIX + "/slice", set(), REPO, REPO, root=root)
         assert classified and "G1 implementation PR missing required canonical label" in errors
-
         run_git(root, "rm", scope.EXPECTED_CLAIM_PATH)
         head_without_claim = commit_head(root, "missing-claim")
-        classified, errors = scope.validate(
-            base,
-            head_without_claim,
-            scope.EXPECTED_HEAD_PREFIX + "/slice",
-            {scope.EXPECTED_LABEL},
-            REPO,
-            REPO,
-            root=root,
-        )
+        classified, errors = scope.validate(base, head_without_claim, scope.EXPECTED_HEAD_PREFIX + "/slice", {scope.EXPECTED_LABEL}, REPO, REPO, root=root)
         assert classified and any("missing or malformed required claim" in error for error in errors)
     finally:
         td.cleanup()
@@ -200,15 +182,7 @@ def falsify_all_voluntary_metadata_omission() -> None:
     try:
         write(root, "src/jlmirror_authority/session.py", "forbidden-hidden-g1\n")
         head = commit_head(root, "hidden-g1-shared-core-only")
-        classified, errors = scope.validate(
-            base,
-            head,
-            "feature/not-canonical-g1",
-            set(),
-            REPO,
-            REPO,
-            root=root,
-        )
+        classified, errors = scope.validate(base, head, "feature/not-canonical-g1", set(), REPO, REPO, root=root)
         assert classified
         assert "G1 implementation PR missing required canonical head prefix" in errors
         assert "G1 implementation PR missing required canonical label" in errors
@@ -219,27 +193,30 @@ def falsify_all_voluntary_metadata_omission() -> None:
 
 
 def falsify_runtime_workflow_semantics() -> None:
+    assert not scope.validate_runtime_workflow_text(SAFE_RUNTIME_WORKFLOW)
+
+    quoted_yaml = '''name: JLMIRROR G1 Identity Tenant Shell Runtime\n"on":\n  pull_request: {}\n  workflow_dispatch: {}\npermissions: {}\njobs:\n  g1-runtime:\n    runs-on: ubuntu-latest\n    steps:\n      - "run": echo unrelated-command\n'''
+    quoted_errors = scope.validate_runtime_workflow_text(quoted_yaml)
+    assert "runtime workflow must use canonical JSON-form YAML for semantic validation" in quoted_errors, quoted_errors
+
+    privileged = json.loads(SAFE_RUNTIME_WORKFLOW)
+    privileged["jobs"]["g1-runtime"]["permissions"] = {"statuses": "write"}
+    privileged_errors = scope.validate_runtime_workflow_text(json.dumps(privileged))
+    assert "runtime workflow job shape drift" in privileged_errors, privileged_errors
+
+    extra_run = json.loads(SAFE_RUNTIME_WORKFLOW)
+    extra_run["jobs"]["g1-runtime"]["steps"].insert(3, {"run": "echo unrelated-command"})
+    extra_run_errors = scope.validate_runtime_workflow_text(json.dumps(extra_run))
+    assert "runtime workflow must contain exactly four canonical steps" in extra_run_errors, extra_run_errors
+
     td, root, base = make_repo()
     try:
         write_claim(root)
-        unsafe = SAFE_RUNTIME_WORKFLOW.replace("  pull_request:\n", "  pull_request_target:\n").replace("permissions: {}", "permissions:\n  contents: write\n  statuses: write")
-        write(root, scope.EXPECTED_RUNTIME_WORKFLOW, unsafe)
+        write(root, scope.EXPECTED_RUNTIME_WORKFLOW, json.dumps(privileged))
         head = commit_head(root, "unsafe-runtime-workflow")
-        classified, errors = scope.validate(
-            base,
-            head,
-            scope.EXPECTED_HEAD_PREFIX + "/slice",
-            {scope.EXPECTED_LABEL},
-            REPO,
-            REPO,
-            root=root,
-        )
+        classified, errors = scope.validate(base, head, scope.EXPECTED_HEAD_PREFIX + "/slice", {scope.EXPECTED_LABEL}, REPO, REPO, root=root)
         assert classified
-        assert any("trigger set drift" in error or "forbidden authority/capability marker: pull_request_target:" in error for error in errors), errors
-        assert any("zero-permission declaration" in error or "contents: write" in error for error in errors), errors
-
-        direct_errors = scope.validate_runtime_workflow_text(SAFE_RUNTIME_WORKFLOW.replace(scope.EXPECTED_RUNTIME_ENTRYPOINT, "kubectl apply -f prod.yml"))
-        assert any("executable responsibility drift" in error or "kubectl" in error for error in direct_errors), direct_errors
+        assert "runtime workflow job shape drift" in errors, errors
     finally:
         td.cleanup()
 
@@ -253,15 +230,7 @@ def prove_allowed_paths() -> None:
         write(root, "tools/g1/run_identity_tenant_shell_runtime.py", "print('g1 runtime proof')\n")
         write(root, scope.EXPECTED_RUNTIME_WORKFLOW, SAFE_RUNTIME_WORKFLOW)
         head = commit_head(root, "allowed")
-        classified, errors = scope.validate(
-            base,
-            head,
-            scope.EXPECTED_HEAD_PREFIX + "/slice",
-            {scope.EXPECTED_LABEL},
-            REPO,
-            REPO,
-            root=root,
-        )
+        classified, errors = scope.validate(base, head, scope.EXPECTED_HEAD_PREFIX + "/slice", {scope.EXPECTED_LABEL}, REPO, REPO, root=root)
         assert classified and not errors, errors
     finally:
         td.cleanup()
@@ -276,7 +245,7 @@ def main() -> int:
     falsify_candidate_metadata_fail_closed()
     falsify_all_voluntary_metadata_omission()
     falsify_runtime_workflow_semantics()
-    print("g1_implementation_scope_falsification=PASS shared_core=blocked mixed_diff=blocked real_git_diff=executed metadata=label+branch+claim_fail_closed all_metadata_omission=blocked runtime_workflow=semantic-authority-bounded explicit_trusted_classification=required default_base_policy=required exact_head_status=evidence-only live_readiness=required allowed_paths=accepted")
+    print("g1_implementation_scope_falsification=PASS shared_core=blocked mixed_diff=blocked real_git_diff=executed metadata=label+branch+claim_fail_closed all_metadata_omission=blocked runtime_workflow=json-yaml-semantic+quoted-key-safe explicit_trusted_classification=required default_base_policy=required exact_head_status=evidence-only live_readiness=required allowed_paths=accepted")
     return 0
 
 

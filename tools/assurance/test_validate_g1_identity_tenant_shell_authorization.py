@@ -100,6 +100,7 @@ def falsify_implementation_scope_gate_execution() -> None:
     scope_falsifier.falsify_real_git_diff_gate()
     scope_falsifier.falsify_candidate_metadata_fail_closed()
     scope_falsifier.falsify_all_voluntary_metadata_omission()
+    scope_falsifier.falsify_runtime_workflow_semantics()
 
 
 def falsify_authority_source_corpus() -> None:
@@ -138,7 +139,7 @@ def main() -> int:
     falsify_g1_scope_and_invariants()
     falsify_merge_and_production_boundaries()
     falsify_successor_governance_rules()
-    print("g1_identity_tenant_shell_authorization_falsification=PASS authority_escalation=blocked implementation_path_expansion=blocked trusted_default_branch_caller=bound status=evidence-only readiness=source-authenticated-live-preflight spoofed_status=blocked skip_ci_stale_base=blocked mutable_label=blocked candidate_workflow_authority=blocked candidate_relevance_bypass=blocked real_git_diff=executed")
+    print("g1_identity_tenant_shell_authorization_falsification=PASS authority_escalation=blocked implementation_path_expansion=blocked runtime_workflow_semantics=bounded trusted_default_branch_caller=bound status=evidence-only readiness=source-authenticated-live-preflight spoofed_status=blocked skip_ci_stale_base=blocked mutable_label=blocked candidate_workflow_authority=blocked candidate_relevance_bypass=blocked real_git_diff=executed")
     return 0
 
 

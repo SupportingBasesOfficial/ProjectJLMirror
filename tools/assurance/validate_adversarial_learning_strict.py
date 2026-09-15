@@ -23,6 +23,7 @@ G1_SCOPE_PROBES = (
     'falsify_real_git_diff_gate',
     'falsify_candidate_metadata_fail_closed',
     'falsify_all_voluntary_metadata_omission',
+    'falsify_runtime_workflow_semantics',
 )
 G1_AUTHORIZATION_READINESS_PROBE = 'falsify_trusted_scope_readiness_execution'
 G1_READINESS_PROBE = 'falsify_live_readiness_guards'
@@ -189,14 +190,30 @@ def _validate_g1_authorization_readiness_outer_effect(root: Path) -> list[str]:
     delegated_name = 'test_validate_g1_identity_tenant_shell_scope_readiness'
     saved_delegated = sys.modules.pop(delegated_name, None)
     sentinel = type(sys)(delegated_name)
-    state = {'calls': 0}
-    sentinel_exception = RuntimeError('strict G1 readiness delegation import sentinel')
+    audit_state: dict[str, Any] = {'phase': 'import', 'calls': []}
+    audit_event = 'jlmirror.g1.readiness.delegation'
+    errors: list[str] = []
+
+    def audit_hook(event: str, _args: tuple[Any, ...]) -> None:
+        if event != audit_event:
+            return
+        try:
+            caller_code = sys._getframe(1).f_code
+        except (ValueError, AttributeError):
+            caller_code = None
+        audit_state['calls'].append((audit_state['phase'], caller_code))
+
+    sys.addaudithook(audit_hook)
+
     def delegated_probe() -> None:
-        state['calls'] += 1
-        raise sentinel_exception
+        sys.audit('jlmirror.g1.readiness.delegation')
+        raise RuntimeError('strict G1 readiness delegation sentinel')
+
+    expected_code = delegated_probe.__code__
+    if delegated_probe.__closure__ is not None or delegated_probe.__defaults__:
+        errors.append('strict G1 readiness delegation sentinel unexpectedly exposes closure/default state')
     sentinel.falsify_live_readiness_guards = delegated_probe
     sys.modules[delegated_name] = sentinel
-    errors: list[str] = []
     try:
         spec = importlib.util.spec_from_file_location(module_name, path)
         if spec is None or spec.loader is None:
@@ -204,10 +221,11 @@ def _validate_g1_authorization_readiness_outer_effect(root: Path) -> list[str]:
         module = importlib.util.module_from_spec(spec)
         sys.modules[module_name] = module
         spec.loader.exec_module(module)
-        if state['calls'] != 0:
-            errors.append(f'credited G1 authorization readiness outer module invoked delegated sentinel during import: {state["calls"]}')
-        state['calls'] = 0
-        sentinel_exception = RuntimeError('strict G1 readiness delegation invocation sentinel')
+        import_calls = [code for phase, code in audit_state['calls'] if phase == 'import' and code is expected_code]
+        if import_calls:
+            errors.append(f'credited G1 authorization readiness outer module invoked delegated sentinel during import: {len(import_calls)}')
+        audit_state['calls'].clear()
+        audit_state['phase'] = 'invocation'
         sentinel.falsify_live_readiness_guards = delegated_probe
         probe = getattr(module, G1_AUTHORIZATION_READINESS_PROBE, None)
         if not callable(probe):
@@ -215,12 +233,23 @@ def _validate_g1_authorization_readiness_outer_effect(root: Path) -> list[str]:
         try:
             probe()
         except BaseException as exc:
-            if exc is not sentinel_exception:
-                errors.append(f'credited G1 authorization readiness outer probe did not propagate the invocation-scoped sentinel identity: {type(exc).__name__}: {exc}')
+            traceback_has_sentinel = False
+            tb = exc.__traceback__
+            while tb is not None:
+                if tb.tb_frame.f_code is expected_code:
+                    traceback_has_sentinel = True
+                    break
+                tb = tb.tb_next
+            if not traceback_has_sentinel:
+                errors.append(f'credited G1 authorization readiness outer probe did not propagate an exception originating in the opaque invocation sentinel: {type(exc).__name__}: {exc}')
         else:
             errors.append('credited G1 authorization readiness outer probe did not execute delegated readiness sentinel')
-        if state['calls'] != 1:
-            errors.append(f'credited G1 authorization readiness outer probe delegated sentinel invocation count drift: {state["calls"]}')
+        invocation_calls = [code for phase, code in audit_state['calls'] if phase == 'invocation' and code is expected_code]
+        if len(invocation_calls) != 1:
+            errors.append(f'credited G1 authorization readiness outer probe opaque sentinel invocation count drift: {len(invocation_calls)}')
+        foreign_calls = [code for phase, code in audit_state['calls'] if phase == 'invocation' and code is not expected_code]
+        if foreign_calls:
+            errors.append(f'credited G1 authorization readiness outer probe emitted spoofed delegation audit events: {len(foreign_calls)}')
     except Exception as exc:
         errors.append(f'credited G1 authorization readiness outer probe could not execute: {type(exc).__name__}: {exc}')
     finally:
@@ -308,6 +337,24 @@ def _validate_g1_readiness_probe_effects(root: Path) -> list[str]:
                     errors.append(f'credited G1 readiness negative-case boundaries drift: actual={state["negative_boundaries"]} expected={expected_boundaries}')
                 if state['invalid_deltas']:
                     errors.append(f'credited G1 readiness negative case did not invoke permissive verifier exactly once: {state["invalid_deltas"]}')
+
+                rejection_calls: list[dict[str, Any]] = []
+                def rejection_verifier(**kwargs: Any) -> tuple[str, str, int]:
+                    rejection_calls.append(clone(kwargs))
+                    return (base_sha, head_sha, run_id)
+                module.readiness.validate_live_readiness = rejection_verifier
+                module.must_reject = original_must_reject
+                try:
+                    probe()
+                except AssertionError as exc:
+                    if len(rejection_calls) != 3:
+                        errors.append(f'credited G1 readiness permissive-rejection proof failed at wrong boundary: calls={len(rejection_calls)} expected=3')
+                    if 'readiness mutation unexpectedly accepted:' not in str(exc):
+                        errors.append(f'credited G1 readiness permissive-rejection failure is not authoritative: {exc}')
+                except Exception as exc:
+                    errors.append(f'credited G1 readiness permissive-rejection proof failed unexpectedly: {type(exc).__name__}:{exc}')
+                else:
+                    errors.append('credited G1 readiness probe accepts a permissive verifier when real must_reject semantics are preserved')
         finally:
             module.readiness.validate_live_readiness = original_validate
             module.must_reject = original_must_reject
@@ -383,6 +430,6 @@ def main() -> None:
     parser=argparse.ArgumentParser(); parser.add_argument('--root',type=Path,default=Path.cwd()); parser.add_argument('--review-comments',type=Path); args=parser.parse_args(); errors=validate(args.root,args.review_comments)
     for error in errors: print('ADVERSARIAL_LEARNING_STRICT_ERROR:',error)
     if errors: raise SystemExit(1)
-    print('adversarial_learning_strict=PASS head_status=isolated+fresh reviewer_identity=external-only material_formats=badge+priority-prefix d4c_current_projection=terminal-governed-surfaces falsifier_effects=executed-negative-helper g1_negative_helper=executed-reject+accept g1_scope_probes=permissive-evaluator-rejected g1_readiness_delegation=bound+import-clean+invocation-scoped-sentinel g1_readiness_probe=exact-semantic-call-sequence+negative-boundaries')
+    print('adversarial_learning_strict=PASS head_status=isolated+fresh reviewer_identity=external-only material_formats=badge+priority-prefix d4c_current_projection=terminal-governed-surfaces falsifier_effects=executed-negative-helper g1_negative_helper=executed-reject+accept g1_scope_probes=permissive-evaluator-rejected+runtime-workflow-semantics g1_readiness_delegation=bound+import-clean+opaque-audit-sentinel g1_readiness_probe=exact-semantic-call-sequence+negative-boundaries+permissive-rejection')
 
 if __name__=='__main__': main()

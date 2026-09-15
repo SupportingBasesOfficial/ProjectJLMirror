@@ -156,6 +156,58 @@
       "guardrails": [{"path":"tools/assurance/test_validate_g1_identity_tenant_shell_authorization.py","probe":"falsify_implementation_scope_gate_execution"}],
       "systemic_guardrail_updated": true,
       "guardrail_generation": 101
+    },
+    {
+      "id": "LEARN-PR153-034",
+      "pr": 153,
+      "source": "external_review",
+      "review_comment_id": 4011100562,
+      "class_id": "ADV-ASSURANCE-PRIVILEGE-BOUNDARY",
+      "invariant_ids": ["INV-LEARNING-003"],
+      "root_cause": "The runtime-workflow authority guard parsed raw YAML text lexically. Valid quoted YAML keys and equivalent surface spellings could therefore encode extra executable steps or write permissions without matching the unquoted markers, so textual scanning did not authenticate the workflow's actual semantic tree.",
+      "horizontal_audit": ["quoted YAML keys","equivalent YAML spellings","workflow semantic tree","trigger authority","job-level permissions","step executable responsibility","parser ambiguity"],
+      "guardrails": [{"path":"tools/assurance/test_validate_g1_identity_tenant_shell_authorization.py","probe":"falsify_implementation_scope_gate_execution"}],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 102
+    },
+    {
+      "id": "LEARN-PR153-035",
+      "pr": 153,
+      "source": "external_review",
+      "review_comment_id": 4011100567,
+      "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP",
+      "invariant_ids": ["INV-LEARNING-002"],
+      "root_cause": "The strict layer executed the inner runtime-workflow falsifier directly but the ledger credited the outer authorization probe. Removing the outer delegation could therefore leave the material finding reconciled from unrelated outer negative checks plus independent inner execution, breaking the executable chain from ledger credit to runtime-workflow semantics.",
+      "horizontal_audit": ["ledger credited outer probe","inner runtime falsifier","direct delegation AST","exact call-site runtime provenance","alias rebinding","no-op outer delegation"],
+      "guardrails": [{"path":"tools/assurance/test_validate_g1_identity_tenant_shell_authorization.py","probe":"falsify_implementation_scope_gate_execution"}],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 103
+    },
+    {
+      "id": "LEARN-PR153-036",
+      "pr": 153,
+      "source": "external_review",
+      "review_comment_id": 4011100574,
+      "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP",
+      "invariant_ids": ["INV-LEARNING-002"],
+      "root_cause": "Authenticating that the readiness sentinel callback executed did not prove it executed through the syntactically credited attribute call. Candidate code could save the callback, rebind the credited attribute to a no-op, satisfy the visible call statement, and invoke the saved callback elsewhere, retaining false runtime delegation evidence.",
+      "horizontal_audit": ["saved callback interception","attribute rebinding","syntactic direct call","traceback call-site adjacency","outer probe source line","sentinel callback provenance"],
+      "guardrails": [{"path":"tools/assurance/test_validate_g1_identity_tenant_shell_authorization.py","probe":"falsify_trusted_scope_readiness_execution"}],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 104
+    },
+    {
+      "id": "LEARN-PR153-037",
+      "pr": 153,
+      "source": "external_review",
+      "review_comment_id": 4011100577,
+      "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP",
+      "invariant_ids": ["INV-LEARNING-002"],
+      "root_cause": "The permissive-rejection proof reused the same already-executed readiness test module for its second invocation. Stateful candidate code could distinguish that phase and fabricate the expected rejection only on the second call, so the proof did not establish first-invocation behavior under an always-successful verifier.",
+      "horizontal_audit": ["module global state","probe invocation count","fresh module loading","permissive verifier rejection","first-invocation equivalence","candidate phase detection"],
+      "guardrails": [{"path":"tools/assurance/test_validate_g1_identity_tenant_shell_authorization.py","probe":"falsify_trusted_scope_readiness_execution"}],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 105
     }
   ]
 }

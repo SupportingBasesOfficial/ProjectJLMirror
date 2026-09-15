@@ -45,7 +45,6 @@ EXPECTED_FORBIDDEN_CODE_MARKERS = (
 )
 EXPECTED_SEMANTIC_SCAN_PREFIXES = EXPECTED_PREFIXES
 RUNTIME_ALLOWED_ACTIONS = ("actions/checkout", "actions/setup-python", "actions/setup-node")
-EXECUTABLE_SUFFIXES = {"", ".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".sh", ".bash", ".sql"}
 STRUCTURAL_MARKERS = {"create table monitoring.", "create schema monitoring", "src/jlmirror_monitoring", "sql/wave4", "alerting."}
 
 
@@ -112,12 +111,25 @@ def validate_paths(paths: list[str], policy: dict[str, Any]) -> list[str]:
     return [f"unauthorized G2 implementation path: {p}" for p in paths if not matches_policy(p, policy)]
 
 
+def _decode_identifier_escapes(text: str) -> str:
+    pattern = re.compile(r"\\u\{([0-9A-Fa-f]{1,6})\}|\\u([0-9A-Fa-f]{4})")
+
+    def replace(match: re.Match[str]) -> str:
+        raw = match.group(1) or match.group(2)
+        value = int(raw, 16)
+        if value > 0x10FFFF or 0xD800 <= value <= 0xDFFF:
+            return match.group(0)
+        return chr(value)
+
+    return pattern.sub(replace, text)
+
+
 def _key(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", unicodedata.normalize("NFKC", value).casefold())
 
 
 def _identifiers(text: str) -> set[str]:
-    normalized = unicodedata.normalize("NFKC", text)
+    normalized = unicodedata.normalize("NFKC", _decode_identifier_escapes(text))
     return {_key(v) for v in re.findall(r"[A-Za-z_][A-Za-z0-9_]*", normalized) if _key(v)}
 
 
@@ -127,20 +139,34 @@ def _path_keys(path: str) -> set[str]:
     return {_key(v) for v in re.split(r"[^A-Za-z0-9]+", normalized) if _key(v)}
 
 
+def _identifier_variants(marker: str) -> set[str]:
+    key = _key(marker)
+    if not key:
+        return set()
+    variants = {key, key + "s", key + "es"}
+    if key.endswith("y") and len(key) > 1:
+        variants.add(key[:-1] + "ies")
+    return variants
+
+
 def validate_semantic_artifact(path: str, text: str, policy: dict[str, Any]) -> list[str]:
     if not any(path.startswith(p) for p in policy.get("semantic_scan_prefixes", [])):
         return []
     errors: list[str] = []
-    if Path(path).suffix.lower() in EXECUTABLE_SUFFIXES and any(ord(ch) > 127 for ch in text):
-        errors.append(f"non-ASCII executable text forbidden in governed G2 artifact: {path}")
+    if any(ord(ch) > 127 for ch in text):
+        errors.append(f"non-ASCII text forbidden in governed G2 artifact: {path}")
+    decoded = _decode_identifier_escapes(text)
     path_keys = _path_keys(path)
     for token in policy.get("forbidden_path_tokens", []):
         if _key(token) in path_keys:
             errors.append(f"forbidden G2 semantic path token '{token}' in {path}")
-    ids = _identifiers(text)
-    folded = unicodedata.normalize("NFKC", text).casefold()
+    ids = _identifiers(decoded)
+    folded = unicodedata.normalize("NFKC", decoded).casefold()
     for marker in policy.get("forbidden_code_markers", []):
-        hit = unicodedata.normalize("NFKC", marker).casefold() in folded if marker in STRUCTURAL_MARKERS else _key(marker) in ids
+        if marker in STRUCTURAL_MARKERS:
+            hit = unicodedata.normalize("NFKC", marker).casefold() in folded
+        else:
+            hit = bool(_identifier_variants(marker) & ids)
         if hit:
             errors.append(f"forbidden G2 semantic code marker '{marker}' in {path}")
     return errors

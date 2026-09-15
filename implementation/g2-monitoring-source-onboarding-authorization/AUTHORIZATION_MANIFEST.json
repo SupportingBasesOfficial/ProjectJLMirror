@@ -71,6 +71,7 @@
     "semantic_scan_prefixes": [
       "apps/g2-monitoring-source-onboarding/",
       "contracts/g2-monitoring-source-onboarding/",
+      "implementation/g2-monitoring-source-onboarding/",
       "tools/g2/"
     ],
     "diff_enforcement_validator": "tools/assurance/validate_g2_monitoring_source_onboarding_implementation_scope.py",

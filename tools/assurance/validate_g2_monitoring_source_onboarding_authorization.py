@@ -35,10 +35,13 @@ EXPECTED_FORBIDDEN_PATH_TOKENS = [
     "inventory", "monitoring-resource", "monitoring_resource", "metric", "problem", "health", "alert", "replacement", "cutover",
 ]
 EXPECTED_FORBIDDEN_CODE_MARKERS = [
-    "monitoring_resource", "resource_inventory", "metric_definition", "metric_current_state", "metric_observation",
-    "problem_state", "health_projection", "alert_policy", "alerting.", "replacement_candidate",
-    "replace_source_instance", "candidate_generation", "create table monitoring.", "create schema monitoring",
-    "src/jlmirror_monitoring", "sql/wave4",
+    "monitoring_resource", "host_inventory", "resource_inventory", "metric_definition", "metric_value", "metric_history",
+    "metric_current_state", "metric_observation", "problem", "problem_state", "health_status", "health_projection",
+    "monitoring_to_alerting", "alert_creation", "alert_policy", "alerting.", "ack_notification_escalation",
+    "acknowledgement", "notification", "escalation", "itsm", "automation", "aiops", "finops", "commercial",
+    "production_deployment", "production_c3", "secret_manager", "egress_transport", "provider_authorization",
+    "raw_provider_credentials", "source_replacement", "source_cutover", "replacement_candidate", "replace_source_instance",
+    "candidate_generation", "create table monitoring.", "create schema monitoring", "src/jlmirror_monitoring", "sql/wave4",
 ]
 EXPECTED_SEMANTIC_SCAN_PREFIXES = [
     "apps/g2-monitoring-source-onboarding/",
@@ -294,7 +297,7 @@ def _trusted_invocation_script(job_block: str, marker: str) -> str | None:
 
 def _script_has_control_flow(script: str) -> bool:
     active = [line.strip() for line in script.splitlines() if line.strip() and not line.lstrip().startswith("#")]
-    control = re.compile(r"^(?:if\b|then\b|fi\b|elif\b|else\b|for\b|while\b|until\b|case\b|esac\b|select\b|function\b|\{\s*$|\}\s*$)")
+    control = re.compile(r"^(?:if\b|then\b|fi\b|elif\b|else\b|for\b|while\b|until\b|case\b|esac\b|select\b|function\b|[A-Za-z_][A-Za-z0-9_]*\s*\(\)\s*\{|alias\b|unalias\b|\{\s*$|\}\s*$)")
     return any(control.search(line) for line in active)
 
 
@@ -328,9 +331,12 @@ def validate_scope_workflow_text(text: str) -> list[str]:
     if scope_script is not None:
         require(not _script_has_control_flow(scope_script), "trusted validator invocation must be control-flow-free and unconditionally reachable", errors)
         scope_cmds = _logical_shell_commands(scope_script)
-        expected_scope_command = 'python3 "$TRUSTED_VALIDATOR" --repo-root "$GITHUB_WORKSPACE" --base "$PR_BASE_SHA" --head "$PR_HEAD_SHA" --head-ref "$PR_HEAD_REF" --labels-json "$PR_LABELS_JSON" --head-repo "$PR_HEAD_REPO" --base-repo "$PR_BASE_REPO"'
-        scope_invocations = [cmd for cmd in scope_cmds if cmd.startswith('python3 "$TRUSTED_VALIDATOR"')]
-        require(scope_invocations == [expected_scope_command], "trusted validator invocation must match exact canonical command without status suppression", errors)
+        expected_scope_commands = [
+            "set -euo pipefail",
+            'PR_LABELS_JSON="$(printf \'%s\' "$PR_LABELS_B64" | base64 -d)"',
+            'python3 "$TRUSTED_VALIDATOR" --repo-root "$GITHUB_WORKSPACE" --base "$PR_BASE_SHA" --head "$PR_HEAD_SHA" --head-ref "$PR_HEAD_REF" --labels-json "$PR_LABELS_JSON" --head-repo "$PR_HEAD_REPO" --base-repo "$PR_BASE_REPO"',
+        ]
+        require(scope_cmds == expected_scope_commands, "trusted validator run script must match exact canonical command-only shape", errors)
     require("statuses: write" not in analyze, "analyze job must remain read-only", errors)
 
     ready = _job_block(text, "verify-ready") or ""
@@ -340,9 +346,11 @@ def validate_scope_workflow_text(text: str) -> list[str]:
     if ready_script is not None:
         require(not _script_has_control_flow(ready_script), "trusted readiness invocation must be control-flow-free and unconditionally reachable", errors)
         ready_cmds = _logical_shell_commands(ready_script)
-        expected_ready_command = 'python3 "$TRUSTED_READINESS_VALIDATOR" --repo "$GITHUB_REPOSITORY" --pr-number "$PR_NUMBER" --server-url "$GITHUB_SERVER_URL"'
-        ready_invocations = [cmd for cmd in ready_cmds if cmd.startswith('python3 "$TRUSTED_READINESS_VALIDATOR"')]
-        require(ready_invocations == [expected_ready_command], "trusted readiness invocation must match exact canonical command without status suppression", errors)
+        expected_ready_commands = [
+            "set -euo pipefail",
+            'python3 "$TRUSTED_READINESS_VALIDATOR" --repo "$GITHUB_REPOSITORY" --pr-number "$PR_NUMBER" --server-url "$GITHUB_SERVER_URL"',
+        ]
+        require(ready_cmds == expected_ready_commands, "trusted readiness run script must match exact canonical command-only shape", errors)
     require("statuses: write" not in ready, "verify-ready job must remain read-only", errors)
 
     final = _job_block(text, "publish-final") or ""
@@ -360,6 +368,8 @@ def validate_scope_workflow_text(text: str) -> list[str]:
     if pos_failure and result_assignments:
         require(all(i < pos_failure[0] for i, _ in result_assignments), "publish-final result may not be overwritten after fail-closed state initialization", errors)
     active = "\n".join(line for line in raw if not line.lstrip().startswith("#"))
+    indirect_assignment = re.compile(r"(?:\bprintf\s+-v\b|\b(?:builtin\s+)?printf\s+-v\b|\bdeclare\b|\btypeset\b|\blocal\b|\bread\b|\beval\b|\bexport\b|\breadonly\b)[^\n]*(?:\bresult\b|\bstate\b)", re.IGNORECASE)
+    require(indirect_assignment.search(active) is None, "publish-final indirect result/state assignment mechanism forbidden", errors)
     for marker in (
         "CURRENT_DEFAULT_BRANCH", "CURRENT_HEAD_SHA", "CURRENT_HEAD_REF", "CURRENT_BASE_SHA", "CURRENT_BASE_REF",
         "CURRENT_DEFAULT_SHA", "CURRENT_LABELS_JSON", 'jq -e --arg required "$G2_REQUIRED_LABEL"',
@@ -406,7 +416,7 @@ def main() -> int:
         print(f"G2_AUTHORIZATION_ERROR: {error}", file=sys.stderr)
     if errors:
         return 1
-    print("g2_authorization=PASS exact_scope=monitoring-source-onboarding path+semantic-scope=guarded workflow=canonical-command+reachability-validated review-findings=internalized merge_authorization=not-granted")
+    print("g2_authorization=PASS exact_scope=monitoring-source-onboarding path+semantic-scope=explicit-exclusions workflow=canonical-command-only+fail-closed review-findings=internalized merge_authorization=not-granted")
     return 0
 
 

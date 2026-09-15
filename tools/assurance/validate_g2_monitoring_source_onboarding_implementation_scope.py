@@ -6,6 +6,7 @@ import json
 import re
 import subprocess
 import sys
+import unicodedata
 from pathlib import Path
 from typing import Any
 
@@ -42,6 +43,8 @@ EXPECTED_FORBIDDEN_CODE_MARKERS = (
     "monitoring_resource",
     "host_inventory",
     "resource_inventory",
+    "resource_ingestion",
+    "metric",
     "metric_definition",
     "metric_value",
     "metric_history",
@@ -49,13 +52,16 @@ EXPECTED_FORBIDDEN_CODE_MARKERS = (
     "metric_observation",
     "problem",
     "problem_state",
+    "health",
     "health_status",
     "health_projection",
     "monitoring_to_alerting",
     "alert_creation",
     "alert_policy",
     "alerting.",
+    "ack_handler",
     "ack_notification_escalation",
+    "acknowledge",
     "acknowledgement",
     "notification",
     "escalation",
@@ -66,9 +72,12 @@ EXPECTED_FORBIDDEN_CODE_MARKERS = (
     "commercial",
     "production_deployment",
     "production_c3",
+    "c3_numerics",
     "secret_manager",
     "egress_transport",
+    "provider_native_authority",
     "provider_authorization",
+    "raw_credentials",
     "raw_provider_credentials",
     "source_replacement",
     "source_cutover",
@@ -194,22 +203,27 @@ def validate_paths(paths: list[str], policy: dict[str, Any]) -> list[str]:
 
 
 def _semantic_key(value: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "", value.lower())
+    normalized = unicodedata.normalize("NFKC", value).casefold()
+    return re.sub(r"[^a-z0-9]+", "", normalized)
+
+
+def _semantic_fold(value: str) -> str:
+    return unicodedata.normalize("NFKC", value).casefold()
 
 
 def validate_semantic_artifact(path: str, text: str, policy: dict[str, Any]) -> list[str]:
     errors: list[str] = []
     if not any(path.startswith(prefix) for prefix in policy.get("semantic_scan_prefixes", [])):
         return errors
-    lowered_path = path.lower()
+    folded_path = _semantic_fold(path)
     normalized_path = _semantic_key(path)
     for token in policy.get("forbidden_path_tokens", []):
-        if token.lower() in lowered_path or _semantic_key(token) in normalized_path:
+        if _semantic_fold(token) in folded_path or _semantic_key(token) in normalized_path:
             errors.append(f"forbidden G2 semantic path token '{token}' in {path}")
-    lowered_text = text.lower()
+    folded_text = _semantic_fold(text)
     normalized_text = _semantic_key(text)
     for marker in policy.get("forbidden_code_markers", []):
-        if marker.lower() in lowered_text or _semantic_key(marker) in normalized_text:
+        if _semantic_fold(marker) in folded_text or _semantic_key(marker) in normalized_text:
             errors.append(f"forbidden G2 semantic code marker '{marker}' in {path}")
     return errors
 
@@ -336,7 +350,7 @@ def main() -> int:
         print(f"G2_IMPLEMENTATION_SCOPE_ERROR: {error}", file=sys.stderr)
     if errors:
         return 1
-    print("g2_implementation_scope=PASS classification=trusted_explicit_attestation path_scope=allowlisted semantic_scope=explicit-exclusions+normalized-all-utf8 readiness=live-source-authenticated")
+    print("g2_implementation_scope=PASS classification=trusted_explicit_attestation path_scope=allowlisted semantic_scope=explicit-exclusions+unicode-normalized-all-utf8 readiness=live-source-authenticated")
     return 0
 
 

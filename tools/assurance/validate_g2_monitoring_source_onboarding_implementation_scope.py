@@ -16,6 +16,7 @@ EXPECTED_CLAIM_PATH = "implementation/g2-monitoring-source-onboarding/IMPLEMENTA
 EXPECTED_AUTHORIZATION_ID = "g2.monitoring-source-onboarding@1"
 EXPECTED_SLICE_ID = "g2.monitoring-source-onboarding@1"
 EXPECTED_RULE = "every_changed_path_must_match_canonical_base_policy"
+EXPECTED_SEMANTIC_RULE = "candidate_executable_artifacts_must_not_introduce_forbidden_g3_or_parallel_monitoring_authority"
 EXPECTED_ATTESTATION_COMMAND = "/jlmirror-g2-scope-attest"
 EXPECTED_READINESS_COMMAND = "/jlmirror-g2-scope-ready"
 EXPECTED_STATUS_CONTEXT = "JLMIRROR / g2-monitoring-source-onboarding-implementation-scope"
@@ -28,12 +29,45 @@ EXPECTED_PREFIXES = (
     "apps/g2-monitoring-source-onboarding/",
     "contracts/g2-monitoring-source-onboarding/",
     "implementation/g2-monitoring-source-onboarding/",
-    "sql/g2/",
-    "src/jlmirror_g2/",
     "tests/g2/",
     "tools/g2/",
 )
 EXPECTED_EXACT = (EXPECTED_RUNTIME_WORKFLOW,)
+EXPECTED_FORBIDDEN_PATH_TOKENS = (
+    "inventory",
+    "monitoring-resource",
+    "monitoring_resource",
+    "metric",
+    "problem",
+    "health",
+    "alert",
+    "replacement",
+    "cutover",
+)
+EXPECTED_FORBIDDEN_CODE_MARKERS = (
+    "monitoring_resource",
+    "resource_inventory",
+    "metric_definition",
+    "metric_current_state",
+    "metric_observation",
+    "problem_state",
+    "health_projection",
+    "alert_policy",
+    "alerting.",
+    "replacement_candidate",
+    "replace_source_instance",
+    "candidate_generation",
+    "create table monitoring.",
+    "create schema monitoring",
+    "src/jlmirror_monitoring",
+    "sql/wave4",
+)
+EXPECTED_SEMANTIC_SCAN_PREFIXES = (
+    "apps/g2-monitoring-source-onboarding/",
+    "contracts/g2-monitoring-source-onboarding/",
+    "tools/g2/",
+)
+SEMANTIC_TEXT_SUFFIXES = {".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".json", ".toml", ".yml", ".yaml"}
 RUNTIME_ALLOWED_TRIGGERS = {"pull_request", "workflow_dispatch"}
 RUNTIME_ALLOWED_ACTIONS = ("actions/checkout", "actions/setup-python", "actions/setup-node")
 
@@ -102,6 +136,10 @@ def configured_policy(policy: dict[str, Any]) -> None:
         (tuple(policy.get("allowed_prefixes", [])) == EXPECTED_PREFIXES, "implementation allowed prefixes drift"),
         (tuple(policy.get("allowed_exact_paths", [])) == EXPECTED_EXACT, "implementation exact paths drift"),
         (policy.get("diff_enforcement_rule") == EXPECTED_RULE, "implementation diff enforcement rule drift"),
+        (policy.get("semantic_guard_rule") == EXPECTED_SEMANTIC_RULE, "semantic guard rule drift"),
+        (tuple(policy.get("forbidden_path_tokens", [])) == EXPECTED_FORBIDDEN_PATH_TOKENS, "forbidden path token set drift"),
+        (tuple(policy.get("forbidden_code_markers", [])) == EXPECTED_FORBIDDEN_CODE_MARKERS, "forbidden code marker set drift"),
+        (tuple(policy.get("semantic_scan_prefixes", [])) == EXPECTED_SEMANTIC_SCAN_PREFIXES, "semantic scan prefix set drift"),
     )
     for ok, message in checks:
         if not ok:
@@ -133,6 +171,38 @@ def validate_candidate_metadata(root: Path, head_sha: str, head_ref: str, labels
 def validate_paths(paths: list[str], policy: dict[str, Any]) -> list[str]:
     errors = [] if policy.get("diff_enforcement_rule") == EXPECTED_RULE else ["implementation diff enforcement rule drift"]
     errors.extend(f"unauthorized G2 implementation path: {path}" for path in paths if not matches_policy(path, policy))
+    return errors
+
+
+def validate_semantic_artifact(path: str, text: str, policy: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    if not any(path.startswith(prefix) for prefix in policy.get("semantic_scan_prefixes", [])):
+        return errors
+    lowered_path = path.lower()
+    for token in policy.get("forbidden_path_tokens", []):
+        if token.lower() in lowered_path:
+            errors.append(f"forbidden G2 semantic path token '{token}' in {path}")
+    suffix = Path(path).suffix.lower()
+    if suffix not in SEMANTIC_TEXT_SUFFIXES:
+        return errors
+    lowered_text = text.lower()
+    for marker in policy.get("forbidden_code_markers", []):
+        if marker.lower() in lowered_text:
+            errors.append(f"forbidden G2 semantic code marker '{marker}' in {path}")
+    return errors
+
+
+def validate_candidate_semantics(root: Path, head_sha: str, paths: list[str], policy: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    for path in paths:
+        if not any(path.startswith(prefix) for prefix in policy.get("semantic_scan_prefixes", [])):
+            continue
+        try:
+            text = git_bytes(root, "show", f"{head_sha}:{path}").decode("utf-8")
+        except (subprocess.CalledProcessError, UnicodeDecodeError):
+            errors.append(f"G2 semantic-scanned artifact must exist as UTF-8 text: {path}")
+            continue
+        errors.extend(validate_semantic_artifact(path, text, policy))
     return errors
 
 
@@ -214,6 +284,7 @@ def validate(base_sha: str, head_sha: str, head_ref: str, labels: set[str], head
             errors.append("attested G2 implementation PR has no changed paths")
         else:
             errors.extend(validate_paths(paths, policy))
+            errors.extend(validate_candidate_semantics(root, head_sha, paths, policy))
             errors.extend(validate_runtime_workflow_from_head(root, head_sha, paths))
         return True, errors
     except (AssertionError, subprocess.CalledProcessError, json.JSONDecodeError, UnicodeDecodeError) as exc:
@@ -243,7 +314,7 @@ def main() -> int:
         print(f"G2_IMPLEMENTATION_SCOPE_ERROR: {error}", file=sys.stderr)
     if errors:
         return 1
-    print("g2_implementation_scope=PASS classification=trusted_explicit_attestation default_base=required exact_head_status=evidence-only readiness=live-source-authenticated metadata=label+branch+claim complete_diff=allowlisted runtime_workflow=json-yaml-semantic+zero-permission+bounded-trigger+single-entrypoint")
+    print("g2_implementation_scope=PASS classification=trusted_explicit_attestation path_scope=allowlisted semantic_scope=bounded-g2-only readiness=live-source-authenticated")
     return 0
 
 

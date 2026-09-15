@@ -21,7 +21,7 @@ POLICY = {
         "tests/g1/",
         "tools/g1/",
     ],
-    "allowed_exact_paths": [".github/workflows/g1-identity-tenant-shell-runtime.yml"],
+    "allowed_exact_paths": [scope.EXPECTED_RUNTIME_WORKFLOW],
     "implementation_pr_head_prefix": scope.EXPECTED_HEAD_PREFIX,
     "implementation_pr_required_label": scope.EXPECTED_LABEL,
     "implementation_claim_path": scope.EXPECTED_CLAIM_PATH,
@@ -49,6 +49,23 @@ POLICY = {
     "candidate_controlled_relevance_inference": "forbidden",
 }
 REPO = "SupportingBasesOfficial/ProjectJLMirror"
+SAFE_RUNTIME_WORKFLOW = """name: JLMIRROR G1 Identity Tenant Shell Runtime
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  g1-runtime:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@1111111111111111111111111111111111111111
+      - uses: actions/setup-python@2222222222222222222222222222222222222222
+      - uses: actions/setup-node@3333333333333333333333333333333333333333
+      - run: python tools/g1/run_identity_tenant_shell_runtime.py
+"""
 
 
 def run_git(root: Path, *args: str) -> str:
@@ -201,12 +218,40 @@ def falsify_all_voluntary_metadata_omission() -> None:
         td.cleanup()
 
 
+def falsify_runtime_workflow_semantics() -> None:
+    td, root, base = make_repo()
+    try:
+        write_claim(root)
+        unsafe = SAFE_RUNTIME_WORKFLOW.replace("  pull_request:\n", "  pull_request_target:\n").replace("permissions: {}", "permissions:\n  contents: write\n  statuses: write")
+        write(root, scope.EXPECTED_RUNTIME_WORKFLOW, unsafe)
+        head = commit_head(root, "unsafe-runtime-workflow")
+        classified, errors = scope.validate(
+            base,
+            head,
+            scope.EXPECTED_HEAD_PREFIX + "/slice",
+            {scope.EXPECTED_LABEL},
+            REPO,
+            REPO,
+            root=root,
+        )
+        assert classified
+        assert any("trigger set drift" in error or "forbidden authority/capability marker: pull_request_target:" in error for error in errors), errors
+        assert any("zero-permission declaration" in error or "contents: write" in error for error in errors), errors
+
+        direct_errors = scope.validate_runtime_workflow_text(SAFE_RUNTIME_WORKFLOW.replace(scope.EXPECTED_RUNTIME_ENTRYPOINT, "kubectl apply -f prod.yml"))
+        assert any("executable responsibility drift" in error or "kubectl" in error for error in direct_errors), direct_errors
+    finally:
+        td.cleanup()
+
+
 def prove_allowed_paths() -> None:
     td, root, base = make_repo()
     try:
         write_claim(root)
         write(root, "apps/g1-identity-tenant-shell/frontend/index.html", "ok\n")
         write(root, "src/jlmirror_g1/app.py", "ok\n")
+        write(root, "tools/g1/run_identity_tenant_shell_runtime.py", "print('g1 runtime proof')\n")
+        write(root, scope.EXPECTED_RUNTIME_WORKFLOW, SAFE_RUNTIME_WORKFLOW)
         head = commit_head(root, "allowed")
         classified, errors = scope.validate(
             base,
@@ -230,7 +275,8 @@ def main() -> int:
     falsify_real_git_diff_gate()
     falsify_candidate_metadata_fail_closed()
     falsify_all_voluntary_metadata_omission()
-    print("g1_implementation_scope_falsification=PASS shared_core=blocked mixed_diff=blocked real_git_diff=executed metadata=label+branch+claim_fail_closed all_metadata_omission=blocked explicit_trusted_classification=required default_base_policy=required exact_head_status=evidence-only live_readiness=required allowed_paths=accepted")
+    falsify_runtime_workflow_semantics()
+    print("g1_implementation_scope_falsification=PASS shared_core=blocked mixed_diff=blocked real_git_diff=executed metadata=label+branch+claim_fail_closed all_metadata_omission=blocked runtime_workflow=semantic-authority-bounded explicit_trusted_classification=required default_base_policy=required exact_head_status=evidence-only live_readiness=required allowed_paths=accepted")
     return 0
 
 

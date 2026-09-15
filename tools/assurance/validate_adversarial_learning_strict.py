@@ -47,7 +47,7 @@ D4C_STALE_CURRENT_MARKERS = (
     "d4c['candidate_status']=='not_selected'", 'd4c["candidate_status"]=="not_selected"',
     "tracks['D4-C']['candidate_status']=='not_selected'", 'tracks["D4-C"]["candidate_status"]=="not_selected"',
     "d4c['state']=='candidate_selection_open'", 'd4c["state"]=="candidate_selection_open"',
-    "tracks['D4-C']['state']=='candidate_selection_open'", 'tracks["D4-C"]["state']=="candidate_selection_open"',
+    "tracks['D4-C']['state']=='candidate_selection_open'", 'tracks["D4-C"]["state"]=="candidate_selection_open"',
 )
 
 

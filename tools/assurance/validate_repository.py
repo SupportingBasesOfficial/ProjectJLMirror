@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Deterministic repository assurance checks for JLMIRROR.
 
-The default assurance profile is observer-only. One narrowly scoped workflow may
-publish reconciliation commit statuses, but its write-capable jobs must never
-checkout or execute pull-request-controlled content and its GitHub API writes are
-validated as exact parsed commands rather than substring matches.
+The default assurance profile is observer-only. A narrowly enumerated set of
+status-reconciliation workflows may publish commit statuses, but their
+write-capable jobs must never checkout or execute pull-request-controlled content
+and GitHub API writes are validated as exact parsed commands rather than
+substring matches.
 """
 
 from __future__ import annotations
@@ -20,6 +21,8 @@ PROFILE_ID = "jlmirror-deterministic-assurance/v1"
 WORKFLOW_SUFFIXES = {".yml", ".yaml"}
 TEXT_SUFFIXES = {".md", ".yml", ".yaml", ".py", ".json", ".toml", ".txt"}
 STATUS_PUBLISHER_WORKFLOW = ".github/workflows/adversarial-learning-reconciliation.yml"
+G1_STATUS_PUBLISHER_WORKFLOW = ".github/workflows/g1-identity-tenant-shell-implementation-scope.yml"
+STATUS_PUBLISHER_WORKFLOWS = {STATUS_PUBLISHER_WORKFLOW, G1_STATUS_PUBLISHER_WORKFLOW}
 EXPECTED_STATUS_ENDPOINT = "repos/${GITHUB_REPOSITORY}/statuses/${PR_HEAD_SHA}"
 
 ACTION_USE_RE = re.compile(r"^\s*(?:-\s*)?uses:\s*([^\s#]+)\s*(?:#.*)?$", re.MULTILINE)
@@ -149,29 +152,27 @@ def _parse_gh_api(command: str) -> tuple[str, str | None] | None:
     return method, endpoint
 
 
-def _status_publisher_policy_errors(text: str) -> list[str]:
+def _publisher_common_errors(text: str, *, group_marker: str, head_output: str) -> list[str]:
     errors: list[str] = []
     if "workflow_dispatch:" in text:
         errors.append("status reconciliation workflow must not advertise unsupported workflow_dispatch execution")
-    if "cancel-in-progress: true" not in text or "group: adversarial-learning-${{ github.event.issue.number }}" not in text:
+    if "cancel-in-progress: true" not in text or group_marker not in text:
         errors.append("status reconciliation must serialize/cancel superseded runs per pull request")
     if not re.search(r"^permissions:\s*\{\}\s*$", text, re.MULTILINE):
         errors.append("status reconciliation must default to zero workflow-level permissions")
 
     publisher_names = ("publish-pending", "publish-final")
-    publisher_blocks: list[str] = []
     for name in publisher_names:
         block = _job_block(text, name)
         if block is None:
             errors.append(f"status reconciliation missing privileged job {name}")
             continue
-        publisher_blocks.append(block)
         if block.count("statuses: write") != 1:
             errors.append(f"{name} must grant exactly statuses: write")
         forbidden = ("actions/checkout@", "python3 ", "git ", "$GITHUB_PATH", "$GITHUB_ENV", "source ")
         if any(marker in block for marker in forbidden):
             errors.append(f"{name} must never checkout, source, or execute pull-request-controlled content")
-        if "needs.resolve.outputs.pr_head_sha" not in block:
+        if head_output not in block:
             errors.append(f"{name} must publish only to the trusted resolve-job PR head output")
 
     analyze = _job_block(text, "analyze")
@@ -205,15 +206,70 @@ def _status_publisher_policy_errors(text: str) -> list[str]:
     return errors
 
 
+def _status_publisher_policy_errors(text: str) -> list[str]:
+    return _publisher_common_errors(
+        text,
+        group_marker="group: adversarial-learning-${{ github.event.issue.number }}",
+        head_output="needs.resolve.outputs.pr_head_sha",
+    )
+
+
+def _g1_status_publisher_policy_errors(text: str) -> list[str]:
+    errors = _publisher_common_errors(
+        text,
+        group_marker="group: g1-identity-tenant-shell-scope-${{ github.event.issue.number }}",
+        head_output="needs.resolve.outputs.head_sha",
+    )
+    required_markers = (
+        "github.event.comment.body == '/jlmirror-g1-scope-attest'",
+        "github.event.comment.body == '/jlmirror-g1-scope-ready'",
+        'test "$PR_BASE_REF" = "$DEFAULT_BRANCH"',
+        'test "$PR_BASE_REPO" = "$GITHUB_REPOSITORY"',
+        'test "$PR_HEAD_REPO" = "$GITHUB_REPOSITORY"',
+        'test "$PR_BASE_SHA" = "$DEFAULT_BRANCH_SHA"',
+        "branches/${DEFAULT_BRANCH}",
+        "G1_REQUIRED_LABEL",
+        'git show "${PR_BASE_SHA}:${G1_SCOPE_VALIDATOR}" > "$trusted_validator"',
+        "contents/${G1_READINESS_VALIDATOR}?ref=${PR_BASE_SHA}",
+        'python3 "$TRUSTED_READINESS_VALIDATOR"',
+        'test "$(git rev-parse HEAD)" != "$PR_HEAD_SHA"',
+        "CURRENT_HEAD_SHA",
+        "CURRENT_BASE_SHA",
+        "CURRENT_BASE_REF",
+        "CURRENT_DEFAULT_SHA",
+        "CURRENT_LABELS_JSON",
+        "JLMIRROR / g1-identity-tenant-shell-implementation-scope",
+        "JLMIRROR / g1-identity-tenant-shell-merge-readiness",
+        "G1 scope PASS base=${PR_BASE_SHA} head=${PR_HEAD_SHA}",
+        "G1 ready PASS base=${PR_BASE_SHA} head=${PR_HEAD_SHA}",
+        'test "$state" = success',
+    )
+    for marker in required_markers:
+        if marker not in text:
+            errors.append(f"G1 status reconciliation missing trusted marker: {marker}")
+    if re.search(r"^\s+push:\s*$", text, re.MULTILINE):
+        errors.append("G1 status reconciliation must not depend on skippable push invalidation")
+    if text.count("uses: actions/checkout@") != 1:
+        errors.append("G1 status reconciliation must checkout code only once in read-only scope analysis")
+    ready = _job_block(text, "verify-ready")
+    if ready is None:
+        errors.append("G1 status reconciliation missing source-authenticated live readiness job")
+    elif "statuses: write" in ready:
+        errors.append("G1 live readiness verification must remain read-only")
+    return errors
+
+
 def _check_workflow_policy(root: Path) -> list[Finding]:
     findings: list[Finding] = []
     for path in _workflow_files(root):
         rel = path.relative_to(root).as_posix()
         text = path.read_text(encoding="utf-8")
-        is_status_publisher = rel == STATUS_PUBLISHER_WORKFLOW
+        is_status_publisher = rel in STATUS_PUBLISHER_WORKFLOWS
 
-        if is_status_publisher:
+        if rel == STATUS_PUBLISHER_WORKFLOW:
             findings.extend(Finding(rel, message) for message in _status_publisher_policy_errors(text))
+        elif rel == G1_STATUS_PUBLISHER_WORKFLOW:
+            findings.extend(Finding(rel, message) for message in _g1_status_publisher_policy_errors(text))
         else:
             for regex, message in (
                 (WRITE_ALL_RE, "workflow grants permissions: write-all; observer-only workflows must not have canonical mutation authority"),

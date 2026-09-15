@@ -79,6 +79,56 @@
       ],
       "systemic_guardrail_updated": true,
       "guardrail_generation": 116
+    },
+    {
+      "id": "LEARN-PR154-004",
+      "pr": 154,
+      "source": "external_review",
+      "review_comment_id": 4013225228,
+      "class_id": "ADV-SEMANTIC-ALLOWLIST-BYPASS",
+      "invariant_ids": ["INV-BOUNDARY-002", "INV-OBS-002"],
+      "root_cause": "The first semantic hardening still omitted the allowlisted implementation/g2-monitoring-source-onboarding namespace from semantic scanning. Executable Python or other code placed beside the implementation claim could therefore carry G3 inventory or parallel Monitoring persistence semantics while remaining inside a path accepted by the trusted scope evaluator.",
+      "horizontal_audit": [
+        "implementation namespace executable artifacts",
+        "claim file adjacency",
+        "parallel Monitoring persistence markers",
+        "G3 metric and inventory markers",
+        "all allowlisted executable prefixes",
+        "base-owned semantic scan policy"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_g1_identity_tenant_shell_authorization.py",
+          "probe": "falsify_implementation_scope_gate_execution"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 117
+    },
+    {
+      "id": "LEARN-PR154-005",
+      "pr": 154,
+      "source": "external_review",
+      "review_comment_id": 4013225242,
+      "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP",
+      "invariant_ids": ["INV-LEARNING-002"],
+      "root_cause": "The structural workflow validator proved that the trusted evaluator command existed as an active parsed shell command but did not prove unconditional reachability. An enclosing `if false; then ...; fi` could preserve the expected command text while causing Bash to skip candidate evaluation and still let the analyze job complete successfully.",
+      "horizontal_audit": [
+        "trusted scope evaluator run script",
+        "trusted readiness verifier run script",
+        "dead conditional branches",
+        "loop and case wrappers",
+        "shell control-flow reachability",
+        "publish-final dependency on worker success"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_g1_identity_tenant_shell_authorization.py",
+          "probe": "falsify_trusted_scope_readiness_execution"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 118
     }
   ]
 }

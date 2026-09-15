@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-CORE_PATH = ROOT / "implementation/g2-monitoring-source-onboarding-authorization/g2_scope_core.py"
+CORE_PATH = ROOT / "tools/assurance/g2_scope_core.py"
 spec = importlib.util.spec_from_file_location("jlmirror_g2_scope_core", CORE_PATH)
 if spec is None or spec.loader is None:
     raise RuntimeError("unable to load canonical G2 scope core")
@@ -40,15 +40,7 @@ def main() -> int:
     except (json.JSONDecodeError, ValueError) as exc:
         print(f"G2_IMPLEMENTATION_SCOPE_ERROR: invalid labels metadata: {exc}", file=sys.stderr)
         return 1
-    _classified, errors = validate(
-        args.base,
-        args.head,
-        args.head_ref,
-        labels,
-        args.head_repo,
-        args.base_repo,
-        root=args.repo_root,
-    )
+    _classified, errors = validate(args.base, args.head, args.head_ref, labels, args.head_repo, args.base_repo, root=args.repo_root)
     for error in errors:
         print(f"G2_IMPLEMENTATION_SCOPE_ERROR: {error}", file=sys.stderr)
     if errors:

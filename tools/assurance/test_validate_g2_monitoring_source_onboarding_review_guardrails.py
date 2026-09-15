@@ -2,6 +2,10 @@
 from __future__ import annotations
 
 import copy
+import importlib.util
+import shutil
+import tempfile
+from pathlib import Path
 
 import validate_g2_monitoring_source_onboarding_authorization as authorization
 import validate_g2_monitoring_source_onboarding_implementation_scope as scope
@@ -42,14 +46,20 @@ def falsify_g2_semantic_scope_guard() -> None:
         ("apps/g2-monitoring-source-onboarding/source.ts", r"class Resource\u0406nventory {}"),
         ("apps/g2-monitoring-source-onboarding/source.ts", "async function fetch_metrics() {}"),
         ("apps/g2-monitoring-source-onboarding/source.ts", "class MetricsRepository {}"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "class METRICSRepository {}"),
         ("apps/g2-monitoring-source-onboarding/metrics/collector.ts", "export const enabled = true"),
         ("apps/g2-monitoring-source-onboarding/problems/collector.ts", "export const enabled = true"),
         ("apps/g2-monitoring-source-onboarding/resource-inventories/collector.ts", "export const enabled = true"),
+        ("apps/g2-monitoring-source-onboarding/METRICSRepository/collector.ts", "export const enabled = true"),
         ("implementation/g2-monitoring-source-onboarding/model.sql", 'CREATE TABLE "monitoring"."shadow_sources" (id uuid);'),
         ("apps/g2-monitoring-source-onboarding/source.ts", 'const ddl = `CREATE /*comment*/ TABLE monitoring.shadow_sources (id uuid)`;'),
+        ("apps/g2-monitoring-source-onboarding/source.ts", 'const ddl = `CREATE OR REPLACE VIEW "monitoring"."shadow_sources" AS SELECT 1`;'),
         ("implementation/g2-monitoring-source-onboarding/model.sql", "CREATE TABLE measurements (source_id text, observed_value float, observed_at timestamp);"),
         ("apps/g2-monitoring-source-onboarding/source.ts", 'function authorize(user) { return user.providerRole === "admin"; }'),
         ("apps/g2-monitoring-source-onboarding/source.ts", "async function save(password) { await database.insert({password}); }"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "const store = database; await store.insert({sourceId, value});"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", 'await database["insert"]({sourceId, value});'),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "return reply.send({password: payload.password});"),
     )
     for path, text in rejected:
         if not scope.validate_semantic_artifact(path, text, policy):
@@ -57,6 +67,8 @@ def falsify_g2_semantic_scope_guard() -> None:
 
     allowed = (
         "export const browser_automation = true",
+        'describe("browser automation", () => {})',
+        "export const browserAutomationTest = true",
         "export const geometric_layout = true",
         "export const sourceStatus = 'reconciliation_required'",
         "export const credential_binding_ref = source.credential_binding_ref",
@@ -68,16 +80,44 @@ def falsify_g2_semantic_scope_guard() -> None:
             raise AssertionError(f"bounded G2 semantics false-positive: {text}: {errors}")
 
 
+def falsify_g2_materialized_scope_package() -> None:
+    wrapper = authorization.ROOT / "tools/assurance/validate_g2_monitoring_source_onboarding_implementation_scope.py"
+    core = authorization.ROOT / "tools/assurance/g2_scope_core.py"
+    with tempfile.TemporaryDirectory() as tmp:
+        target = Path(tmp)
+        target_wrapper = target / wrapper.name
+        target_core = target / core.name
+        shutil.copyfile(wrapper, target_wrapper)
+        shutil.copyfile(core, target_core)
+        spec = importlib.util.spec_from_file_location("g2_materialized_wrapper_probe", target_wrapper)
+        if spec is None or spec.loader is None:
+            raise AssertionError("unable to construct materialized wrapper probe")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        if Path(module.CORE_PATH).resolve() != target_core.resolve():
+            raise AssertionError(f"materialized wrapper did not bind sibling core: {module.CORE_PATH}")
+
+
 def falsify_g2_trusted_workflow_semantics() -> None:
     workflow = authorization.SCOPE_WORKFLOW.read_text(encoding="utf-8")
     if authorization.validate_scope_workflow_text(workflow):
         raise AssertionError("canonical trusted workflow rejected")
+    required = (
+        'G2_SCOPE_CORE: tools/assurance/g2_scope_core.py',
+        'git show "${PR_BASE_SHA}:${G2_SCOPE_VALIDATOR}" > "$trusted_validator"',
+        'git show "${PR_BASE_SHA}:${G2_SCOPE_CORE}" > "$trusted_core"',
+        'test -s "$trusted_core"',
+    )
+    for marker in required:
+        if marker not in workflow:
+            raise AssertionError(f"trusted scope package materialization missing: {marker}")
     mutations = (
         workflow + "\n# extra workflow material\n",
         workflow.replace("name: JLMIRROR G2 Monitoring Source Onboarding Implementation Scope", "name: drifted", 1),
         workflow.replace("cancel-in-progress: true", "cancel-in-progress: false", 1),
         workflow.replace("runs-on: ubuntu-24.04", "runs-on: ubuntu-latest", 1),
         workflow.replace("statuses: write", "contents: write", 1),
+        workflow.replace('git show "${PR_BASE_SHA}:${G2_SCOPE_CORE}" > "$trusted_core"\n', "", 1),
     )
     for mutated in mutations:
         errors = authorization.validate_scope_workflow_text(mutated)
@@ -120,9 +160,10 @@ def falsify_g2_same_second_status_ordering() -> None:
 
 def main() -> int:
     falsify_g2_semantic_scope_guard()
+    falsify_g2_materialized_scope_package()
     falsify_g2_trusted_workflow_semantics()
     falsify_g2_same_second_status_ordering()
-    print("g2_review_guardrails=PASS semantic=escape+component+path+structural-closed workflow=blob-exact status=total-order")
+    print("g2_review_guardrails=PASS semantic=package+alias+sink+ddl+acronym-closed workflow=blob-exact status=total-order")
     return 0
 
 

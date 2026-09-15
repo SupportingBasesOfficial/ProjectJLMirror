@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import ast
 import copy
-import os
 import subprocess
 import sys
 from pathlib import Path
@@ -31,6 +30,10 @@ DELEGATION_CONTRACTS = {
 FORBIDDEN_DELEGATION_NAMESPACE_CALLS = {
     "__import__", "delattr", "eval", "exec", "getattr", "globals", "hasattr", "locals", "setattr", "vars",
 }
+FORBIDDEN_DELEGATION_NAMES = {"sys", "inspect", "builtins"}
+FORBIDDEN_DELEGATION_REFLECTIVE_ATTRIBUTES = {
+    "_getframe", "f_locals", "f_globals", "f_back", "gi_frame", "cr_frame", "tb_frame", "currentframe", "stack",
+}
 
 
 def _require_delegation_source_integrity() -> None:
@@ -42,6 +45,7 @@ def _require_delegation_source_integrity() -> None:
         function = functions.get(function_name)
         if function is None:
             raise AssertionError(f"delegation integrity missing outer probe: {function_name}")
+        all_imports = [statement for statement in function.body if isinstance(statement, (ast.Import, ast.ImportFrom))]
         imports: list[tuple[str, ast.Import]] = []
         for statement in function.body:
             if not isinstance(statement, ast.Import):
@@ -49,7 +53,7 @@ def _require_delegation_source_integrity() -> None:
             for imported in statement.names:
                 if imported.name == module_name:
                     imports.append((imported.asname or imported.name, statement))
-        if len(imports) != 1:
+        if len(imports) != 1 or len(all_imports) != 1 or all_imports[0] is not imports[0][1]:
             raise AssertionError(f"delegation integrity import drift: {function_name}->{module_name}")
         alias = imports[0][0]
         direct_calls: list[tuple[str, ast.Expr, ast.Name]] = []
@@ -81,8 +85,15 @@ def _require_delegation_source_integrity() -> None:
             if ast.get_source_segment(source, statement.value) != expected_line:
                 raise AssertionError(f"delegation integrity expression drift: {function_name}:{expected_line}")
         for node in ast.walk(function):
-            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in FORBIDDEN_DELEGATION_NAMESPACE_CALLS:
-                raise AssertionError(f"delegation integrity dynamic namespace access forbidden: {function_name}:{node.func.id}")
+            if isinstance(node, ast.Name) and node.id in FORBIDDEN_DELEGATION_NAMES:
+                raise AssertionError(f"delegation integrity reflective namespace access forbidden: {function_name}:{node.id}")
+            if isinstance(node, ast.Attribute) and node.attr in FORBIDDEN_DELEGATION_REFLECTIVE_ATTRIBUTES:
+                raise AssertionError(f"delegation integrity frame/locals access forbidden: {function_name}:{node.attr}")
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+                if node.func.id in FORBIDDEN_DELEGATION_NAMESPACE_CALLS:
+                    raise AssertionError(f"delegation integrity dynamic namespace access forbidden: {function_name}:{node.func.id}")
+                if node.func.id != "must_fail":
+                    raise AssertionError(f"delegation integrity helper indirection forbidden: {function_name}:{node.func.id}")
             if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name) and node.value.id in {"inspect", "builtins"}:
                 raise AssertionError(f"delegation integrity reflective namespace access forbidden: {function_name}:{node.value.id}.{node.attr}")
 
@@ -140,11 +151,10 @@ def _assert_isolated_readiness_permissive_rejection() -> None:
         f"sys.argv=[{script!r},{ISOLATED_READINESS_CHILD_FLAG!r}];"
         f"runpy.run_path({script!r},run_name='__main__')"
     )
-    clean_env = {key: os.environ[key] for key in ("PATH", "SYSTEMROOT") if key in os.environ}
     completed = subprocess.run(
         [sys.executable, "-I", "-c", child_code],
         cwd=str(ROOT),
-        env=clean_env,
+        env={"PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"},
         text=True,
         capture_output=True,
         timeout=30,

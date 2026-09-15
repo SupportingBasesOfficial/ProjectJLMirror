@@ -44,6 +44,7 @@ EXPECTED_SEMANTIC_SCAN_PREFIXES = [
     "apps/g2-monitoring-source-onboarding/",
     "contracts/g2-monitoring-source-onboarding/",
     "implementation/g2-monitoring-source-onboarding/",
+    "tests/g2/",
     "tools/g2/",
 ]
 EXPECTED_CAPABILITIES = {
@@ -327,7 +328,9 @@ def validate_scope_workflow_text(text: str) -> list[str]:
     if scope_script is not None:
         require(not _script_has_control_flow(scope_script), "trusted validator invocation must be control-flow-free and unconditionally reachable", errors)
         scope_cmds = _logical_shell_commands(scope_script)
-        require(any(cmd.startswith('python3 "$TRUSTED_VALIDATOR" ') and '--base "$PR_BASE_SHA"' in cmd and '--head "$PR_HEAD_SHA"' in cmd for cmd in scope_cmds), "analyze job missing exact executable trusted validator invocation", errors)
+        expected_scope_command = 'python3 "$TRUSTED_VALIDATOR" --repo-root "$GITHUB_WORKSPACE" --base "$PR_BASE_SHA" --head "$PR_HEAD_SHA" --head-ref "$PR_HEAD_REF" --labels-json "$PR_LABELS_JSON" --head-repo "$PR_HEAD_REPO" --base-repo "$PR_BASE_REPO"'
+        scope_invocations = [cmd for cmd in scope_cmds if cmd.startswith('python3 "$TRUSTED_VALIDATOR"')]
+        require(scope_invocations == [expected_scope_command], "trusted validator invocation must match exact canonical command without status suppression", errors)
     require("statuses: write" not in analyze, "analyze job must remain read-only", errors)
 
     ready = _job_block(text, "verify-ready") or ""
@@ -337,7 +340,9 @@ def validate_scope_workflow_text(text: str) -> list[str]:
     if ready_script is not None:
         require(not _script_has_control_flow(ready_script), "trusted readiness invocation must be control-flow-free and unconditionally reachable", errors)
         ready_cmds = _logical_shell_commands(ready_script)
-        require(any(cmd.startswith('python3 "$TRUSTED_READINESS_VALIDATOR" ') and '--pr-number "$PR_NUMBER"' in cmd for cmd in ready_cmds), "verify-ready job missing exact executable readiness invocation", errors)
+        expected_ready_command = 'python3 "$TRUSTED_READINESS_VALIDATOR" --repo "$GITHUB_REPOSITORY" --pr-number "$PR_NUMBER" --server-url "$GITHUB_SERVER_URL"'
+        ready_invocations = [cmd for cmd in ready_cmds if cmd.startswith('python3 "$TRUSTED_READINESS_VALIDATOR"')]
+        require(ready_invocations == [expected_ready_command], "trusted readiness invocation must match exact canonical command without status suppression", errors)
     require("statuses: write" not in ready, "verify-ready job must remain read-only", errors)
 
     final = _job_block(text, "publish-final") or ""
@@ -349,6 +354,11 @@ def validate_scope_workflow_text(text: str) -> list[str]:
     require(len(pos_failure) == len(pos_if) == len(pos_success) == len(pos_test) == 1, "publish-final fail-closed control-flow cardinality drift", errors)
     if pos_failure and pos_if and pos_success and pos_test:
         require(pos_failure[0] < pos_if[0] < pos_success[0] < pos_test[0], "publish-final fail-closed control-flow order drift", errors)
+    result_assignments = [(i, line.strip()) for i, line in enumerate(raw) if re.match(r"^\s*result=", line)]
+    expected_result_assignments = {'result="$ANALYZE_RESULT"', 'result="$READY_RESULT"'}
+    require(len(result_assignments) == 2 and {value for _, value in result_assignments} == expected_result_assignments, "publish-final result assignment authority drift", errors)
+    if pos_failure and result_assignments:
+        require(all(i < pos_failure[0] for i, _ in result_assignments), "publish-final result may not be overwritten after fail-closed state initialization", errors)
     active = "\n".join(line for line in raw if not line.lstrip().startswith("#"))
     for marker in (
         "CURRENT_DEFAULT_BRANCH", "CURRENT_HEAD_SHA", "CURRENT_HEAD_REF", "CURRENT_BASE_SHA", "CURRENT_BASE_REF",
@@ -396,7 +406,7 @@ def main() -> int:
         print(f"G2_AUTHORIZATION_ERROR: {error}", file=sys.stderr)
     if errors:
         return 1
-    print("g2_authorization=PASS exact_scope=monitoring-source-onboarding path+semantic-scope=guarded workflow=structurally+reachability-validated review-findings=internalized merge_authorization=not-granted")
+    print("g2_authorization=PASS exact_scope=monitoring-source-onboarding path+semantic-scope=guarded workflow=canonical-command+reachability-validated review-findings=internalized merge_authorization=not-granted")
     return 0
 
 

@@ -39,10 +39,46 @@ EXPECTED_FORBIDDEN_PATH_TOKENS = (
     "health", "alert", "replacement", "cutover",
 )
 EXPECTED_FORBIDDEN_CODE_MARKERS = (
-    "monitoring_resource", "resource_inventory", "metric_definition", "metric_current_state",
-    "metric_observation", "problem_state", "health_projection", "alert_policy", "alerting.",
-    "replacement_candidate", "replace_source_instance", "candidate_generation",
-    "create table monitoring.", "create schema monitoring", "src/jlmirror_monitoring", "sql/wave4",
+    "monitoring_resource",
+    "host_inventory",
+    "resource_inventory",
+    "metric_definition",
+    "metric_value",
+    "metric_history",
+    "metric_current_state",
+    "metric_observation",
+    "problem",
+    "problem_state",
+    "health_status",
+    "health_projection",
+    "monitoring_to_alerting",
+    "alert_creation",
+    "alert_policy",
+    "alerting.",
+    "ack_notification_escalation",
+    "acknowledgement",
+    "notification",
+    "escalation",
+    "itsm",
+    "automation",
+    "aiops",
+    "finops",
+    "commercial",
+    "production_deployment",
+    "production_c3",
+    "secret_manager",
+    "egress_transport",
+    "provider_authorization",
+    "raw_provider_credentials",
+    "source_replacement",
+    "source_cutover",
+    "replacement_candidate",
+    "replace_source_instance",
+    "candidate_generation",
+    "create table monitoring.",
+    "create schema monitoring",
+    "src/jlmirror_monitoring",
+    "sql/wave4",
 )
 EXPECTED_SEMANTIC_SCAN_PREFIXES = (
     "apps/g2-monitoring-source-onboarding/",
@@ -300,7 +336,7 @@ def main() -> int:
         print(f"G2_IMPLEMENTATION_SCOPE_ERROR: {error}", file=sys.stderr)
     if errors:
         return 1
-    print("g2_implementation_scope=PASS classification=trusted_explicit_attestation path_scope=allowlisted semantic_scope=all-utf8-authorized-prefixes readiness=live-source-authenticated")
+    print("g2_implementation_scope=PASS classification=trusted_explicit_attestation path_scope=allowlisted semantic_scope=explicit-exclusions+normalized-all-utf8 readiness=live-source-authenticated")
     return 0
 
 

@@ -46,12 +46,12 @@ EXPECTED_FORBIDDEN_CODE_MARKERS = (
 EXPECTED_SEMANTIC_SCAN_PREFIXES = EXPECTED_PREFIXES
 RUNTIME_ALLOWED_ACTIONS = ("actions/checkout", "actions/setup-python", "actions/setup-node")
 STRUCTURAL_MARKERS = {"create table monitoring.", "create schema monitoring", "src/jlmirror_monitoring", "sql/wave4", "alerting."}
-AUTHORIZED_IDENTIFIER_EXCEPTIONS = {"browserautomation"}
 PERSISTENCE_RECEIVERS = {"database", "db", "repository", "repo", "prisma", "postgres", "postgresql", "pg", "sqlalchemy", "psycopg"}
 PERSISTENCE_WRITES = {"insert", "update", "delete", "save", "upsert", "execute", "executemany", "commit", "persist"}
 PROVIDER_AUTHORITY_TERMS = {"role", "roles", "permission", "permissions", "admin", "authorize", "authorization", "authority", "acl"}
 SECRET_TERMS = {"password", "passwd", "secret", "token", "apikey", "credential", "credentials"}
-SECRET_SINK_TERMS = {"insert", "update", "save", "upsert", "persist", "log", "logger", "print", "response", "serialize", "write"}
+SECRET_SINK_TERMS = {"insert", "update", "save", "upsert", "persist", "log", "logger", "print", "response", "serialize", "write", "send", "json", "end"}
+DDL_OBJECTS = "table|schema|view|materialized\\s+view|index|sequence|type|function|procedure|trigger|extension|policy"
 
 
 def git(root: Path, *args: str) -> str:
@@ -136,6 +136,7 @@ def _key(value: str) -> str:
 
 def _split_components(value: str) -> list[str]:
     normalized = unicodedata.normalize("NFKC", value)
+    normalized = re.sub(r"(?<=[A-Z])(?=[A-Z][a-z])", "_", normalized)
     normalized = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", normalized)
     return [_key(part) for part in re.split(r"[^A-Za-z0-9]+", normalized) if _key(part)]
 
@@ -165,9 +166,16 @@ def _identifier_variants(marker: str) -> set[str]:
     return variants
 
 
+def _browser_automation_identifier(identifier: str) -> bool:
+    parts = _split_components(identifier)
+    return any(parts[i:i + 2] == ["browser", "automation"] for i in range(max(0, len(parts) - 1)))
+
+
 def _identifier_hits_marker(identifier: str, marker: str) -> bool:
     full = _key(identifier)
-    if not full or full in AUTHORIZED_IDENTIFIER_EXCEPTIONS:
+    if not full:
+        return False
+    if _key(marker) == "automation" and _browser_automation_identifier(identifier):
         return False
     variants = _identifier_variants(marker)
     if full in variants:
@@ -181,6 +189,51 @@ def _strip_comments(text: str) -> str:
     return value
 
 
+def _mask_authorized_browser_automation(text: str) -> str:
+    value = re.sub(r"\bbrowser[\s_-]+automation(?:[\s_-]+tests?)?\b", "browser_e2e", text, flags=re.IGNORECASE)
+    for identifier in _raw_identifiers(value):
+        if _browser_automation_identifier(identifier):
+            value = re.sub(rf"\b{re.escape(identifier)}\b", "browser_e2e", value)
+    return value
+
+
+def _persistence_aliases(decoded: str) -> set[str]:
+    aliases = set(PERSISTENCE_RECEIVERS)
+    changed = True
+    while changed:
+        changed = False
+        receiver_pattern = "|".join(re.escape(name) for name in sorted(aliases, key=len, reverse=True))
+        for match in re.finditer(rf"\b(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*(?:{receiver_pattern})\b", decoded):
+            alias = match.group(1)
+            if alias not in aliases:
+                aliases.add(alias)
+                changed = True
+    return aliases
+
+
+def _has_persistence_write(decoded: str) -> bool:
+    aliases = _persistence_aliases(decoded)
+    receiver = "|".join(re.escape(name) for name in sorted(aliases, key=len, reverse=True))
+    write = "|".join(re.escape(name) for name in sorted(PERSISTENCE_WRITES, key=len, reverse=True))
+    patterns = (
+        rf"\b(?:{receiver})\s*\.\s*(?:{write})\s*\(",
+        rf"\b(?:{receiver})\s*\[\s*['\"](?:{write})['\"]\s*\]\s*\(",
+        rf"\b(?:const|let|var)\s*\{{[^}}]*\b(?:{write})\b[^}}]*\}}\s*=\s*(?:{receiver})\b",
+    )
+    return any(re.search(pattern, decoded, flags=re.IGNORECASE) for pattern in patterns)
+
+
+def _has_secret_to_sink(decoded: str) -> bool:
+    secret = "|".join(sorted(SECRET_TERMS, key=len, reverse=True))
+    sink = "|".join(sorted(SECRET_SINK_TERMS, key=len, reverse=True))
+    patterns = (
+        rf"\b(?:{sink})\s*\([^)]*\b(?:{secret})\b",
+        rf"\.\s*(?:{sink})\s*\([^)]*\b(?:{secret})\b",
+        rf"\breturn\s+\{{[^}}]*\b(?:{secret})\b",
+    )
+    return any(re.search(pattern, decoded, flags=re.IGNORECASE | re.DOTALL) for pattern in patterns)
+
+
 def _structural_semantic_errors(path: str, decoded: str) -> list[str]:
     errors: list[str] = []
     suffix = Path(path).suffix.casefold()
@@ -188,7 +241,8 @@ def _structural_semantic_errors(path: str, decoded: str) -> list[str]:
     uncommented = _strip_comments(folded)
     if suffix == ".sql":
         errors.append(f"G2-owned SQL artifact forbidden; accepted Monitoring persistence must be reused: {path}")
-    if re.search(r"\b(?:create|alter|drop)\s+(?:table|schema)\b", uncommented):
+    ddl_pattern = rf"\b(?:create(?:\s+or\s+replace)?|alter|drop)\s+(?:{DDL_OBJECTS})\b"
+    if re.search(ddl_pattern, uncommented, flags=re.IGNORECASE):
         errors.append(f"G2-owned DDL forbidden; accepted Monitoring persistence must be reused: {path}")
 
     identifiers = _raw_identifiers(decoded)
@@ -199,13 +253,10 @@ def _structural_semantic_errors(path: str, decoded: str) -> list[str]:
     if "provider" in components and (components & PROVIDER_AUTHORITY_TERMS):
         errors.append(f"provider-native authorization/authority semantics forbidden in G2: {path}")
 
-    receiver = "|".join(sorted(PERSISTENCE_RECEIVERS, key=len, reverse=True))
-    write = "|".join(sorted(PERSISTENCE_WRITES, key=len, reverse=True))
-    persistence_pattern = re.compile(rf"\b(?:{receiver})\s*(?:\.|\[\s*['\"])[^\n;]*?(?:{write})\s*(?:\]|\()", re.IGNORECASE)
-    if persistence_pattern.search(decoded):
+    if _has_persistence_write(decoded):
         errors.append(f"direct persistence write surface forbidden in G2 composition: {path}")
 
-    if components & SECRET_TERMS and components & SECRET_SINK_TERMS:
+    if components & SECRET_TERMS and _has_secret_to_sink(decoded):
         errors.append(f"raw secret persistence/exposure data-flow forbidden in G2: {path}")
     return errors
 
@@ -225,8 +276,9 @@ def validate_semantic_artifact(path: str, text: str, policy: dict[str, Any]) -> 
         if _identifier_variants(token) & path_keys:
             errors.append(f"forbidden G2 semantic path token '{token}' in {path}")
 
-    identifiers = _raw_identifiers(decoded)
-    folded = unicodedata.normalize("NFKC", decoded).casefold()
+    marker_text = _mask_authorized_browser_automation(decoded)
+    identifiers = _raw_identifiers(marker_text)
+    folded = unicodedata.normalize("NFKC", marker_text).casefold()
     for marker in policy.get("forbidden_code_markers", []):
         if marker in STRUCTURAL_MARKERS:
             hit = unicodedata.normalize("NFKC", marker).casefold() in folded

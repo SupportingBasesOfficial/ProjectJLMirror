@@ -153,7 +153,7 @@
       "invariant_ids": ["INV-LEARNING-003"],
       "root_cause": "The future G1 implementation gate treated the explicitly allowlisted runtime workflow path as authorized solely by pathname. Candidate content at that path could therefore introduce privileged triggers, write permissions, deployment/secrets authority, or executable responsibilities outside the exact G1 runtime proof while still satisfying complete-diff path enforcement.",
       "horizontal_audit": ["allowed exact workflow paths","workflow trigger authority","workflow/job permissions","secret and deployment authority","third-party action provenance","runtime executable responsibility","path versus semantic authorization"],
-      "guardrails": [{"path":"tools/assurance/test_validate_g1_identity_tenant_shell_implementation_scope.py","probe":"falsify_runtime_workflow_semantics"}],
+      "guardrails": [{"path":"tools/assurance/test_validate_g1_identity_tenant_shell_authorization.py","probe":"falsify_implementation_scope_gate_execution"}],
       "systemic_guardrail_updated": true,
       "guardrail_generation": 101
     }

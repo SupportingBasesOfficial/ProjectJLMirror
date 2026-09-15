@@ -69,6 +69,14 @@ def falsify_g2_semantic_scope_guard() -> None:
         ("apps/g2-monitoring-source-onboarding/source.ts", "const secretManager = provider", "secret manager exclusion bypassed semantic guard"),
         ("apps/g2-monitoring-source-onboarding/source.ts", "const egressTransport = provider", "egress transport exclusion bypassed semantic guard"),
         ("apps/g2-monitoring-source-onboarding/source.ts", "const commercialPlan = true", "commercial exclusion bypassed semantic guard"),
+        ("apps/g2-monitoring-source-onboarding/core.py", "class ＲｅｓｏｕｒｃｅＩｎｖｅｎｔｏｒｙ:\n    pass", "unicode compatibility identifier bypassed semantic guard"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "class Metric {}", "bare metric exclusion bypassed semantic guard"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "class ResourceIngestion {}", "resource ingestion exclusion bypassed semantic guard"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "class Health {}", "bare health exclusion bypassed semantic guard"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "class AckHandler {}", "ack handler exclusion bypassed semantic guard"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "class C3Numerics {}", "C3 numerics exclusion bypassed semantic guard"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "class ProviderNativeAuthority {}", "provider-native authority exclusion bypassed semantic guard"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "const RawCredentials = request.body", "raw credentials exclusion bypassed semantic guard"),
     )
     for path, text, message in cases:
         if not scope.validate_semantic_artifact(path, text, policy):
@@ -94,19 +102,19 @@ def falsify_g2_trusted_workflow_semantics() -> None:
             "command-only shape",
         ),
         (workflow.replace('            --base-repo "$PR_BASE_REPO"\n', '            --base-repo "$PR_BASE_REPO" || true\n', 1), "command-only shape"),
-        (workflow.replace("          state=failure\n", "          state=failure\n          result=success\n", 1), "result assignment authority"),
+        (workflow.replace("          state=failure\n", "          state=failure\n          result=success\n", 1), "assignment authority"),
         (
             workflow.replace('          python3 "$TRUSTED_VALIDATOR" \\\n', '          python3() { return 0; }\n          python3 "$TRUSTED_VALIDATOR" \\\n', 1),
             "command-only shape",
         ),
+        (workflow.replace("          state=failure\n", "          state=failure\n          printf -v result success\n", 1), "indirect result/state assignment"),
+        (workflow.replace('          test "$state" = success\n', '          printf -v state success\n          test "$state" = success\n', 1), "indirect result/state assignment"),
         (
-            workflow.replace("          state=failure\n", "          state=failure\n          printf -v result success\n", 1),
-            "indirect result/state assignment",
+            workflow.replace('          test -s "$trusted_validator"\n', '          test -s "$trusted_validator"\n          printf \'raise SystemExit(0)\\n\' > "$trusted_validator"\n', 1),
+            "materialization",
         ),
-        (
-            workflow.replace('          test "$state" = success\n', '          printf -v state success\n          test "$state" = success\n', 1),
-            "indirect result/state assignment",
-        ),
+        (workflow.replace("          state=failure\n", "          state=failure\n          result[0]=success\n", 1), "assignment authority"),
+        (workflow.replace('          test "$state" = success\n', '          state[0]=success\n          test "$state" = success\n', 1), "assignment authority"),
     )
     for mutated, expected in mutations:
         errors = authorization.validate_scope_workflow_text(mutated)
@@ -152,7 +160,7 @@ def main() -> int:
     falsify_g2_semantic_scope_guard()
     falsify_g2_trusted_workflow_semantics()
     falsify_g2_same_second_status_ordering()
-    print("g2_review_guardrails=PASS probes=3 semantic=explicit-exclusions+all-prefixes workflow=canonical-command-only+no-indirect-mutation status=total-order")
+    print("g2_review_guardrails=PASS probes=3 semantic=unicode+explicit-exclusions workflow=canonical-materialization+assignment-closure status=total-order")
     return 0
 
 

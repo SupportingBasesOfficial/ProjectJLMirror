@@ -43,6 +43,7 @@ EXPECTED_FORBIDDEN_CODE_MARKERS = [
 EXPECTED_SEMANTIC_SCAN_PREFIXES = [
     "apps/g2-monitoring-source-onboarding/",
     "contracts/g2-monitoring-source-onboarding/",
+    "implementation/g2-monitoring-source-onboarding/",
     "tools/g2/",
 ]
 EXPECTED_CAPABILITIES = {
@@ -263,6 +264,39 @@ def _logical_shell_commands(text: str) -> list[str]:
     return commands
 
 
+def _run_script_bodies(job_block: str) -> list[str]:
+    lines = job_block.splitlines()
+    scripts: list[str] = []
+    i = 0
+    while i < len(lines):
+        raw = lines[i]
+        if raw.strip() != "run: |":
+            i += 1
+            continue
+        base_indent = len(raw) - len(raw.lstrip())
+        i += 1
+        body: list[str] = []
+        while i < len(lines):
+            line = lines[i]
+            if line.strip() and len(line) - len(line.lstrip()) <= base_indent:
+                break
+            body.append(line)
+            i += 1
+        scripts.append("\n".join(body))
+    return scripts
+
+
+def _trusted_invocation_script(job_block: str, marker: str) -> str | None:
+    matches = [script for script in _run_script_bodies(job_block) if marker in script]
+    return matches[0] if len(matches) == 1 else None
+
+
+def _script_has_control_flow(script: str) -> bool:
+    active = [line.strip() for line in script.splitlines() if line.strip() and not line.lstrip().startswith("#")]
+    control = re.compile(r"^(?:if\b|then\b|fi\b|elif\b|else\b|for\b|while\b|until\b|case\b|esac\b|select\b|function\b|\{\s*$|\}\s*$)")
+    return any(control.search(line) for line in active)
+
+
 def validate_scope_workflow_text(text: str) -> list[str]:
     errors: list[str] = []
     require(re.search(r"^on:\s*$\n\s{2}issue_comment:\s*$\n\s{4}types:\s*\[created\]\s*$", text, re.MULTILINE) is not None, "scope workflow trigger structure drift", errors)
@@ -288,13 +322,22 @@ def validate_scope_workflow_text(text: str) -> list[str]:
     analyze_cmds = _logical_shell_commands(analyze)
     require('git show "${PR_BASE_SHA}:${G2_SCOPE_VALIDATOR}" > "$trusted_validator"' in analyze_cmds, "analyze job missing executable exact-base validator materialization", errors)
     require('test "$(git rev-parse HEAD)" != "$PR_HEAD_SHA"' in analyze_cmds, "analyze job missing candidate-not-checkout proof", errors)
-    require(any(cmd.startswith('python3 "$TRUSTED_VALIDATOR" ') and '--base "$PR_BASE_SHA"' in cmd and '--head "$PR_HEAD_SHA"' in cmd for cmd in analyze_cmds), "analyze job missing exact executable trusted validator invocation", errors)
+    scope_script = _trusted_invocation_script(analyze, 'python3 "$TRUSTED_VALIDATOR"')
+    require(scope_script is not None, "analyze job missing unique trusted validator run script", errors)
+    if scope_script is not None:
+        require(not _script_has_control_flow(scope_script), "trusted validator invocation must be control-flow-free and unconditionally reachable", errors)
+        scope_cmds = _logical_shell_commands(scope_script)
+        require(any(cmd.startswith('python3 "$TRUSTED_VALIDATOR" ') and '--base "$PR_BASE_SHA"' in cmd and '--head "$PR_HEAD_SHA"' in cmd for cmd in scope_cmds), "analyze job missing exact executable trusted validator invocation", errors)
     require("statuses: write" not in analyze, "analyze job must remain read-only", errors)
 
     ready = _job_block(text, "verify-ready") or ""
-    ready_cmds = _logical_shell_commands(ready)
     require("contents/${G2_READINESS_VALIDATOR}?ref=${PR_BASE_SHA}" in ready, "verify-ready job missing exact-base readiness materialization", errors)
-    require(any(cmd.startswith('python3 "$TRUSTED_READINESS_VALIDATOR" ') and '--pr-number "$PR_NUMBER"' in cmd for cmd in ready_cmds), "verify-ready job missing exact executable readiness invocation", errors)
+    ready_script = _trusted_invocation_script(ready, 'python3 "$TRUSTED_READINESS_VALIDATOR"')
+    require(ready_script is not None, "verify-ready job missing unique readiness run script", errors)
+    if ready_script is not None:
+        require(not _script_has_control_flow(ready_script), "trusted readiness invocation must be control-flow-free and unconditionally reachable", errors)
+        ready_cmds = _logical_shell_commands(ready_script)
+        require(any(cmd.startswith('python3 "$TRUSTED_READINESS_VALIDATOR" ') and '--pr-number "$PR_NUMBER"' in cmd for cmd in ready_cmds), "verify-ready job missing exact executable readiness invocation", errors)
     require("statuses: write" not in ready, "verify-ready job must remain read-only", errors)
 
     final = _job_block(text, "publish-final") or ""
@@ -353,7 +396,7 @@ def main() -> int:
         print(f"G2_AUTHORIZATION_ERROR: {error}", file=sys.stderr)
     if errors:
         return 1
-    print("g2_authorization=PASS exact_scope=monitoring-source-onboarding path+semantic-scope=guarded workflow=structurally-validated review-findings=internalized merge_authorization=not-granted")
+    print("g2_authorization=PASS exact_scope=monitoring-source-onboarding path+semantic-scope=guarded workflow=structurally+reachability-validated review-findings=internalized merge_authorization=not-granted")
     return 0
 
 

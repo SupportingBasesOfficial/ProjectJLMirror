@@ -117,6 +117,45 @@
       "guardrails": [{"path":"tools/assurance/test_validate_g1_identity_tenant_shell_authorization.py","probe":"falsify_trusted_scope_readiness_execution"}],
       "systemic_guardrail_updated": true,
       "guardrail_generation": 98
+    },
+    {
+      "id": "LEARN-PR153-031",
+      "pr": 153,
+      "source": "external_review",
+      "review_comment_id": 4010273527,
+      "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP",
+      "invariant_ids": ["INV-LEARNING-002"],
+      "root_cause": "The invocation-scoped readiness sentinel still carried its authoritative call counter and exception object in the callback closure. Candidate test code could introspect __closure__, mutate the counter, recover the exact exception object, suppress the delegated callback, and replay the expected evidence without executing the sentinel.",
+      "horizontal_audit": ["callback closure introspection","mutable sentinel state exposure","exception-object disclosure","audit-event provenance","traceback origin authentication","import versus invocation phase"],
+      "guardrails": [{"path":"tools/assurance/test_validate_g1_identity_tenant_shell_authorization.py","probe":"falsify_trusted_scope_readiness_execution"}],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 99
+    },
+    {
+      "id": "LEARN-PR153-032",
+      "pr": 153,
+      "source": "external_review",
+      "review_comment_id": 4010273530,
+      "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP",
+      "invariant_ids": ["INV-LEARNING-002"],
+      "root_cause": "Exact semantic call-sequence and negative-boundary accounting proved that the fifteen mutated fixtures were constructed and invoked, but the strict instrumented must_reject intentionally returned after a permissive verifier succeeded. Weakening the real must_reject helper to a no-op therefore preserved all sequence evidence while eliminating the actual rejection guarantee.",
+      "horizontal_audit": ["negative helper semantics","permissive verifier acceptance","exact first-negative boundary","helper failure propagation","semantic call sequence","candidate no-op helper mutation"],
+      "guardrails": [{"path":"tools/assurance/test_validate_g1_identity_tenant_shell_authorization.py","probe":"falsify_trusted_scope_readiness_execution"}],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 100
+    },
+    {
+      "id": "LEARN-PR153-033",
+      "pr": 153,
+      "source": "external_review",
+      "review_comment_id": 4010920554,
+      "class_id": "ADV-ASSURANCE-PRIVILEGE-BOUNDARY",
+      "invariant_ids": ["INV-LEARNING-003"],
+      "root_cause": "The future G1 implementation gate treated the explicitly allowlisted runtime workflow path as authorized solely by pathname. Candidate content at that path could therefore introduce privileged triggers, write permissions, deployment/secrets authority, or executable responsibilities outside the exact G1 runtime proof while still satisfying complete-diff path enforcement.",
+      "horizontal_audit": ["allowed exact workflow paths","workflow trigger authority","workflow/job permissions","secret and deployment authority","third-party action provenance","runtime executable responsibility","path versus semantic authorization"],
+      "guardrails": [{"path":"tools/assurance/test_validate_g1_identity_tenant_shell_implementation_scope.py","probe":"falsify_runtime_workflow_semantics"}],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 101
     }
   ]
 }

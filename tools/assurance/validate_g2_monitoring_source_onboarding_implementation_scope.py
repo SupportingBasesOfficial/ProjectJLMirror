@@ -8,7 +8,9 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-CORE_PATH = ROOT / "tools/assurance/g2_scope_core.py"
+LOCAL_CORE_PATH = Path(__file__).resolve().with_name("g2_scope_core.py")
+REPOSITORY_CORE_PATH = ROOT / "tools/assurance/g2_scope_core.py"
+CORE_PATH = LOCAL_CORE_PATH if LOCAL_CORE_PATH.is_file() else REPOSITORY_CORE_PATH
 spec = importlib.util.spec_from_file_location("jlmirror_g2_scope_core", CORE_PATH)
 if spec is None or spec.loader is None:
     raise RuntimeError("unable to load canonical G2 scope core")
@@ -45,7 +47,7 @@ def main() -> int:
         print(f"G2_IMPLEMENTATION_SCOPE_ERROR: {error}", file=sys.stderr)
     if errors:
         return 1
-    print("g2_implementation_scope=PASS classification=trusted_explicit_attestation path_scope=allowlisted semantic_scope=token-boundary+ascii-executable readiness=live-source-authenticated")
+    print("g2_implementation_scope=PASS classification=trusted_explicit_attestation path_scope=allowlisted semantic_scope=structural+bounded readiness=live-source-authenticated")
     return 0
 
 

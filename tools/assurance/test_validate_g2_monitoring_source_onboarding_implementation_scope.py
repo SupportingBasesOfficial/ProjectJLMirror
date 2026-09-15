@@ -97,18 +97,18 @@ def main() -> int:
     if validator.validate_paths(["apps/g2-monitoring-source-onboarding/form.tsx"], policy):
         raise AssertionError("canonical G2 app path unexpectedly rejected")
 
-    if validator.validate_semantic_artifact(
-        "apps/g2-monitoring-source-onboarding/resource_inventory.ts",
-        "export const page = true",
-        policy,
-    ) == []:
-        raise AssertionError("forbidden inventory path unexpectedly accepted")
-    if validator.validate_semantic_artifact(
-        "apps/g2-monitoring-source-onboarding/source.ts",
-        "const monitoring_resource = payload.resource",
-        policy,
-    ) == []:
-        raise AssertionError("forbidden G3 code marker unexpectedly accepted")
+    semantic_cases = (
+        ("apps/g2-monitoring-source-onboarding/resource_inventory.ts", "export const page = true"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "const monitoring_resource = payload.resource"),
+        ("implementation/g2-monitoring-source-onboarding/parallel_monitoring.py", "CREATE TABLE monitoring.metric_current_state (id uuid)"),
+        ("tests/g2/parallel_store.py", "class ResourceInventory: pass"),
+        ("implementation/g2-monitoring-source-onboarding/parallel.sql", "CREATE TABLE monitoring.metric_current_state (id uuid)"),
+        ("tools/g2/run-onboarding", "class ResourceInventory: pass"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "class ResourceInventory {}\nconst metricCurrentState = true"),
+    )
+    for path, text in semantic_cases:
+        if validator.validate_semantic_artifact(path, text, policy) == []:
+            raise AssertionError(f"forbidden semantic artifact unexpectedly accepted: {path}")
     if validator.validate_semantic_artifact(
         "apps/g2-monitoring-source-onboarding/source.ts",
         "export const sourceStatus = 'reconciliation_required'",
@@ -133,7 +133,7 @@ def main() -> int:
     if not validator.validate_runtime_workflow_text("name: yaml-not-json"):
         raise AssertionError("noncanonical YAML surface unexpectedly accepted")
 
-    print("g2_implementation_scope_falsifier=PASS policy_mutations=6 path_cases=4 semantic_cases=3 runtime_cases=4")
+    print("g2_implementation_scope_falsifier=PASS policy_mutations=6 path_cases=4 semantic_cases=8 runtime_cases=4")
     return 0
 
 

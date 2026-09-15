@@ -10,6 +10,8 @@ on:
       - 'tools/assurance/test_validate_g2_monitoring_source_onboarding_implementation_scope.py'
       - 'tools/assurance/validate_g2_monitoring_source_onboarding_scope_readiness.py'
       - 'tools/assurance/test_validate_g2_monitoring_source_onboarding_scope_readiness.py'
+      - 'tools/assurance/test_validate_g2_monitoring_source_onboarding_review_guardrails.py'
+      - 'governance/adversarial/learning-ledger.d/pr-154-g2-authorization-review-findings.json'
       - 'tools/assurance/validate_repository.py'
       - '.github/workflows/g2-monitoring-source-onboarding-authorization.yml'
       - '.github/workflows/g2-monitoring-source-onboarding-implementation-scope.yml'
@@ -30,6 +32,8 @@ on:
       - 'tools/assurance/test_validate_g2_monitoring_source_onboarding_implementation_scope.py'
       - 'tools/assurance/validate_g2_monitoring_source_onboarding_scope_readiness.py'
       - 'tools/assurance/test_validate_g2_monitoring_source_onboarding_scope_readiness.py'
+      - 'tools/assurance/test_validate_g2_monitoring_source_onboarding_review_guardrails.py'
+      - 'governance/adversarial/learning-ledger.d/pr-154-g2-authorization-review-findings.json'
       - 'tools/assurance/validate_repository.py'
       - '.github/workflows/g2-monitoring-source-onboarding-authorization.yml'
       - '.github/workflows/g2-monitoring-source-onboarding-implementation-scope.yml'
@@ -92,6 +96,9 @@ jobs:
 
       - name: Falsify trusted G2 readiness evidence
         run: PYTHONPATH=tools/assurance python3 tools/assurance/test_validate_g2_monitoring_source_onboarding_scope_readiness.py
+
+      - name: Falsify G2 external-review guardrails
+        run: PYTHONPATH=tools/assurance python3 tools/assurance/test_validate_g2_monitoring_source_onboarding_review_guardrails.py
 
       - name: Validate repository structure and workflow safety
         run: python3 tools/assurance/validate_repository.py

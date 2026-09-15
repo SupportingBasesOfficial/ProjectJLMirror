@@ -53,24 +53,46 @@ def falsify_g2_semantic_scope_guard() -> None:
         raise AssertionError("parallel G2 domain namespace bypassed path policy")
     if not scope.validate_paths(["sql/g2/parallel_monitoring_source.sql"], policy):
         raise AssertionError("parallel G2 persistence namespace bypassed path policy")
-    if not scope.validate_semantic_artifact(
-        "apps/g2-monitoring-source-onboarding/resource_inventory.ts",
-        "export const page = true",
-        policy,
-    ):
-        raise AssertionError("forbidden G3 inventory path bypassed semantic guard")
-    if not scope.validate_semantic_artifact(
-        "apps/g2-monitoring-source-onboarding/source.ts",
-        "const monitoring_resource = payload.resource",
-        policy,
-    ):
-        raise AssertionError("forbidden G3 resource semantics bypassed semantic guard")
-    if not scope.validate_semantic_artifact(
-        "implementation/g2-monitoring-source-onboarding/parallel_monitoring.py",
-        "CREATE TABLE monitoring.metric_current_state (id uuid)",
-        policy,
-    ):
-        raise AssertionError("implementation namespace executable artifact bypassed semantic guard")
+    cases = (
+        (
+            "apps/g2-monitoring-source-onboarding/resource_inventory.ts",
+            "export const page = true",
+            "forbidden G3 inventory path bypassed semantic guard",
+        ),
+        (
+            "apps/g2-monitoring-source-onboarding/source.ts",
+            "const monitoring_resource = payload.resource",
+            "forbidden G3 resource semantics bypassed semantic guard",
+        ),
+        (
+            "implementation/g2-monitoring-source-onboarding/parallel_monitoring.py",
+            "CREATE TABLE monitoring.metric_current_state (id uuid)",
+            "implementation namespace executable artifact bypassed semantic guard",
+        ),
+        (
+            "tests/g2/parallel_store.py",
+            "class ResourceInventory: pass",
+            "tests namespace executable artifact bypassed semantic guard",
+        ),
+        (
+            "implementation/g2-monitoring-source-onboarding/parallel.sql",
+            "CREATE TABLE monitoring.metric_current_state (id uuid)",
+            "SQL artifact bypassed semantic guard",
+        ),
+        (
+            "tools/g2/run-onboarding",
+            "class ResourceInventory: pass",
+            "extensionless executable artifact bypassed semantic guard",
+        ),
+        (
+            "apps/g2-monitoring-source-onboarding/source.ts",
+            "class ResourceInventory {}\nconst metricCurrentState = true",
+            "camel/Pascal case forbidden semantics bypassed semantic guard",
+        ),
+    )
+    for path, text, message in cases:
+        if not scope.validate_semantic_artifact(path, text, policy):
+            raise AssertionError(message)
     if scope.validate_semantic_artifact(
         "apps/g2-monitoring-source-onboarding/source.ts",
         "export const sourceStatus = 'reconciliation_required'",
@@ -103,6 +125,14 @@ def falsify_g2_trusted_workflow_semantics() -> None:
                 1,
             ).replace('            --base-repo "$PR_BASE_REPO"\n', '            --base-repo "$PR_BASE_REPO"\n          fi\n', 1),
             "control-flow-free",
+        ),
+        (
+            workflow.replace('            --base-repo "$PR_BASE_REPO"\n', '            --base-repo "$PR_BASE_REPO" || true\n', 1),
+            "without status suppression",
+        ),
+        (
+            workflow.replace("          state=failure\n", "          state=failure\n          result=success\n", 1),
+            "result assignment authority",
         ),
     )
     for mutated, expected in mutations:
@@ -153,7 +183,7 @@ def main() -> int:
     falsify_g2_semantic_scope_guard()
     falsify_g2_trusted_workflow_semantics()
     falsify_g2_same_second_status_ordering()
-    print("g2_review_guardrails=PASS probes=3 semantic=implementation-prefix workflow=reachability status=total-order")
+    print("g2_review_guardrails=PASS probes=3 semantic=all-prefixes+all-utf8+normalized-identifiers workflow=canonical-command+result-authority status=total-order")
     return 0
 
 

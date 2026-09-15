@@ -11,6 +11,7 @@ DEPENDENCIES: accepted G1 identity/tenant/BFF contract; accepted Wave 4 Monitori
 STOP and request successor authorization if any of the following is required:
 
 - modifying existing shared paths such as `src/jlmirror_monitoring/**`, `sql/wave4/**`, `src/jlmirror_authority/**`, accepted shared API/event/governance contracts, or G1 implementation namespaces;
+- adding a new G2 persistence/domain model for Monitoring Source truth;
 - changing Monitoring Source canonical identity/generation semantics;
 - changing provider-instance replacement/cutover semantics;
 - introducing raw provider credentials into browser/API body/ordinary database/log state;
@@ -27,8 +28,6 @@ Prefixes:
 apps/g2-monitoring-source-onboarding/
 contracts/g2-monitoring-source-onboarding/
 implementation/g2-monitoring-source-onboarding/
-sql/g2/
-src/jlmirror_g2/
 tests/g2/
 tools/g2/
 ```
@@ -39,7 +38,9 @@ Exact path:
 .github/workflows/g2-monitoring-source-onboarding-runtime.yml
 ```
 
-Every other existing path is read-only unless a successor authorization says otherwise.
+There is intentionally no `sql/g2/` or `src/jlmirror_g2/` authority. Canonical Monitoring persistence/domain behavior already exists and remains read-only. Every other existing path is read-only unless a successor authorization says otherwise.
+
+Path admission is necessary but not sufficient: executable G2 artifacts are also scanned by the trusted base-owned evaluator for forbidden G3/parallel-Monitoring path tokens and code markers. Attempting to hide inventory, resource, metric, problem, health, Alerting, replacement/cutover or shared-Monitoring write behavior under an allowed G2 path MUST fail scope attestation.
 
 ## IMPLEMENTATION CLAIM
 
@@ -73,11 +74,11 @@ jlmirror-slice:g2-monitoring-source-onboarding
 
 ## DB
 
-Reuse accepted Monitoring Source persistence semantics. G2-specific persistence MAY be added only if it is purely slice-local composition/read-model/test-fixture state and does not duplicate canonical Monitoring Source truth.
+Do not add G2-owned canonical persistence. Reuse accepted Monitoring Source persistence semantics from Wave 4.
 
-Canonical business truth remains the accepted Monitoring Source state in the existing Monitoring substrate.
+Canonical business truth remains the accepted Monitoring Source state in the existing Monitoring substrate. Do not duplicate `monitoring_source`, source generation, scope revision, validation operation or provider mapping identity in a parallel G2-owned model.
 
-Do not duplicate `monitoring_source`, source generation, scope revision, validation operation or provider mapping identity in a parallel G2-owned model.
+If implementation discovers a real persistence change is required, STOP and request successor authorization.
 
 ## DOMAIN
 
@@ -95,7 +96,7 @@ stale generation/configuration/scope evidence cannot update current source evide
 provider failure/omission cannot create resource-absence truth
 ```
 
-G2 owns only orchestration/composition necessary to expose the onboarding outcome.
+G2 owns only BFF/frontend/orchestration composition necessary to expose the onboarding outcome.
 
 ## API / BFF
 
@@ -131,9 +132,7 @@ Canonical request fields are limited to accepted safe source configuration:
 
 No raw credential bytes.
 
-Required reads for the onboarding user journey may expose source list/detail and validation/sync operation state under accepted `monitoring.source.read` / `monitoring.sync.read` semantics.
-
-The browser talks through the BFF. Client state, URL possession and provider payloads never become authority.
+Required reads may expose source list/detail and validation/sync operation state under accepted `monitoring.source.read` / `monitoring.sync.read` semantics. The browser talks through the BFF. Client state, URL possession and provider payloads never become authority.
 
 ## FRONTEND
 
@@ -152,9 +151,7 @@ Required states:
 - forbidden/current-authorization-lost;
 - sparse not-found/cross-tenant behavior where applicable.
 
-Do not display a successful provider connection before durable accepted validation evidence exists.
-
-Do not display raw tokens/secrets after submission because they are never part of the Monitoring request/state contract.
+Do not display a successful provider connection before durable accepted validation evidence exists. Do not display raw tokens/secrets after submission because they are never part of the Monitoring request/state contract.
 
 ## PROVIDER / WORKER
 
@@ -206,17 +203,7 @@ Prove:
 
 Expose only policy-safe operational evidence required to explain onboarding state. Logs/traces MUST NOT copy raw credentials or confidential provider payloads.
 
-At minimum make it possible to correlate:
-
-```text
-tenant-safe operation context
-monitoring_source_id
-validation/sync operation id
-current evidence state
-safe failure class
-```
-
-without turning correlation metadata into authorization authority.
+At minimum make it possible to correlate tenant-safe operation context, `monitoring_source_id`, validation/sync operation id, current evidence state and safe failure class without turning correlation metadata into authorization authority.
 
 ## TESTS
 
@@ -224,21 +211,20 @@ Required layers:
 
 1. contract/shape tests for create/read/status DTOs;
 2. BFF/current-authorization tests;
-3. persistence/repository integration against real test DB where G2 adds persistence composition;
-4. existing Wave 4 worker integration reuse proof;
-5. provider fixture success case;
-6. missing HostGroup controlled-failure case;
-7. credential/auth/provider/egress failure cases;
-8. stale-generation/revision completion fencing case;
-9. cross-tenant/forbidden tests;
-10. browser E2E from protected shell through create -> pending -> current;
-11. browser E2E controlled failure/reconciliation presentation;
-12. runtime/container proof for components introduced by G2;
-13. adversarial scope-path validation.
+3. existing Wave 4 persistence and worker reuse proof;
+4. provider fixture success case;
+5. missing HostGroup controlled-failure case;
+6. credential/auth/provider/egress failure cases;
+7. stale-generation/revision completion fencing case;
+8. cross-tenant/forbidden tests;
+9. browser E2E from protected shell through create -> pending -> current;
+10. browser E2E controlled failure/reconciliation presentation;
+11. runtime/container proof for components introduced by G2;
+12. adversarial path + semantic-scope validation.
 
 ## RUN
 
-The implementation MUST provide exact local/container commands inside its own authorized namespace and make them CI-parity commands. The runtime workflow may execute only bounded G2 proof responsibilities and must not gain deployment/status/secrets authority beyond the accepted governance profile.
+The implementation MUST provide exact local/container commands inside its authorized namespace and make them CI-parity commands. The runtime workflow may execute only bounded G2 proof responsibilities and must not gain deployment/status/secrets authority beyond the accepted governance profile.
 
 ## DONE
 
@@ -260,6 +246,7 @@ Additionally:
 
 - exact implementation HEAD CI is green;
 - complete diff is inside canonical G2 allowlist;
+- semantic scope guard reports no forbidden G3/parallel-Monitoring authority;
 - trusted `/jlmirror-g2-scope-attest` evidence matches exact head/base;
 - trusted `/jlmirror-g2-scope-ready` live readiness matches exact current head/base/default-tip/label;
 - review has zero unresolved material findings;

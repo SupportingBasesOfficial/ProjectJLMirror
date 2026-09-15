@@ -34,7 +34,7 @@ FORBIDDEN_DELEGATION_NAMESPACE_CALLS = {
 FORBIDDEN_DELEGATION_NAMES = {"sys", "inspect", "builtins"}
 FORBIDDEN_DELEGATION_REFLECTIVE_ATTRIBUTES = {
     "_getframe", "f_locals", "f_globals", "f_back", "gi_frame", "cr_frame", "tb_frame", "currentframe", "stack",
-    "settrace", "setprofile",
+    "settrace", "setprofile", "__globals__", "__dict__", "__getattribute__", "__getattr__", "__closure__",
 }
 FIXED_CHILD_ENV = {"PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"}
 
@@ -51,6 +51,23 @@ def _require_isolated_helper_source_integrity(source: str, functions: dict[str, 
     for marker in forbidden_markers:
         if marker in helper_text:
             raise AssertionError(f"isolated readiness helper mutable-channel drift: {marker}")
+    if any(isinstance(node, ast.Return) for node in ast.walk(helper)):
+        raise AssertionError("isolated readiness helper return/control-flow shortcut forbidden")
+    expected_body_types = (ast.Assign, ast.Assign, ast.Assign, ast.If, ast.If)
+    if len(helper.body) != len(expected_body_types) or tuple(type(statement) for statement in helper.body) != expected_body_types:
+        raise AssertionError("isolated readiness helper top-level control-flow drift")
+    expected_targets = ("script", "child_code", "completed")
+    for statement, expected_target in zip(helper.body[:3], expected_targets):
+        if (
+            not isinstance(statement, ast.Assign)
+            or len(statement.targets) != 1
+            or not isinstance(statement.targets[0], ast.Name)
+            or statement.targets[0].id != expected_target
+        ):
+            raise AssertionError(f"isolated readiness helper assignment drift: {expected_target}")
+    completed_statement = helper.body[2]
+    if not isinstance(completed_statement, ast.Assign) or not isinstance(completed_statement.value, ast.Call):
+        raise AssertionError("isolated readiness helper subprocess assignment drift")
     run_calls = [
         node for node in ast.walk(helper)
         if isinstance(node, ast.Call)
@@ -59,8 +76,8 @@ def _require_isolated_helper_source_integrity(source: str, functions: dict[str, 
         and node.func.value.id == "subprocess"
         and node.func.attr == "run"
     ]
-    if len(run_calls) != 1:
-        raise AssertionError("isolated readiness helper subprocess cardinality drift")
+    if len(run_calls) != 1 or completed_statement.value is not run_calls[0]:
+        raise AssertionError("isolated readiness helper subprocess cardinality/control-flow drift")
     run_call = run_calls[0]
     env_keywords = [kw for kw in run_call.keywords if kw.arg == "env"]
     if len(env_keywords) != 1 or not isinstance(env_keywords[0].value, ast.Dict):

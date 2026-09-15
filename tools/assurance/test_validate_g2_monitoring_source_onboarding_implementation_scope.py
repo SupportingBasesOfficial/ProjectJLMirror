@@ -105,16 +105,23 @@ def main() -> int:
         ("implementation/g2-monitoring-source-onboarding/parallel.sql", "CREATE TABLE monitoring.metric_current_state (id uuid)"),
         ("tools/g2/run-onboarding", "class ResourceInventory: pass"),
         ("apps/g2-monitoring-source-onboarding/source.ts", "class ResourceInventory {}\nconst metricCurrentState = true"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", r"const \u006detric = true;"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", r"class \u0052esourceInventory {}"),
+        ("apps/g2-monitoring-source-onboarding/dashboard.vue", "<script>class ResourceІnventory {}</script>"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "class Metrics {}"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "class Problems {}"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "class ResourceInventories {}"),
     )
     for path, text in semantic_cases:
         if validator.validate_semantic_artifact(path, text, policy) == []:
             raise AssertionError(f"forbidden semantic artifact unexpectedly accepted: {path}")
-    if validator.validate_semantic_artifact(
-        "apps/g2-monitoring-source-onboarding/source.ts",
+    for text in (
         "export const sourceStatus = 'reconciliation_required'",
-        policy,
+        "export const browser_automation = true",
+        "export const geometric_layout = true",
     ):
-        raise AssertionError("bounded G2 onboarding artifact unexpectedly rejected")
+        if validator.validate_semantic_artifact("apps/g2-monitoring-source-onboarding/source.ts", text, policy):
+            raise AssertionError(f"bounded G2 onboarding artifact unexpectedly rejected: {text}")
 
     runtime = canonical_runtime()
     if validator.validate_runtime_workflow_text(runtime):
@@ -133,7 +140,7 @@ def main() -> int:
     if not validator.validate_runtime_workflow_text("name: yaml-not-json"):
         raise AssertionError("noncanonical YAML surface unexpectedly accepted")
 
-    print("g2_implementation_scope_falsifier=PASS policy_mutations=6 path_cases=4 semantic_cases=8 runtime_cases=4")
+    print("g2_implementation_scope_falsifier=PASS policy_mutations=6 path_cases=4 semantic_cases=16 runtime_cases=4")
     return 0
 
 

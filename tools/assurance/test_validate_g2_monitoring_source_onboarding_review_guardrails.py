@@ -38,6 +38,18 @@ def falsify_g2_semantic_scope_guard() -> None:
         ("apps/g2-monitoring-source-onboarding/source.ts", "class Metrics {}"),
         ("apps/g2-monitoring-source-onboarding/source.ts", "class Problems {}"),
         ("apps/g2-monitoring-source-onboarding/source.ts", "class ResourceInventories {}"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", r"const \u{0000006d}etric = true;"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", r"class Resource\u0406nventory {}"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "async function fetch_metrics() {}"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "class MetricsRepository {}"),
+        ("apps/g2-monitoring-source-onboarding/metrics/collector.ts", "export const enabled = true"),
+        ("apps/g2-monitoring-source-onboarding/problems/collector.ts", "export const enabled = true"),
+        ("apps/g2-monitoring-source-onboarding/resource-inventories/collector.ts", "export const enabled = true"),
+        ("implementation/g2-monitoring-source-onboarding/model.sql", 'CREATE TABLE "monitoring"."shadow_sources" (id uuid);'),
+        ("apps/g2-monitoring-source-onboarding/source.ts", 'const ddl = `CREATE /*comment*/ TABLE monitoring.shadow_sources (id uuid)`;'),
+        ("implementation/g2-monitoring-source-onboarding/model.sql", "CREATE TABLE measurements (source_id text, observed_value float, observed_at timestamp);"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", 'function authorize(user) { return user.providerRole === "admin"; }'),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "async function save(password) { await database.insert({password}); }"),
     )
     for path, text in rejected:
         if not scope.validate_semantic_artifact(path, text, policy):
@@ -47,6 +59,8 @@ def falsify_g2_semantic_scope_guard() -> None:
         "export const browser_automation = true",
         "export const geometric_layout = true",
         "export const sourceStatus = 'reconciliation_required'",
+        "export const credential_binding_ref = source.credential_binding_ref",
+        "export async function submitOnboarding(payload) { return fetch('/api/v1/tenants/current/monitoring-sources', {method: 'POST'}); }",
     )
     for text in allowed:
         errors = scope.validate_semantic_artifact("apps/g2-monitoring-source-onboarding/source.ts", text, policy)
@@ -108,7 +122,7 @@ def main() -> int:
     falsify_g2_semantic_scope_guard()
     falsify_g2_trusted_workflow_semantics()
     falsify_g2_same_second_status_ordering()
-    print("g2_review_guardrails=PASS semantic=escape+format+inflection-closed workflow=blob-exact status=total-order")
+    print("g2_review_guardrails=PASS semantic=escape+component+path+structural-closed workflow=blob-exact status=total-order")
     return 0
 
 

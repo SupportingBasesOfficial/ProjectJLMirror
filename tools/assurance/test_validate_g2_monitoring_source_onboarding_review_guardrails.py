@@ -54,41 +54,21 @@ def falsify_g2_semantic_scope_guard() -> None:
     if not scope.validate_paths(["sql/g2/parallel_monitoring_source.sql"], policy):
         raise AssertionError("parallel G2 persistence namespace bypassed path policy")
     cases = (
-        (
-            "apps/g2-monitoring-source-onboarding/resource_inventory.ts",
-            "export const page = true",
-            "forbidden G3 inventory path bypassed semantic guard",
-        ),
-        (
-            "apps/g2-monitoring-source-onboarding/source.ts",
-            "const monitoring_resource = payload.resource",
-            "forbidden G3 resource semantics bypassed semantic guard",
-        ),
-        (
-            "implementation/g2-monitoring-source-onboarding/parallel_monitoring.py",
-            "CREATE TABLE monitoring.metric_current_state (id uuid)",
-            "implementation namespace executable artifact bypassed semantic guard",
-        ),
-        (
-            "tests/g2/parallel_store.py",
-            "class ResourceInventory: pass",
-            "tests namespace executable artifact bypassed semantic guard",
-        ),
-        (
-            "implementation/g2-monitoring-source-onboarding/parallel.sql",
-            "CREATE TABLE monitoring.metric_current_state (id uuid)",
-            "SQL artifact bypassed semantic guard",
-        ),
-        (
-            "tools/g2/run-onboarding",
-            "class ResourceInventory: pass",
-            "extensionless executable artifact bypassed semantic guard",
-        ),
-        (
-            "apps/g2-monitoring-source-onboarding/source.ts",
-            "class ResourceInventory {}\nconst metricCurrentState = true",
-            "camel/Pascal case forbidden semantics bypassed semantic guard",
-        ),
+        ("apps/g2-monitoring-source-onboarding/resource_inventory.ts", "export const page = true", "forbidden G3 inventory path bypassed semantic guard"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "const monitoring_resource = payload.resource", "forbidden G3 resource semantics bypassed semantic guard"),
+        ("implementation/g2-monitoring-source-onboarding/parallel_monitoring.py", "CREATE TABLE monitoring.metric_current_state (id uuid)", "implementation namespace executable artifact bypassed semantic guard"),
+        ("tests/g2/parallel_store.py", "class ResourceInventory: pass", "tests namespace executable artifact bypassed semantic guard"),
+        ("implementation/g2-monitoring-source-onboarding/parallel.sql", "CREATE TABLE monitoring.metric_current_state (id uuid)", "SQL artifact bypassed semantic guard"),
+        ("tools/g2/run-onboarding", "class ResourceInventory: pass", "extensionless executable artifact bypassed semantic guard"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "class ResourceInventory {}\nconst metricCurrentState = true", "camel/Pascal case forbidden semantics bypassed semantic guard"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "class HostInventory {}", "host inventory exclusion bypassed semantic guard"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "const metricValue = 1", "metric value exclusion bypassed semantic guard"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "class Problem {}", "problem exclusion bypassed semantic guard"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "const healthStatus = 'green'", "health exclusion bypassed semantic guard"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "class SourceCutover {}", "source cutover exclusion bypassed semantic guard"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "const secretManager = provider", "secret manager exclusion bypassed semantic guard"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "const egressTransport = provider", "egress transport exclusion bypassed semantic guard"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "const commercialPlan = true", "commercial exclusion bypassed semantic guard"),
     )
     for path, text, message in cases:
         if not scope.validate_semantic_artifact(path, text, policy):
@@ -106,33 +86,26 @@ def falsify_g2_trusted_workflow_semantics() -> None:
     if authorization.validate_scope_workflow_text(workflow):
         raise AssertionError("canonical G2 trusted workflow failed structural validation")
     mutations = (
+        (workflow.replace('          python3 "$TRUSTED_VALIDATOR" \\\n', '          # python3 "$TRUSTED_VALIDATOR" \\\n', 1), "trusted validator"),
+        (workflow.replace('          python3 "$TRUSTED_READINESS_VALIDATOR" \\\n', '          # python3 "$TRUSTED_READINESS_VALIDATOR" \\\n', 1), "readiness"),
+        (workflow.replace("          state=failure\n", "          state=success\n", 1), "fail-closed control-flow"),
         (
-            workflow.replace('          python3 "$TRUSTED_VALIDATOR" \\\n', '          # python3 "$TRUSTED_VALIDATOR" \\\n', 1),
-            "trusted validator",
+            workflow.replace('          python3 "$TRUSTED_VALIDATOR" \\\n', '          if false; then\n          python3 "$TRUSTED_VALIDATOR" \\\n', 1).replace('            --base-repo "$PR_BASE_REPO"\n', '            --base-repo "$PR_BASE_REPO"\n          fi\n', 1),
+            "command-only shape",
+        ),
+        (workflow.replace('            --base-repo "$PR_BASE_REPO"\n', '            --base-repo "$PR_BASE_REPO" || true\n', 1), "command-only shape"),
+        (workflow.replace("          state=failure\n", "          state=failure\n          result=success\n", 1), "result assignment authority"),
+        (
+            workflow.replace('          python3 "$TRUSTED_VALIDATOR" \\\n', '          python3() { return 0; }\n          python3 "$TRUSTED_VALIDATOR" \\\n', 1),
+            "command-only shape",
         ),
         (
-            workflow.replace('          python3 "$TRUSTED_READINESS_VALIDATOR" \\\n', '          # python3 "$TRUSTED_READINESS_VALIDATOR" \\\n', 1),
-            "readiness",
+            workflow.replace("          state=failure\n", "          state=failure\n          printf -v result success\n", 1),
+            "indirect result/state assignment",
         ),
         (
-            workflow.replace("          state=failure\n", "          state=success\n", 1),
-            "fail-closed control-flow",
-        ),
-        (
-            workflow.replace(
-                '          python3 "$TRUSTED_VALIDATOR" \\\n',
-                '          if false; then\n          python3 "$TRUSTED_VALIDATOR" \\\n',
-                1,
-            ).replace('            --base-repo "$PR_BASE_REPO"\n', '            --base-repo "$PR_BASE_REPO"\n          fi\n', 1),
-            "control-flow-free",
-        ),
-        (
-            workflow.replace('            --base-repo "$PR_BASE_REPO"\n', '            --base-repo "$PR_BASE_REPO" || true\n', 1),
-            "without status suppression",
-        ),
-        (
-            workflow.replace("          state=failure\n", "          state=failure\n          result=success\n", 1),
-            "result assignment authority",
+            workflow.replace('          gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${PR_HEAD_SHA}" \\\n', '          printf -v state success\n          gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${PR_HEAD_SHA}" \\\n', 1),
+            "indirect result/state assignment",
         ),
     )
     for mutated, expected in mutations:
@@ -158,9 +131,7 @@ def falsify_g2_same_second_status_ordering() -> None:
     success = _trusted_status(status_id=100, state="success")
     newer_pending = _trusted_status(status_id=101, state="pending")
     try:
-        readiness.select_trusted_evidence(
-            [newer_pending, success], evidence="scope", repo=REPO, server_url=SERVER, base_sha=BASE, head_sha=HEAD
-        )
+        readiness.select_trusted_evidence([newer_pending, success], evidence="scope", repo=REPO, server_url=SERVER, base_sha=BASE, head_sha=HEAD)
     except AssertionError as exc:
         if "not successful" not in str(exc):
             raise
@@ -169,9 +140,7 @@ def falsify_g2_same_second_status_ordering() -> None:
 
     duplicate = copy.deepcopy(success)
     try:
-        readiness.select_trusted_evidence(
-            [success, duplicate], evidence="scope", repo=REPO, server_url=SERVER, base_sha=BASE, head_sha=HEAD
-        )
+        readiness.select_trusted_evidence([success, duplicate], evidence="scope", repo=REPO, server_url=SERVER, base_sha=BASE, head_sha=HEAD)
     except AssertionError as exc:
         if "ordering is ambiguous" not in str(exc):
             raise
@@ -183,7 +152,7 @@ def main() -> int:
     falsify_g2_semantic_scope_guard()
     falsify_g2_trusted_workflow_semantics()
     falsify_g2_same_second_status_ordering()
-    print("g2_review_guardrails=PASS probes=3 semantic=all-prefixes+all-utf8+normalized-identifiers workflow=canonical-command+result-authority status=total-order")
+    print("g2_review_guardrails=PASS probes=3 semantic=explicit-exclusions+all-prefixes workflow=canonical-command-only+no-indirect-mutation status=total-order")
     return 0
 
 

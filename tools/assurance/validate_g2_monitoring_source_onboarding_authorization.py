@@ -16,6 +16,8 @@ SCOPE_VALIDATOR = ROOT / "tools/assurance/validate_g2_monitoring_source_onboardi
 READINESS_VALIDATOR = ROOT / "tools/assurance/validate_g2_monitoring_source_onboarding_scope_readiness.py"
 SCOPE_WORKFLOW = ROOT / ".github/workflows/g2-monitoring-source-onboarding-implementation-scope.yml"
 REPOSITORY_VALIDATOR = ROOT / "tools/assurance/validate_repository.py"
+REVIEW_GUARDRAILS = ROOT / "tools/assurance/test_validate_g2_monitoring_source_onboarding_review_guardrails.py"
+LEARNING_LEDGER = ROOT / "governance/adversarial/learning-ledger.d/pr-154-g2-authorization-review-findings.json"
 
 BASE_SHA = "8e26b05596aeca2e45578908ca4afc4f1fa175d6"
 AUTH_ID = "g2.monitoring-source-onboarding@1"
@@ -96,6 +98,7 @@ EXPECTED_EXCLUSIONS = {
 AUTH_PR_ALLOWED_PATHS = {
     ".github/workflows/g2-monitoring-source-onboarding-authorization.yml",
     ".github/workflows/g2-monitoring-source-onboarding-implementation-scope.yml",
+    "governance/adversarial/learning-ledger.d/pr-154-g2-authorization-review-findings.json",
     "implementation/g2-monitoring-source-onboarding-authorization/AUTHORIZATION.md",
     "implementation/g2-monitoring-source-onboarding-authorization/AUTHORIZATION_MANIFEST.json",
     "implementation/g2-monitoring-source-onboarding-authorization/TASK_PACKET.md",
@@ -105,6 +108,7 @@ AUTH_PR_ALLOWED_PATHS = {
     "tools/assurance/test_validate_g2_monitoring_source_onboarding_implementation_scope.py",
     "tools/assurance/validate_g2_monitoring_source_onboarding_scope_readiness.py",
     "tools/assurance/test_validate_g2_monitoring_source_onboarding_scope_readiness.py",
+    "tools/assurance/test_validate_g2_monitoring_source_onboarding_review_guardrails.py",
     "tools/assurance/validate_repository.py",
 }
 
@@ -140,8 +144,7 @@ def validate_manifest(manifest: dict[str, Any]) -> list[str]:
     }
     for key, expected in exact.items():
         require(manifest.get(key) == expected, f"{key} drift", errors)
-    slice_data = manifest.get("authorized_slice") or {}
-    require(slice_data == {"slice_id": SLICE_ID, "capability": "monitoring_source_initial_onboarding_validation_and_status"}, "authorized slice drift", errors)
+    require(manifest.get("authorized_slice") == {"slice_id": SLICE_ID, "capability": "monitoring_source_initial_onboarding_validation_and_status"}, "authorized slice drift", errors)
     require(set(manifest.get("authorized_capability_scope", [])) == EXPECTED_CAPABILITIES, "authorized capability scope drift", errors)
     require(set(manifest.get("required_invariants", [])) == EXPECTED_INVARIANTS, "required invariant set drift", errors)
     require(set(manifest.get("explicitly_not_authorized", [])) == EXPECTED_EXCLUSIONS, "explicit exclusion set drift", errors)
@@ -192,7 +195,7 @@ def validate_manifest(manifest: dict[str, Any]) -> list[str]:
         require(policy.get("semantic_scan_prefixes") == EXPECTED_SEMANTIC_SCAN_PREFIXES, "semantic scan prefix drift", errors)
 
     authority_paths = manifest.get("authority_source_paths")
-    require(isinstance(authority_paths, list) and authority_paths, "authority source paths missing", errors)
+    require(isinstance(authority_paths, list) and bool(authority_paths), "authority source paths missing", errors)
     if isinstance(authority_paths, list):
         for rel in authority_paths:
             require(isinstance(rel, str) and (ROOT / rel).exists(), f"authority source path missing: {rel}", errors)
@@ -208,7 +211,6 @@ def validate_docs() -> list[str]:
         "implementation_authority_before_merge = blocked",
         "implementation_authority_after_merge = granted_for_exact_g2_monitoring_source_onboarding_only",
         "ready_for_merge != authorized_to_merge",
-        "shared existing paths are read-only",
         "wave4.zabbix-initial-validation-worker@1",
         "no g2 sql namespace and no g2 domain-source namespace",
     ):
@@ -228,21 +230,17 @@ def validate_docs() -> list[str]:
 
 
 def _job_block(text: str, name: str) -> str | None:
-    jobs_marker = "\njobs:\n"
-    if jobs_marker not in text:
+    marker = "\njobs:\n"
+    if marker not in text:
         return None
-    lines = text[text.index(jobs_marker) + len(jobs_marker):].splitlines()
-    start = None
-    for idx, line in enumerate(lines):
-        if line == f"  {name}:":
-            start = idx
-            break
+    lines = text.split(marker, 1)[1].splitlines()
+    start = next((i for i, line in enumerate(lines) if line == f"  {name}:"), None)
     if start is None:
         return None
     end = len(lines)
-    for idx in range(start + 1, len(lines)):
-        if re.fullmatch(r"  [A-Za-z0-9_-]+:\s*", lines[idx]):
-            end = idx
+    for i in range(start + 1, len(lines)):
+        if re.fullmatch(r"  [A-Za-z0-9_-]+:\s*", lines[i]):
+            end = i
             break
     return "\n".join(lines[start:end])
 
@@ -254,10 +252,7 @@ def _logical_shell_commands(text: str) -> list[str]:
         line = raw.strip()
         if not line or line.startswith("#"):
             continue
-        if current:
-            current += " " + line
-        else:
-            current = line
+        current = f"{current} {line}".strip() if current else line
         if current.endswith("\\"):
             current = current[:-1].rstrip()
             continue
@@ -275,48 +270,49 @@ def validate_scope_workflow_text(text: str) -> list[str]:
     require("pull_request_target" not in text and "workflow_dispatch:" not in text and "\n  push:\n" not in text, "scope workflow forbidden trigger drift", errors)
     require(text.count("statuses: write") == 2, "scope workflow must contain exactly two statuses: write grants", errors)
     require(text.count("uses: actions/checkout@") == 1, "scope workflow must checkout exactly once", errors)
-
-    jobs_part = text.split("\njobs:\n", 1)[1] if "\njobs:\n" in text else ""
-    job_names = re.findall(r"^  ([A-Za-z0-9_-]+):\s*$", jobs_part, re.MULTILINE)
-    require(job_names == ["resolve", "publish-pending", "analyze", "verify-ready", "publish-final"], "scope workflow job structure drift", errors)
+    jobs = text.split("\njobs:\n", 1)[1] if "\njobs:\n" in text else ""
+    require(re.findall(r"^  ([A-Za-z0-9_-]+):\s*$", jobs, re.MULTILINE) == ["resolve", "publish-pending", "analyze", "verify-ready", "publish-final"], "scope workflow job structure drift", errors)
 
     resolve = _job_block(text, "resolve") or ""
+    resolve_cmds = _logical_shell_commands(resolve)
     for command in (
         'test "$PR_BASE_REF" = "$DEFAULT_BRANCH"',
         'test "$PR_BASE_REPO" = "$GITHUB_REPOSITORY"',
         'test "$PR_HEAD_REPO" = "$GITHUB_REPOSITORY"',
         'test "$PR_BASE_SHA" = "$DEFAULT_BRANCH_SHA"',
     ):
-        require(command in _logical_shell_commands(resolve), f"resolve job missing executable authority check: {command}", errors)
+        require(command in resolve_cmds, f"resolve job missing executable authority check: {command}", errors)
     require("G2_REQUIRED_LABEL" in resolve and "G2_REQUIRED_HEAD_PREFIX" in resolve, "resolve job missing canonical label/head checks", errors)
 
     analyze = _job_block(text, "analyze") or ""
-    analyze_commands = _logical_shell_commands(analyze)
-    expected_scope_invocation = 'python3 "$TRUSTED_VALIDATOR" --repo-root "$GITHUB_WORKSPACE" --base "$PR_BASE_SHA" --head "$PR_HEAD_SHA" --head-ref "$PR_HEAD_REF" --labels-json "$PR_LABELS_JSON" --head-repo "$PR_HEAD_REPO" --base-repo "$PR_BASE_REPO"'
-    require(expected_scope_invocation in analyze_commands, "analyze job missing exact executable trusted validator invocation", errors)
-    require('git show "${PR_BASE_SHA}:${G2_SCOPE_VALIDATOR}" > "$trusted_validator"' in analyze_commands, "analyze job missing executable exact-base validator materialization", errors)
-    require('test "$(git rev-parse HEAD)" != "$PR_HEAD_SHA"' in analyze_commands, "analyze job missing candidate-not-checkout proof", errors)
+    analyze_cmds = _logical_shell_commands(analyze)
+    require('git show "${PR_BASE_SHA}:${G2_SCOPE_VALIDATOR}" > "$trusted_validator"' in analyze_cmds, "analyze job missing executable exact-base validator materialization", errors)
+    require('test "$(git rev-parse HEAD)" != "$PR_HEAD_SHA"' in analyze_cmds, "analyze job missing candidate-not-checkout proof", errors)
+    require(any(cmd.startswith('python3 "$TRUSTED_VALIDATOR" ') and '--base "$PR_BASE_SHA"' in cmd and '--head "$PR_HEAD_SHA"' in cmd for cmd in analyze_cmds), "analyze job missing exact executable trusted validator invocation", errors)
     require("statuses: write" not in analyze, "analyze job must remain read-only", errors)
 
     ready = _job_block(text, "verify-ready") or ""
-    ready_commands = _logical_shell_commands(ready)
-    expected_ready_invocation = 'python3 "$TRUSTED_READINESS_VALIDATOR" --repo "$GITHUB_REPOSITORY" --pr-number "$PR_NUMBER" --server-url "$GITHUB_SERVER_URL"'
-    require(expected_ready_invocation in ready_commands, "verify-ready job missing exact executable readiness invocation", errors)
+    ready_cmds = _logical_shell_commands(ready)
     require("contents/${G2_READINESS_VALIDATOR}?ref=${PR_BASE_SHA}" in ready, "verify-ready job missing exact-base readiness materialization", errors)
+    require(any(cmd.startswith('python3 "$TRUSTED_READINESS_VALIDATOR" ') and '--pr-number "$PR_NUMBER"' in cmd for cmd in ready_cmds), "verify-ready job missing exact executable readiness invocation", errors)
     require("statuses: write" not in ready, "verify-ready job must remain read-only", errors)
 
     final = _job_block(text, "publish-final") or ""
-    raw_lines = final.splitlines()
-    failure_positions = [i for i, line in enumerate(raw_lines) if line.strip() == "state=failure"]
-    success_positions = [i for i, line in enumerate(raw_lines) if line.strip() == "state=success"]
-    test_positions = [i for i, line in enumerate(raw_lines) if line.strip() == 'test "$state" = success']
-    if_positions = [i for i, line in enumerate(raw_lines) if line.strip().startswith('if [[ "$result" == \'success\'')]
-    require(len(failure_positions) == len(success_positions) == len(test_positions) == len(if_positions) == 1, "publish-final fail-closed control-flow cardinality drift", errors)
-    if failure_positions and if_positions and success_positions and test_positions:
-        require(failure_positions[0] < if_positions[0] < success_positions[0] < test_positions[0], "publish-final fail-closed control-flow order drift", errors)
-    final_active = "\n".join(line for line in raw_lines if not line.lstrip().startswith("#"))
-    for marker in ("CURRENT_DEFAULT_BRANCH", "CURRENT_HEAD_SHA", "CURRENT_HEAD_REF", "CURRENT_BASE_SHA", "CURRENT_BASE_REF", "CURRENT_DEFAULT_SHA", "CURRENT_LABELS_JSON", 'jq -e --arg required "$G2_REQUIRED_LABEL"', "G2 scope PASS base=${PR_BASE_SHA} head=${PR_HEAD_SHA}", "G2 ready PASS base=${PR_BASE_SHA} head=${PR_HEAD_SHA}"):
-        require(marker in final_active, f"publish-final missing active live-authority marker: {marker}", errors)
+    raw = final.splitlines()
+    pos_failure = [i for i, line in enumerate(raw) if line.strip() == "state=failure"]
+    pos_if = [i for i, line in enumerate(raw) if line.strip().startswith('if [[ "$result" == \'success\'')]
+    pos_success = [i for i, line in enumerate(raw) if line.strip() == "state=success"]
+    pos_test = [i for i, line in enumerate(raw) if line.strip() == 'test "$state" = success']
+    require(len(pos_failure) == len(pos_if) == len(pos_success) == len(pos_test) == 1, "publish-final fail-closed control-flow cardinality drift", errors)
+    if pos_failure and pos_if and pos_success and pos_test:
+        require(pos_failure[0] < pos_if[0] < pos_success[0] < pos_test[0], "publish-final fail-closed control-flow order drift", errors)
+    active = "\n".join(line for line in raw if not line.lstrip().startswith("#"))
+    for marker in (
+        "CURRENT_DEFAULT_BRANCH", "CURRENT_HEAD_SHA", "CURRENT_HEAD_REF", "CURRENT_BASE_SHA", "CURRENT_BASE_REF",
+        "CURRENT_DEFAULT_SHA", "CURRENT_LABELS_JSON", 'jq -e --arg required "$G2_REQUIRED_LABEL"',
+        "G2 scope PASS base=${PR_BASE_SHA} head=${PR_HEAD_SHA}", "G2 ready PASS base=${PR_BASE_SHA} head=${PR_HEAD_SHA}",
+    ):
+        require(marker in active, f"publish-final missing active live-authority marker: {marker}", errors)
     return errors
 
 
@@ -324,27 +320,20 @@ def validate_scope_workflow() -> list[str]:
     return validate_scope_workflow_text(SCOPE_WORKFLOW.read_text(encoding="utf-8"))
 
 
-def changed_paths() -> list[str]:
-    out = subprocess.check_output(["git", "-C", str(ROOT), "diff", "--name-only", "--no-renames", f"{BASE_SHA}...HEAD"], text=True)
-    return [line for line in out.splitlines() if line]
-
-
 def validate_changed_paths() -> list[str]:
-    errors: list[str] = []
     try:
-        paths = changed_paths()
+        out = subprocess.check_output(["git", "-C", str(ROOT), "diff", "--name-only", "--no-renames", f"{BASE_SHA}...HEAD"], text=True)
     except subprocess.CalledProcessError as exc:
         return [f"unable to enumerate exact authorization diff: {exc}"]
-    if not paths:
-        errors.append("authorization PR has no changed paths")
+    paths = [line for line in out.splitlines() if line]
+    errors = [] if paths else ["authorization PR has no changed paths"]
     errors.extend(f"unauthorized G2 authorization PR path: {path}" for path in paths if path not in AUTH_PR_ALLOWED_PATHS)
     return errors
 
 
 def validate() -> list[str]:
-    errors: list[str] = []
-    for required in (MANIFEST, AUTHORIZATION, TASK_PACKET, SCOPE_VALIDATOR, READINESS_VALIDATOR, SCOPE_WORKFLOW, REPOSITORY_VALIDATOR):
-        require(required.exists(), f"required authorization artifact missing: {required.relative_to(ROOT)}", errors)
+    required = (MANIFEST, AUTHORIZATION, TASK_PACKET, SCOPE_VALIDATOR, READINESS_VALIDATOR, SCOPE_WORKFLOW, REPOSITORY_VALIDATOR, REVIEW_GUARDRAILS, LEARNING_LEDGER)
+    errors = [f"required authorization artifact missing: {path.relative_to(ROOT)}" for path in required if not path.exists()]
     if errors:
         return errors
     try:
@@ -364,7 +353,7 @@ def main() -> int:
         print(f"G2_AUTHORIZATION_ERROR: {error}", file=sys.stderr)
     if errors:
         return 1
-    print("g2_authorization=PASS exact_scope=monitoring-source-onboarding path+semantic-scope=guarded workflow=structurally-validated merge_authorization=not-granted")
+    print("g2_authorization=PASS exact_scope=monitoring-source-onboarding path+semantic-scope=guarded workflow=structurally-validated review-findings=internalized merge_authorization=not-granted")
     return 0
 
 

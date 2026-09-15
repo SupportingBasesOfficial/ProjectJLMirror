@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import dis
 import importlib.util
 import json
 import re
@@ -210,7 +211,7 @@ def _validate_g1_scope_probe_effects(root: Path) -> list[str]:
     return errors
 
 
-def _direct_delegation_line(path: Path, outer_probe: str, delegated_module: str, inner_probe: str) -> tuple[int | None, list[str]]:
+def _direct_delegation_site(path: Path, outer_probe: str, delegated_module: str, inner_probe: str) -> tuple[tuple[int, int, int, int] | None, list[str]]:
     try:
         source = path.read_text(encoding='utf-8')
         tree = ast.parse(source, filename=str(path))
@@ -233,17 +234,34 @@ def _direct_delegation_line(path: Path, outer_probe: str, delegated_module: str,
     if alias is None or len(matches) != 1:
         return None, [f'credited G1 outer probe must contain exactly one direct delegation: {outer_probe}->{inner_probe}']
     statement = matches[0]
-    segment = ast.get_source_segment(source, statement)
+    call = statement.value
     expected = f'{alias}.{inner_probe}()'
+    source_lines = source.splitlines()
+    if statement.lineno != statement.end_lineno or source_lines[statement.lineno - 1].strip() != expected:
+        return None, [f'credited G1 outer delegation physical line must contain only exact call: {expected}']
+    segment = ast.get_source_segment(source, call)
     if segment is None or segment.strip() != expected:
-        return None, [f'credited G1 outer delegation statement must be isolated exact call: {expected}']
-    return statement.lineno, []
+        return None, [f'credited G1 outer delegation expression must be exact call: {expected}']
+    if call.end_lineno is None or call.end_col_offset is None:
+        return None, [f'credited G1 outer delegation lacks exact source-position metadata: {expected}']
+    return (call.lineno, call.end_lineno, call.col_offset, call.end_col_offset), []
+
+
+def _instruction_site(code: Any, offset: int) -> tuple[int, int, int, int] | None:
+    for instruction in dis.get_instructions(code):
+        if instruction.offset != offset:
+            continue
+        positions = instruction.positions
+        if positions is None or positions.lineno is None or positions.end_lineno is None or positions.col_offset is None or positions.end_col_offset is None:
+            return None
+        return (positions.lineno, positions.end_lineno, positions.col_offset, positions.end_col_offset)
+    return None
 
 
 def _validate_outer_delegation_effect(root: Path, *, outer_probe: str, delegated_module: str, inner_probe: str, sibling_noops: tuple[str, ...], label: str) -> list[str]:
     path = root / G1_AUTHORIZATION_TEST
-    expected_line, errors = _direct_delegation_line(path, outer_probe, delegated_module, inner_probe)
-    if expected_line is None:
+    expected_site, errors = _direct_delegation_site(path, outer_probe, delegated_module, inner_probe)
+    if expected_site is None:
         return errors
     module_name = f'_jlmirror_{label}_outer_effect'
     saved_delegated = sys.modules.pop(delegated_module, None)
@@ -289,12 +307,13 @@ def _validate_outer_delegation_effect(root: Path, *, outer_probe: str, delegated
             tb = exc.__traceback__
             callsite_authenticated = False
             while tb is not None and tb.tb_next is not None:
-                if tb.tb_frame.f_code is probe.__code__ and tb.tb_lineno == expected_line and tb.tb_next.tb_frame.f_code is sentinel_code:
+                caller_site = _instruction_site(tb.tb_frame.f_code, tb.tb_lasti)
+                if tb.tb_frame.f_code is probe.__code__ and caller_site == expected_site and tb.tb_next.tb_frame.f_code is sentinel_code:
                     callsite_authenticated = True
                     break
                 tb = tb.tb_next
             if not callsite_authenticated:
-                errors.append(f'credited G1 {label} delegation did not originate at exact authenticated attribute call site line {expected_line}')
+                errors.append(f'credited G1 {label} delegation did not originate from exact authenticated expression site {expected_site}')
         else:
             errors.append(f'credited G1 {label} outer probe did not execute delegated sentinel')
         invocation_hits = [code for phase, code in audit_state['codes'] if phase == 'invocation' and code is sentinel_code]
@@ -353,9 +372,15 @@ def _validate_g1_readiness_probe_effects(root: Path) -> list[str]:
     malformed_target = call(); malformed_target['statuses'][0]['target_url'] = 'https://example.invalid/run/123'; expected_calls.append(malformed_target)
     untrusted_newer = call(); untrusted_newer['statuses'].append({'context':scope_context,'state':'success','description':f'G1 scope PASS base={base_sha} head={head_sha}','target_url':f'{server}/{repo}/actions/runs/999999999','created_at':'2026-09-14T21:00:00Z','creator':{'login':'contributor','id':999}}); expected_calls.append(untrusted_newer)
 
+    readiness_dependency_name = 'validate_g1_identity_tenant_shell_scope_readiness'
+    saved_readiness_dependency = sys.modules.pop(readiness_dependency_name, None)
+    phase1_dependency: Any = None
     module1_name = '_jlmirror_g1_readiness_probe_effects_sequence'
     try:
         module1 = _load_module(path, module1_name)
+        phase1_dependency = module1.readiness
+        if sys.modules.get(readiness_dependency_name) is not phase1_dependency:
+            errors.append('credited G1 readiness semantic sequence did not import its canonical dependency as a fresh module identity')
         original_validate = module1.readiness.validate_live_readiness
         original_must_reject = module1.must_reject
         state: dict[str, Any] = {'calls': [], 'negative_boundaries': [], 'invalid_deltas': []}
@@ -389,10 +414,16 @@ def _validate_g1_readiness_probe_effects(root: Path) -> list[str]:
         errors.append(f'credited G1 readiness semantic sequence could not execute: {type(exc).__name__}: {exc}')
     finally:
         sys.modules.pop(module1_name, None)
+        sys.modules.pop(readiness_dependency_name, None)
 
     module2_name = '_jlmirror_g1_readiness_probe_effects_fresh_rejection'
     try:
         module2 = _load_module(path, module2_name)
+        phase2_dependency = module2.readiness
+        if phase1_dependency is not None and phase2_dependency is phase1_dependency:
+            errors.append('fresh G1 readiness rejection phase reused the phase-one readiness dependency identity')
+        if sys.modules.get(readiness_dependency_name) is not phase2_dependency:
+            errors.append('fresh G1 readiness rejection phase is not bound to the freshly imported canonical dependency')
         rejection_calls: list[dict[str, Any]] = []
         def rejection_verifier(**kwargs: Any) -> tuple[str, str, int]:
             rejection_calls.append(clone(kwargs)); return (base_sha, head_sha, run_id)
@@ -416,6 +447,9 @@ def _validate_g1_readiness_probe_effects(root: Path) -> list[str]:
         errors.append(f'fresh G1 readiness rejection module could not execute: {type(exc).__name__}: {exc}')
     finally:
         sys.modules.pop(module2_name, None)
+        sys.modules.pop(readiness_dependency_name, None)
+        if saved_readiness_dependency is not None:
+            sys.modules[readiness_dependency_name] = saved_readiness_dependency
     return errors
 
 
@@ -544,7 +578,7 @@ def main() -> None:
         print('ADVERSARIAL_LEARNING_STRICT_ERROR:', error)
     if errors:
         raise SystemExit(1)
-    print('adversarial_learning_strict=PASS head_status=isolated+fresh reviewer_identity=external-only material_formats=badge+priority-prefix d4c_current_projection=terminal-governed-surfaces falsifier_effects=executed-negative-helper g1_negative_helper=executed-reject+accept g1_scope_probes=permissive-evaluator-rejected+runtime-workflow-semantics g1_outer_delegation=ast+exact-callsite-traceback g1_readiness_probe=exact-semantic-call-sequence+negative-boundaries+fresh-permissive-rejection')
+    print('adversarial_learning_strict=PASS head_status=isolated+fresh reviewer_identity=external-only material_formats=badge+priority-prefix d4c_current_projection=terminal-governed-surfaces falsifier_effects=executed-negative-helper g1_negative_helper=executed-reject+accept g1_scope_probes=permissive-evaluator-rejected+runtime-workflow-semantics g1_outer_delegation=ast+exact-expression-bytecode g1_readiness_probe=exact-semantic-call-sequence+negative-boundaries+fresh-module+fresh-dependency+permissive-rejection')
 
 
 if __name__ == '__main__':

@@ -35,11 +35,12 @@ EXPECTED_FORBIDDEN_PATH_TOKENS = [
     "inventory", "monitoring-resource", "monitoring_resource", "metric", "problem", "health", "alert", "replacement", "cutover",
 ]
 EXPECTED_FORBIDDEN_CODE_MARKERS = [
-    "monitoring_resource", "host_inventory", "resource_inventory", "metric_definition", "metric_value", "metric_history",
-    "metric_current_state", "metric_observation", "problem", "problem_state", "health_status", "health_projection",
-    "monitoring_to_alerting", "alert_creation", "alert_policy", "alerting.", "ack_notification_escalation",
-    "acknowledgement", "notification", "escalation", "itsm", "automation", "aiops", "finops", "commercial",
-    "production_deployment", "production_c3", "secret_manager", "egress_transport", "provider_authorization",
+    "monitoring_resource", "host_inventory", "resource_inventory", "resource_ingestion", "metric", "metric_definition",
+    "metric_value", "metric_history", "metric_current_state", "metric_observation", "problem", "problem_state", "health",
+    "health_status", "health_projection", "monitoring_to_alerting", "alert_creation", "alert_policy", "alerting.",
+    "ack_handler", "ack_notification_escalation", "acknowledge", "acknowledgement", "notification", "escalation",
+    "itsm", "automation", "aiops", "finops", "commercial", "production_deployment", "production_c3", "c3_numerics",
+    "secret_manager", "egress_transport", "provider_native_authority", "provider_authorization", "raw_credentials",
     "raw_provider_credentials", "source_replacement", "source_cutover", "replacement_candidate", "replace_source_instance",
     "candidate_generation", "create table monitoring.", "create schema monitoring", "src/jlmirror_monitoring", "sql/wave4",
 ]
@@ -323,34 +324,56 @@ def validate_scope_workflow_text(text: str) -> list[str]:
     require("G2_REQUIRED_LABEL" in resolve and "G2_REQUIRED_HEAD_PREFIX" in resolve, "resolve job missing canonical label/head checks", errors)
 
     analyze = _job_block(text, "analyze") or ""
+    analyze_scripts = _run_script_bodies(analyze)
+    require(len(analyze_scripts) == 3, "analyze job must contain exactly three canonical run scripts", errors)
     analyze_cmds = _logical_shell_commands(analyze)
-    require('git show "${PR_BASE_SHA}:${G2_SCOPE_VALIDATOR}" > "$trusted_validator"' in analyze_cmds, "analyze job missing executable exact-base validator materialization", errors)
     require('test "$(git rev-parse HEAD)" != "$PR_HEAD_SHA"' in analyze_cmds, "analyze job missing candidate-not-checkout proof", errors)
+    materialize_scope = _trusted_invocation_script(analyze, 'git show "${PR_BASE_SHA}:${G2_SCOPE_VALIDATOR}"')
+    require(materialize_scope is not None, "analyze job missing unique exact-base validator materialization script", errors)
+    if materialize_scope is not None:
+        expected_materialize_scope = [
+            "set -euo pipefail",
+            'trusted_validator="$RUNNER_TEMP/g2-implementation-scope-validator.py"',
+            'git show "${PR_BASE_SHA}:${G2_SCOPE_VALIDATOR}" > "$trusted_validator"',
+            'test -s "$trusted_validator"',
+            "printf 'TRUSTED_VALIDATOR=%s\\n' \"$trusted_validator\" >> \"$GITHUB_ENV\"",
+        ]
+        require(_logical_shell_commands(materialize_scope) == expected_materialize_scope, "trusted scope evaluator materialization must match exact canonical command-only shape", errors)
     scope_script = _trusted_invocation_script(analyze, 'python3 "$TRUSTED_VALIDATOR"')
     require(scope_script is not None, "analyze job missing unique trusted validator run script", errors)
     if scope_script is not None:
         require(not _script_has_control_flow(scope_script), "trusted validator invocation must be control-flow-free and unconditionally reachable", errors)
-        scope_cmds = _logical_shell_commands(scope_script)
         expected_scope_commands = [
             "set -euo pipefail",
             'PR_LABELS_JSON="$(printf \'%s\' "$PR_LABELS_B64" | base64 -d)"',
             'python3 "$TRUSTED_VALIDATOR" --repo-root "$GITHUB_WORKSPACE" --base "$PR_BASE_SHA" --head "$PR_HEAD_SHA" --head-ref "$PR_HEAD_REF" --labels-json "$PR_LABELS_JSON" --head-repo "$PR_HEAD_REPO" --base-repo "$PR_BASE_REPO"',
         ]
-        require(scope_cmds == expected_scope_commands, "trusted validator run script must match exact canonical command-only shape", errors)
+        require(_logical_shell_commands(scope_script) == expected_scope_commands, "trusted validator run script must match exact canonical command-only shape", errors)
     require("statuses: write" not in analyze, "analyze job must remain read-only", errors)
 
     ready = _job_block(text, "verify-ready") or ""
-    require("contents/${G2_READINESS_VALIDATOR}?ref=${PR_BASE_SHA}" in ready, "verify-ready job missing exact-base readiness materialization", errors)
+    ready_scripts = _run_script_bodies(ready)
+    require(len(ready_scripts) == 2, "verify-ready job must contain exactly two canonical run scripts", errors)
+    materialize_ready = _trusted_invocation_script(ready, "contents/${G2_READINESS_VALIDATOR}?ref=${PR_BASE_SHA}")
+    require(materialize_ready is not None, "verify-ready job missing unique exact-base readiness materialization script", errors)
+    if materialize_ready is not None:
+        expected_materialize_ready = [
+            "set -euo pipefail",
+            'trusted_readiness="$RUNNER_TEMP/g2-scope-readiness-validator.py"',
+            'gh api "repos/${GITHUB_REPOSITORY}/contents/${G2_READINESS_VALIDATOR}?ref=${PR_BASE_SHA}" --jq .content | base64 -d > "$trusted_readiness"',
+            'test -s "$trusted_readiness"',
+            "printf 'TRUSTED_READINESS_VALIDATOR=%s\\n' \"$trusted_readiness\" >> \"$GITHUB_ENV\"",
+        ]
+        require(_logical_shell_commands(materialize_ready) == expected_materialize_ready, "trusted readiness evaluator materialization must match exact canonical command-only shape", errors)
     ready_script = _trusted_invocation_script(ready, 'python3 "$TRUSTED_READINESS_VALIDATOR"')
     require(ready_script is not None, "verify-ready job missing unique readiness run script", errors)
     if ready_script is not None:
         require(not _script_has_control_flow(ready_script), "trusted readiness invocation must be control-flow-free and unconditionally reachable", errors)
-        ready_cmds = _logical_shell_commands(ready_script)
         expected_ready_commands = [
             "set -euo pipefail",
             'python3 "$TRUSTED_READINESS_VALIDATOR" --repo "$GITHUB_REPOSITORY" --pr-number "$PR_NUMBER" --server-url "$GITHUB_SERVER_URL"',
         ]
-        require(ready_cmds == expected_ready_commands, "trusted readiness run script must match exact canonical command-only shape", errors)
+        require(_logical_shell_commands(ready_script) == expected_ready_commands, "trusted readiness run script must match exact canonical command-only shape", errors)
     require("statuses: write" not in ready, "verify-ready job must remain read-only", errors)
 
     final = _job_block(text, "publish-final") or ""
@@ -362,11 +385,15 @@ def validate_scope_workflow_text(text: str) -> list[str]:
     require(len(pos_failure) == len(pos_if) == len(pos_success) == len(pos_test) == 1, "publish-final fail-closed control-flow cardinality drift", errors)
     if pos_failure and pos_if and pos_success and pos_test:
         require(pos_failure[0] < pos_if[0] < pos_success[0] < pos_test[0], "publish-final fail-closed control-flow order drift", errors)
-    result_assignments = [(i, line.strip()) for i, line in enumerate(raw) if re.match(r"^\s*result=", line)]
-    expected_result_assignments = {'result="$ANALYZE_RESULT"', 'result="$READY_RESULT"'}
-    require(len(result_assignments) == 2 and {value for _, value in result_assignments} == expected_result_assignments, "publish-final result assignment authority drift", errors)
-    if pos_failure and result_assignments:
-        require(all(i < pos_failure[0] for i, _ in result_assignments), "publish-final result may not be overwritten after fail-closed state initialization", errors)
+    assignment_re = re.compile(r"^\s*(result|state)(?:\[[^\]]+\])?=(.*)$")
+    direct_assignments = [(i, line.strip()) for i, line in enumerate(raw) if assignment_re.match(line)]
+    expected_direct_assignments = {
+        'result="$ANALYZE_RESULT"',
+        'result="$READY_RESULT"',
+        "state=failure",
+        "state=success",
+    }
+    require(len(direct_assignments) == 4 and {value for _, value in direct_assignments} == expected_direct_assignments, "publish-final direct/indexed result/state assignment authority drift", errors)
     active = "\n".join(line for line in raw if not line.lstrip().startswith("#"))
     indirect_assignment = re.compile(r"(?:\bprintf\s+-v\b|\b(?:builtin\s+)?printf\s+-v\b|\bdeclare\b|\btypeset\b|\blocal\b|\bread\b|\beval\b|\bexport\b|\breadonly\b)[^\n]*(?:\bresult\b|\bstate\b)", re.IGNORECASE)
     require(indirect_assignment.search(active) is None, "publish-final indirect result/state assignment mechanism forbidden", errors)
@@ -416,7 +443,7 @@ def main() -> int:
         print(f"G2_AUTHORIZATION_ERROR: {error}", file=sys.stderr)
     if errors:
         return 1
-    print("g2_authorization=PASS exact_scope=monitoring-source-onboarding path+semantic-scope=explicit-exclusions workflow=canonical-command-only+fail-closed review-findings=internalized merge_authorization=not-granted")
+    print("g2_authorization=PASS exact_scope=monitoring-source-onboarding path+semantic-scope=explicit-exclusions workflow=canonical-materialization+command-only+fail-closed review-findings=internalized merge_authorization=not-granted")
     return 0
 
 

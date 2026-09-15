@@ -140,7 +140,7 @@
       "invariant_ids": ["INV-BOUNDARY-002", "INV-OBS-002"],
       "root_cause": "The normalized semantic guard still relied on a partial denylist and therefore did not mechanically mirror every capability explicitly excluded by the G2 task packet. HostInventory, MetricValue, Problem, HealthStatus and SourceCutover could encode forbidden later-gate behavior under an authorized path while attestation passed.",
       "horizontal_audit": ["all explicitly_not_authorized capabilities", "host/resource inventory", "metric definition/value/history", "problem/health", "Monitoring-to-Alerting", "source replacement/cutover", "ITSM/Automation/AIOps/FinOps/Commercial", "production and provider authority", "secret-manager and egress selection"],
-      "guardrails": [{"path": "tools/assurance/test_validate_g2_monitoring_source_onboarding_review_guardrails.py", "probe": "falsify_g2_semantic_scope_guard"}],
+      "guardrails": [{"path": "tools/assurance/test_validate_g1_identity_tenant_shell_authorization.py", "probe": "falsify_implementation_scope_gate_execution"}],
       "systemic_guardrail_updated": true,
       "guardrail_generation": 124
     },
@@ -153,7 +153,7 @@
       "invariant_ids": ["INV-LEARNING-002"],
       "root_cause": "Rejecting ordinary shell control-flow syntax was insufficient because a Bash function declaration such as python3() could shadow the trusted interpreter name while leaving the canonical-looking evaluator invocation unchanged. The step would succeed without executing the trusted evaluator.",
       "horizontal_audit": ["scope evaluator interpreter shadowing", "readiness interpreter shadowing", "shell function declarations", "aliases", "exact command-only run-script shape", "trusted evaluator reachability"],
-      "guardrails": [{"path": "tools/assurance/test_validate_g2_monitoring_source_onboarding_review_guardrails.py", "probe": "falsify_g2_trusted_workflow_semantics"}],
+      "guardrails": [{"path": "tools/assurance/test_validate_g1_identity_tenant_shell_authorization.py", "probe": "falsify_trusted_scope_readiness_execution"}],
       "systemic_guardrail_updated": true,
       "guardrail_generation": 125
     },
@@ -166,7 +166,7 @@
       "invariant_ids": ["INV-LEARNING-002"],
       "root_cause": "Direct result= assignment checks did not cover shell mutation primitives such as printf -v, allowing indirect overwrites of result or state after fail-closed initialization and before trusted status publication.",
       "horizontal_audit": ["printf -v result", "printf -v state", "declare/typeset/local/read/eval/export/readonly mutation", "fail-closed state", "worker result binding", "final trusted status publication"],
-      "guardrails": [{"path": "tools/assurance/test_validate_g2_monitoring_source_onboarding_review_guardrails.py", "probe": "falsify_g2_trusted_workflow_semantics"}],
+      "guardrails": [{"path": "tools/assurance/test_validate_g1_identity_tenant_shell_authorization.py", "probe": "falsify_trusted_scope_readiness_execution"}],
       "systemic_guardrail_updated": true,
       "guardrail_generation": 126
     }

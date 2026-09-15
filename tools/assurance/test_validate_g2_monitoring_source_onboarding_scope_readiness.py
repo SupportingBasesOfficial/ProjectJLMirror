@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import copy
-
 import validate_g2_monitoring_source_onboarding_scope_readiness as validator
 
 REPO = "SupportingBasesOfficial/ProjectJLMirror"
@@ -26,6 +24,7 @@ def fixtures(evidence: str = "scope"):
     branch = {"commit": {"sha": BASE}}
     context, description, _label, mode = validator.evidence_contract(evidence, BASE, HEAD)
     statuses = [{
+        "id": 100,
         "context": context,
         "state": "success",
         "description": description,
@@ -81,13 +80,26 @@ def main() -> int:
     must_reject(lambda r,p,b,s,run,j: s[0]["creator"].update(id=1), "no trusted G2")
     must_reject(lambda r,p,b,s,run,j: s[0].update(description="stale"), "coordinates are stale")
     must_reject(lambda r,p,b,s,run,j: s[0].update(target_url="https://example.invalid/run/1"), "target_url")
+    must_reject(lambda r,p,b,s,run,j: s[0].pop("id"), "status id missing")
     must_reject(lambda r,p,b,s,run,j: run.update(event="pull_request"), "issue_comment")
     must_reject(lambda r,p,b,s,run,j: run.update(path=".github/workflows/other.yml"), "workflow path drift")
     must_reject(lambda r,p,b,s,run,j: run.update(head_sha="d" * 40), "exact current base SHA")
     must_reject(lambda r,p,b,s,run,j: j["jobs"][0].update(name="g2-publish-final spoof"), "exact publisher job identity")
     must_reject(lambda r,p,b,s,run,j: j["jobs"][0].update(conclusion="failure"), "publisher job is not completed successfully")
 
-    print("g2_scope_readiness_falsifier=PASS positive=2 negative=12")
+    def newer_pending_same_second(r,p,b,s,run,j):
+        newer = dict(s[0])
+        newer["id"] = 101
+        newer["state"] = "pending"
+        s.insert(0, newer)
+    must_reject(newer_pending_same_second, "not successful")
+
+    def duplicate_order_key(r,p,b,s,run,j):
+        duplicate = dict(s[0])
+        s.append(duplicate)
+    must_reject(duplicate_order_key, "ordering is ambiguous")
+
+    print("g2_scope_readiness_falsifier=PASS positive=2 negative=15")
     return 0
 
 

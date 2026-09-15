@@ -10,7 +10,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools" / "assurance"))
-import validate_g1_identity_tenant_shell_authorization as validator
 
 ISOLATED_READINESS_CHILD_FLAG = "--g1-readiness-isolated-child"
 ISOLATED_READINESS_PASS = "g1_readiness_isolated_permissive_rejection=PASS"
@@ -89,6 +88,8 @@ def _require_delegation_source_integrity() -> None:
 
 
 def must_fail(mutator, fragment: str) -> None:
+    import validate_g1_identity_tenant_shell_authorization as validator
+
     _require_delegation_source_integrity()
     data = copy.deepcopy(validator.load())
     mutator(data)
@@ -264,6 +265,8 @@ def falsify_successor_governance_rules() -> None:
 def main() -> int:
     if ISOLATED_READINESS_CHILD_FLAG in sys.argv:
         return _isolated_readiness_permissive_rejection_child()
+    import validate_g1_identity_tenant_shell_authorization as validator
+
     validator.validate()
     falsify_successor_authority_transition()
     falsify_effective_rule()

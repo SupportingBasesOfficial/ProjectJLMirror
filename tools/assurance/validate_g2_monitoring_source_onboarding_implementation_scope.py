@@ -24,7 +24,8 @@ for _name in dir(_core):
 DEFAULT_ROOT = Path.cwd()
 EXPECTED_READINESS_VALIDATOR = "tools/assurance/validate_g2_monitoring_source_onboarding_scope_readiness.py"
 _ORIGINAL_VALIDATE_SEMANTIC_ARTIFACT = _core.validate_semantic_artifact
-_DDL_MODIFIERS = "temp|temporary|unlogged|unique|concurrently"
+_DDL_MODIFIERS = "temp|temporary|unlogged|unique|concurrently|global|local"
+_DDL_OBJECTS = rf"(?:{_core.DDL_OBJECTS}|database|foreign\s+table)"
 
 
 def _component_sequence_hit(identifier: str, marker: str) -> bool:
@@ -97,19 +98,30 @@ def _has_hardened_persistence_write(decoded: str) -> bool:
     receiver_boundary = rf"(?<![A-Za-z0-9_$]){receiver_expr}"
     direct_patterns = (
         rf"{receiver_boundary}\s*(?:\?\.|\.)\s*(?:{write})\s*(?:\(|\.\s*(?:call|apply)\s*\()",
+        rf"\(\s*{receiver_expr}\s*(?:\?\.|\.)\s*(?:{write})\s*\)\s*(?:\(|\.\s*(?:call|apply)\s*\()",
         rf"\b(?:const|let|var)\s+[A-Za-z_$][A-Za-z0-9_$]*\s*=\s*{receiver_expr}\s*(?:\?\.|\.)\s*(?:{write})\b",
         rf"\b(?:const|let|var)\s*\{{[^}}]*\b(?:{write})\b[^}}]*\}}\s*=\s*{receiver_expr}\b",
     )
     if any(re.search(pattern, decoded, flags=re.IGNORECASE) for pattern in direct_patterns):
         return True
-    for match in re.finditer(rf"{receiver_boundary}\s*(?:\?\.)?\s*\[([^\]]+)\]\s*\(", decoded, flags=re.IGNORECASE):
-        member = _static_computed_member(match.group(1))
-        if member in _core.PERSISTENCE_WRITES:
-            return True
+    computed_pattern = rf"{receiver_boundary}\s*(?:\?\.)?\s*\[([^\]]+)\]\s*(?:\(|\.\s*(?:call|apply)\s*\()"
+    grouped_computed_pattern = rf"\(\s*{receiver_boundary}\s*(?:\?\.)?\s*\[([^\]]+)\]\s*\)\s*(?:\(|\.\s*(?:call|apply)\s*\()"
+    for pattern in (computed_pattern, grouped_computed_pattern):
+        for match in re.finditer(pattern, decoded, flags=re.IGNORECASE):
+            member = _static_computed_member(match.group(1))
+            if member in _core.PERSISTENCE_WRITES:
+                return True
     method_aliases: set[str] = set()
-    for match in re.finditer(rf"\b(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*{receiver_expr}\s*(?:\?\.|\.)\s*({write})\b", decoded, flags=re.IGNORECASE):
+    member_sources = (
+        rf"{receiver_expr}\s*(?:\?\.|\.)\s*({write})\b",
+        rf"{receiver_expr}\s*\[([^\]]+)\]",
+    )
+    for match in re.finditer(rf"\b(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*({member_sources[0]})", decoded, flags=re.IGNORECASE):
         method_aliases.add(match.group(1))
-    return any(re.search(rf"\b{re.escape(alias)}\s*\(", decoded) for alias in method_aliases)
+    for match in re.finditer(rf"\b(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*{member_sources[1]}", decoded, flags=re.IGNORECASE):
+        if _static_computed_member(match.group(2)) in _core.PERSISTENCE_WRITES:
+            method_aliases.add(match.group(1))
+    return any(re.search(rf"\b{re.escape(alias)}\s*(?:\(|\.\s*(?:call|apply)\s*\()", decoded) for alias in method_aliases)
 
 
 def _raw_secret_identifier(identifier: str) -> bool:
@@ -149,11 +161,56 @@ def _sink_call_contains(text: str, names: set[str]) -> bool:
     return False
 
 
+def _balanced_block(text: str, open_index: int) -> tuple[str, int] | None:
+    depth = 0
+    quote: str | None = None
+    escaped = False
+    for index in range(open_index, len(text)):
+        char = text[index]
+        if quote is not None:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == quote:
+                quote = None
+            continue
+        if char in "'\"`":
+            quote = char
+            continue
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return text[open_index + 1:index], index + 1
+    return None
+
+
+def _function_definitions(decoded: str) -> list[tuple[str, str, str]]:
+    definitions: list[tuple[str, str, str]] = []
+    for match in re.finditer(r"\bfunction\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*\(([^)]*)\)\s*\{", decoded):
+        block = _balanced_block(decoded, match.end() - 1)
+        if block is not None:
+            body, _end = block
+            definitions.append((match.group(1), match.group(2), body))
+    for match in re.finditer(r"\b(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*\(([^)]*)\)\s*=>\s*", decoded):
+        start = match.end()
+        if start < len(decoded) and decoded[start:start + 1] == "{":
+            block = _balanced_block(decoded, start)
+            if block is not None:
+                body, _end = block
+                definitions.append((match.group(1), match.group(2), body))
+        else:
+            end = decoded.find(";", start)
+            body = decoded[start:] if end < 0 else decoded[start:end]
+            definitions.append((match.group(1), match.group(2), body))
+    return definitions
+
+
 def _sink_wrappers(decoded: str) -> set[str]:
     wrappers: set[str] = set()
-    functions = list(re.finditer(r"\bfunction\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*\(([^)]*)\)\s*\{(.*?)\}", decoded, flags=re.DOTALL))
-    arrows = list(re.finditer(r"\b(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*\(([^)]*)\)\s*=>\s*(\{.*?\}|[^;\n]+)", decoded, flags=re.DOTALL))
-    definitions = [(m.group(1), m.group(2), m.group(3)) for m in functions + arrows]
+    definitions = _function_definitions(decoded)
     changed = True
     while changed:
         changed = False
@@ -162,7 +219,11 @@ def _sink_wrappers(decoded: str) -> set[str]:
             if not params or name in wrappers:
                 continue
             direct = _sink_call_contains(body, params)
-            indirect = any(re.search(rf"\b{re.escape(wrapper)}\s*\((.*?)\)", body, flags=re.DOTALL) and _contains_secret_reference(body, params) for wrapper in wrappers)
+            indirect = any(
+                re.search(rf"\b{re.escape(wrapper)}\s*\((.*?)\)", body, flags=re.DOTALL)
+                and _contains_secret_reference(body, params)
+                for wrapper in wrappers
+            )
             if direct or indirect:
                 wrappers.add(name)
                 changed = True
@@ -184,10 +245,31 @@ def _has_hardened_secret_flow(decoded: str) -> bool:
 
 def _has_hardened_ddl(decoded: str) -> bool:
     uncommented = _core._strip_comments(decoded.casefold())
-    pre_modifiers = rf"(?:\s+(?:{_DDL_MODIFIERS}))*"
-    create = rf"\bcreate(?:\s+or\s+replace)?{pre_modifiers}\s+(?:{_core.DDL_OBJECTS})\b"
+    modifiers = rf"(?:\s+(?:{_DDL_MODIFIERS}))*"
+    create = rf"\bcreate(?:\s+or\s+replace)?{modifiers}\s+{_DDL_OBJECTS}\b"
     index_concurrently = r"\bcreate(?:\s+unique)?\s+index\s+concurrently\b"
-    return bool(re.search(create, uncommented, flags=re.IGNORECASE) or re.search(index_concurrently, uncommented, flags=re.IGNORECASE))
+    foreign_table = r"\bcreate(?:\s+(?:global|local|temp|temporary|unlogged))*\s+foreign\s+table\b"
+    return bool(
+        re.search(create, uncommented, flags=re.IGNORECASE)
+        or re.search(index_concurrently, uncommented, flags=re.IGNORECASE)
+        or re.search(foreign_table, uncommented, flags=re.IGNORECASE)
+    )
+
+
+def _provider_authority_related(decoded: str) -> bool:
+    authority = "|".join(sorted(_core.PROVIDER_AUTHORITY_TERMS, key=len, reverse=True))
+    direct_patterns = (
+        rf"\bprovider\s*(?:\?\.|\.)\s*(?:{authority})\b",
+        rf"\bprovider\s*\[\s*['\"](?:{authority})['\"]\s*\]",
+        rf"\b(?:{authority})\s*(?:\?\.|\.)\s*provider\b",
+    )
+    if any(re.search(pattern, decoded, flags=re.IGNORECASE) for pattern in direct_patterns):
+        return True
+    for identifier in _core._raw_identifiers(decoded):
+        parts = _core._split_components(identifier)
+        if "provider" in parts and any(term in parts for term in _core.PROVIDER_AUTHORITY_TERMS):
+            return True
+    return False
 
 
 def validate_semantic_artifact(path: str, text: str, policy: dict) -> list[str]:
@@ -195,6 +277,9 @@ def validate_semantic_artifact(path: str, text: str, policy: dict) -> list[str]:
     if not any(path.startswith(prefix) for prefix in policy.get("semantic_scan_prefixes", [])):
         return errors
     decoded = _core._decode_identifier_escapes(text)
+    provider_error = f"provider-native authorization/authority semantics forbidden in G2: {path}"
+    if provider_error in errors and not _provider_authority_related(decoded):
+        errors = [error for error in errors if error != provider_error]
     errors.extend(_hardened_marker_errors(path, decoded, policy))
     if _has_hardened_persistence_write(decoded):
         errors.append(f"direct persistence write surface forbidden in G2 composition: {path}")

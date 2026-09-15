@@ -25,7 +25,7 @@ DEFAULT_ROOT = Path.cwd()
 EXPECTED_READINESS_VALIDATOR = "tools/assurance/validate_g2_monitoring_source_onboarding_scope_readiness.py"
 _ORIGINAL_VALIDATE_SEMANTIC_ARTIFACT = _core.validate_semantic_artifact
 _DDL_MODIFIERS = "temp|temporary|unlogged|unique|concurrently|global|local"
-_DDL_OBJECTS = rf"(?:{_core.DDL_OBJECTS}|database|foreign\s+table)"
+_DDL_OBJECTS = rf"(?:{_core.DDL_OBJECTS}|database|foreign\s+table|tablespace)"
 
 
 def _component_sequence_hit(identifier: str, marker: str) -> bool:
@@ -48,6 +48,18 @@ def _component_sequence_hit(identifier: str, marker: str) -> bool:
     return False
 
 
+def _separator_sequence_hit(text: str, marker: str) -> bool:
+    parts = _core._split_components(marker)
+    if len(parts) < 2:
+        return False
+    atoms: list[str] = []
+    for part in parts:
+        variants = sorted(_core._identifier_variants(part), key=len, reverse=True)
+        atoms.append("(?:" + "|".join(re.escape(value) for value in variants) + ")")
+    pattern = r"(?<![A-Za-z0-9_$])" + r"[^A-Za-z0-9_$]+".join(atoms) + r"(?![A-Za-z0-9_$])"
+    return bool(re.search(pattern, text, flags=re.IGNORECASE))
+
+
 def _hardened_marker_errors(path: str, decoded: str, policy: dict) -> list[str]:
     errors: list[str] = []
     scan_text = re.sub(r"\bbrowser[\s_-]+automation\b", "browser_e2e", decoded, flags=re.IGNORECASE)
@@ -55,7 +67,7 @@ def _hardened_marker_errors(path: str, decoded: str, policy: dict) -> list[str]:
     for marker in policy.get("forbidden_code_markers", []):
         if marker in _core.STRUCTURAL_MARKERS:
             continue
-        if any(_component_sequence_hit(identifier, marker) for identifier in identifiers):
+        if any(_component_sequence_hit(identifier, marker) for identifier in identifiers) or _separator_sequence_hit(scan_text, marker):
             errors.append(f"forbidden G2 semantic code marker '{marker}' in {path}")
     return errors
 
@@ -66,9 +78,10 @@ def _persistence_aliases(decoded: str) -> set[str]:
     while changed:
         changed = False
         receiver = "|".join(re.escape(name) for name in sorted(aliases, key=len, reverse=True))
+        grouped_receiver = rf"(?:\(\s*)*(?:{receiver})(?:\s*\))*"
         patterns = (
-            rf"\b(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*(?:\(\s*)?(?:{receiver})(?:\s*\))?\s*[;\n]",
-            rf"\b(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*(?:\(\s*)?(?:{receiver})(?:\s*\))?\s*(?:\?\.|\.)\s*[A-Za-z_$][A-Za-z0-9_$]*",
+            rf"\b(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*{grouped_receiver}\s*(?:[;\n]|$)",
+            rf"(?<![A-Za-z0-9_$])([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*{grouped_receiver}\s*(?:[;\n]|$)",
         )
         for pattern in patterns:
             for match in re.finditer(pattern, decoded, flags=re.IGNORECASE):
@@ -94,34 +107,38 @@ def _has_hardened_persistence_write(decoded: str) -> bool:
     aliases = _persistence_aliases(decoded)
     receiver = "|".join(re.escape(name) for name in sorted(aliases, key=len, reverse=True))
     write = "|".join(re.escape(name) for name in sorted(_core.PERSISTENCE_WRITES, key=len, reverse=True))
-    receiver_expr = rf"(?:\(\s*)?(?:{receiver})(?:\s*\))?"
-    receiver_boundary = rf"(?<![A-Za-z0-9_$]){receiver_expr}"
+    receiver_expr = rf"(?:\(\s*)*(?:{receiver})(?:\s*\))*"
+    member_expr = rf"{receiver_expr}\s*(?:\?\.|\.)\s*(?:{write})"
+    grouped_member_expr = rf"(?:\(\s*)*{member_expr}(?:\s*\))*"
     direct_patterns = (
-        rf"{receiver_boundary}\s*(?:\?\.|\.)\s*(?:{write})\s*(?:\(|\.\s*(?:call|apply)\s*\()",
-        rf"\(\s*{receiver_expr}\s*(?:\?\.|\.)\s*(?:{write})\s*\)\s*(?:\(|\.\s*(?:call|apply)\s*\()",
-        rf"\b(?:const|let|var)\s+[A-Za-z_$][A-Za-z0-9_$]*\s*=\s*{receiver_expr}\s*(?:\?\.|\.)\s*(?:{write})\b",
+        rf"(?<![A-Za-z0-9_$]){grouped_member_expr}\s*(?:\(|\.\s*(?:call|apply)\s*\()",
+        rf"\b(?:const|let|var)\s+[A-Za-z_$][A-Za-z0-9_$]*\s*=\s*{member_expr}\b",
         rf"\b(?:const|let|var)\s*\{{[^}}]*\b(?:{write})\b[^}}]*\}}\s*=\s*{receiver_expr}\b",
     )
     if any(re.search(pattern, decoded, flags=re.IGNORECASE) for pattern in direct_patterns):
         return True
-    computed_pattern = rf"{receiver_boundary}\s*(?:\?\.)?\s*\[([^\]]+)\]\s*(?:\(|\.\s*(?:call|apply)\s*\()"
-    grouped_computed_pattern = rf"\(\s*{receiver_boundary}\s*(?:\?\.)?\s*\[([^\]]+)\]\s*\)\s*(?:\(|\.\s*(?:call|apply)\s*\()"
-    for pattern in (computed_pattern, grouped_computed_pattern):
-        for match in re.finditer(pattern, decoded, flags=re.IGNORECASE):
-            member = _static_computed_member(match.group(1))
-            if member in _core.PERSISTENCE_WRITES:
-                return True
+
+    computed_expr = rf"{receiver_expr}\s*(?:\?\.)?\s*\[([^\]]+)\]"
+    grouped_computed_expr = rf"(?:\(\s*)*{computed_expr}(?:\s*\))*"
+    for match in re.finditer(
+        rf"(?<![A-Za-z0-9_$]){grouped_computed_expr}\s*(?:\(|\.\s*(?:call|apply)\s*\()",
+        decoded,
+        flags=re.IGNORECASE,
+    ):
+        if _static_computed_member(match.group(1)) in _core.PERSISTENCE_WRITES:
+            return True
+
     method_aliases: set[str] = set()
-    member_sources = (
-        rf"{receiver_expr}\s*(?:\?\.|\.)\s*({write})\b",
-        rf"{receiver_expr}\s*\[([^\]]+)\]",
-    )
-    for match in re.finditer(rf"\b(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*({member_sources[0]})", decoded, flags=re.IGNORECASE):
+    alias_prefix = r"(?:(?:const|let|var)\s+)?([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*"
+    for match in re.finditer(rf"{alias_prefix}{member_expr}\b", decoded, flags=re.IGNORECASE):
         method_aliases.add(match.group(1))
-    for match in re.finditer(rf"\b(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*{member_sources[1]}", decoded, flags=re.IGNORECASE):
+    for match in re.finditer(rf"{alias_prefix}{computed_expr}", decoded, flags=re.IGNORECASE):
         if _static_computed_member(match.group(2)) in _core.PERSISTENCE_WRITES:
             method_aliases.add(match.group(1))
-    return any(re.search(rf"\b{re.escape(alias)}\s*(?:\(|\.\s*(?:call|apply)\s*\()", decoded) for alias in method_aliases)
+    return any(
+        re.search(rf"\b{re.escape(alias)}\s*(?:\(|\.\s*(?:call|apply)\s*\()", decoded)
+        for alias in method_aliases
+    )
 
 
 def _raw_secret_identifier(identifier: str) -> bool:
@@ -131,15 +148,37 @@ def _raw_secret_identifier(identifier: str) -> bool:
     return bool(parts & _core.SECRET_TERMS)
 
 
+def _strip_plain_string_literals(text: str) -> str:
+    chars = list(text)
+    quote: str | None = None
+    escaped = False
+    for index, char in enumerate(text):
+        if quote is None:
+            if char in "'\"":
+                quote = char
+                chars[index] = " "
+            continue
+        chars[index] = " "
+        if escaped:
+            escaped = False
+        elif char == "\\":
+            escaped = True
+        elif char == quote:
+            quote = None
+    return "".join(chars)
+
+
 def _contains_secret_reference(text: str, tainted: set[str]) -> bool:
-    for identifier in _core._raw_identifiers(text):
+    code = _strip_plain_string_literals(text)
+    for identifier in _core._raw_identifiers(code):
         if identifier in tainted or _raw_secret_identifier(identifier):
             return True
     return False
 
 
 def _secret_taint(decoded: str) -> set[str]:
-    tainted = {identifier for identifier in _core._raw_identifiers(decoded) if _raw_secret_identifier(identifier)}
+    code = _strip_plain_string_literals(decoded)
+    tainted = {identifier for identifier in _core._raw_identifiers(code) if _raw_secret_identifier(identifier)}
     changed = True
     while changed:
         changed = False
@@ -148,12 +187,32 @@ def _secret_taint(decoded: str) -> set[str]:
             if target not in tainted and _contains_secret_reference(expression, tainted):
                 tainted.add(target)
                 changed = True
+        for match in re.finditer(r"\b(?:const|let|var)\s*\{([^}]*)\}\s*=\s*([^;\n]+)", decoded):
+            bindings, source = match.group(1), match.group(2)
+            source_tainted = _contains_secret_reference(source, tainted)
+            for item in bindings.split(","):
+                item = item.strip()
+                if not item:
+                    continue
+                pair = [part.strip() for part in item.split(":", 1)]
+                source_name = pair[0]
+                target = pair[-1]
+                if not re.fullmatch(r"[A-Za-z_$][A-Za-z0-9_$]*", target):
+                    continue
+                if _raw_secret_identifier(source_name) or (source_tainted and _raw_secret_identifier(target)):
+                    if target not in tainted:
+                        tainted.add(target)
+                        changed = True
     return tainted
 
 
 def _sink_call_contains(text: str, names: set[str]) -> bool:
     sink = "|".join(sorted(_core.SECRET_SINK_TERMS, key=len, reverse=True))
-    for match in re.finditer(rf"(?:\b[A-Za-z_$][A-Za-z0-9_$]*\s*\.)?\b(?:{sink})\s*\((.*?)\)", text, flags=re.IGNORECASE | re.DOTALL):
+    for match in re.finditer(
+        rf"(?:\b[A-Za-z_$][A-Za-z0-9_$]*\s*\.)?\b(?:{sink})\s*\((.*?)\)",
+        text,
+        flags=re.IGNORECASE | re.DOTALL,
+    ):
         if _contains_secret_reference(match.group(1), names):
             return True
     if re.search(r"\breturn\s+\{", text) and _contains_secret_reference(text, names):
@@ -265,6 +324,10 @@ def _provider_authority_related(decoded: str) -> bool:
     )
     if any(re.search(pattern, decoded, flags=re.IGNORECASE) for pattern in direct_patterns):
         return True
+    for match in re.finditer(r"\bprovider\s*\[([^\]]+)\]", decoded, flags=re.IGNORECASE):
+        member = _static_computed_member(match.group(1))
+        if member in _core.PROVIDER_AUTHORITY_TERMS:
+            return True
     for identifier in _core._raw_identifiers(decoded):
         parts = _core._split_components(identifier)
         if "provider" in parts and any(term in parts for term in _core.PROVIDER_AUTHORITY_TERMS):
@@ -277,16 +340,28 @@ def validate_semantic_artifact(path: str, text: str, policy: dict) -> list[str]:
     if not any(path.startswith(prefix) for prefix in policy.get("semantic_scan_prefixes", [])):
         return errors
     decoded = _core._decode_identifier_escapes(text)
+
+    if any(ord(char) > 127 for char in path):
+        errors.append(f"non-ASCII/confusable path forbidden in governed G2 artifact: {path}")
+
     provider_error = f"provider-native authorization/authority semantics forbidden in G2: {path}"
     if provider_error in errors and not _provider_authority_related(decoded):
         errors = [error for error in errors if error != provider_error]
+
+    secret_error = f"raw secret persistence/exposure data-flow forbidden in G2: {path}"
+    hardened_secret_flow = _has_hardened_secret_flow(decoded)
+    if secret_error in errors and not hardened_secret_flow:
+        errors = [error for error in errors if error != secret_error]
+
     errors.extend(_hardened_marker_errors(path, decoded, policy))
     if _has_hardened_persistence_write(decoded):
         errors.append(f"direct persistence write surface forbidden in G2 composition: {path}")
-    if _has_hardened_secret_flow(decoded):
-        errors.append(f"raw secret persistence/exposure data-flow forbidden in G2: {path}")
+    if hardened_secret_flow:
+        errors.append(secret_error)
     if _has_hardened_ddl(decoded):
         errors.append(f"G2-owned DDL forbidden; accepted Monitoring persistence must be reused: {path}")
+    if _provider_authority_related(decoded):
+        errors.append(provider_error)
     return list(dict.fromkeys(errors))
 
 
@@ -311,12 +386,23 @@ def main() -> int:
     except (json.JSONDecodeError, ValueError) as exc:
         print(f"G2_IMPLEMENTATION_SCOPE_ERROR: invalid labels metadata: {exc}", file=sys.stderr)
         return 1
-    _classified, errors = validate(args.base, args.head, args.head_ref, labels, args.head_repo, args.base_repo, root=args.repo_root)
+    _classified, errors = validate(
+        args.base,
+        args.head,
+        args.head_ref,
+        labels,
+        args.head_repo,
+        args.base_repo,
+        root=args.repo_root,
+    )
     for error in errors:
         print(f"G2_IMPLEMENTATION_SCOPE_ERROR: {error}", file=sys.stderr)
     if errors:
         return 1
-    print("g2_implementation_scope=PASS classification=trusted_explicit_attestation path_scope=allowlisted semantic_scope=structural+bounded+taint-sequence readiness=live-source-authenticated")
+    print(
+        "g2_implementation_scope=PASS classification=trusted_explicit_attestation "
+        "path_scope=allowlisted semantic_scope=structural+bounded+taint-sequence readiness=live-source-authenticated"
+    )
     return 0
 
 

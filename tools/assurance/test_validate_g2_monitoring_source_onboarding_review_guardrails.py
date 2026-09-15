@@ -32,6 +32,12 @@ def falsify_g2_semantic_scope_guard() -> None:
         ("apps/g2-monitoring-source-onboarding/source.ts", "const Мetric = true"),
         ("apps/g2-monitoring-source-onboarding/source.ts", "class ResourceІnventory {}"),
         ("apps/g2-monitoring-source-onboarding/source.ts", "class SourceСutover {}"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", r"const \u006detric = true;"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", r"class \u0052esourceInventory {}"),
+        ("apps/g2-monitoring-source-onboarding/dashboard.vue", "<script>class ResourceІnventory {}</script>"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "class Metrics {}"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "class Problems {}"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "class ResourceInventories {}"),
     )
     for path, text in rejected:
         if not scope.validate_semantic_artifact(path, text, policy):
@@ -102,7 +108,7 @@ def main() -> int:
     falsify_g2_semantic_scope_guard()
     falsify_g2_trusted_workflow_semantics()
     falsify_g2_same_second_status_ordering()
-    print("g2_review_guardrails=PASS semantic=token-boundary+confusable-closed workflow=blob-exact status=total-order")
+    print("g2_review_guardrails=PASS semantic=escape+format+inflection-closed workflow=blob-exact status=total-order")
     return 0
 
 

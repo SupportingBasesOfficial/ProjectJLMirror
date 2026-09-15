@@ -14,6 +14,7 @@ env:
   G2_SCOPE_COMMAND: /jlmirror-g2-scope-attest
   G2_READY_COMMAND: /jlmirror-g2-scope-ready
   G2_SCOPE_VALIDATOR: tools/assurance/validate_g2_monitoring_source_onboarding_implementation_scope.py
+  G2_SCOPE_CORE: tools/assurance/g2_scope_core.py
   G2_READINESS_VALIDATOR: tools/assurance/validate_g2_monitoring_source_onboarding_scope_readiness.py
   G2_SCOPE_STATUS_CONTEXT: JLMIRROR / g2-monitoring-source-onboarding-implementation-scope
   G2_READY_STATUS_CONTEXT: JLMIRROR / g2-monitoring-source-onboarding-merge-readiness
@@ -159,15 +160,20 @@ jobs:
           git cat-file -e "${PR_HEAD_SHA}^{commit}"
           test "$(git rev-parse HEAD)" != "$PR_HEAD_SHA"
 
-      - name: Materialize trusted scope evaluator from exact default-branch base object
+      - name: Materialize trusted scope evaluator package from exact default-branch base object
         shell: bash
         env:
           PR_BASE_SHA: ${{ needs.resolve.outputs.base_sha }}
         run: |
           set -euo pipefail
-          trusted_validator="$RUNNER_TEMP/g2-implementation-scope-validator.py"
+          trusted_dir="$RUNNER_TEMP/g2-scope-evaluator"
+          mkdir -p "$trusted_dir"
+          trusted_validator="$trusted_dir/validate_g2_monitoring_source_onboarding_implementation_scope.py"
+          trusted_core="$trusted_dir/g2_scope_core.py"
           git show "${PR_BASE_SHA}:${G2_SCOPE_VALIDATOR}" > "$trusted_validator"
+          git show "${PR_BASE_SHA}:${G2_SCOPE_CORE}" > "$trusted_core"
           test -s "$trusted_validator"
+          test -s "$trusted_core"
           printf 'TRUSTED_VALIDATOR=%s\n' "$trusted_validator" >> "$GITHUB_ENV"
 
       - name: Enforce exact G2 implementation scope

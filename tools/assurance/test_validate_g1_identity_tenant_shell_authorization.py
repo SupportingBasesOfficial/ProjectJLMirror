@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import ast
 import copy
+import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -9,8 +12,84 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools" / "assurance"))
 import validate_g1_identity_tenant_shell_authorization as validator
 
+ISOLATED_READINESS_CHILD_FLAG = "--g1-readiness-isolated-child"
+ISOLATED_READINESS_PASS = "g1_readiness_isolated_permissive_rejection=PASS"
+DELEGATION_CONTRACTS = {
+    "falsify_trusted_scope_readiness_execution": (
+        "test_validate_g1_identity_tenant_shell_scope_readiness",
+        ("falsify_live_readiness_guards",),
+    ),
+    "falsify_implementation_scope_gate_execution": (
+        "test_validate_g1_identity_tenant_shell_implementation_scope",
+        (
+            "falsify_real_git_diff_gate",
+            "falsify_candidate_metadata_fail_closed",
+            "falsify_all_voluntary_metadata_omission",
+            "falsify_runtime_workflow_semantics",
+        ),
+    ),
+}
+FORBIDDEN_DELEGATION_NAMESPACE_CALLS = {
+    "__import__", "delattr", "eval", "exec", "getattr", "globals", "hasattr", "locals", "setattr", "vars",
+}
+
+
+def _require_delegation_source_integrity() -> None:
+    source = Path(__file__).read_text(encoding="utf-8")
+    tree = ast.parse(source, filename=__file__)
+    lines = source.splitlines()
+    functions = {node.name: node for node in tree.body if isinstance(node, ast.FunctionDef)}
+    for function_name, (module_name, expected_calls) in DELEGATION_CONTRACTS.items():
+        function = functions.get(function_name)
+        if function is None:
+            raise AssertionError(f"delegation integrity missing outer probe: {function_name}")
+        imports: list[tuple[str, ast.Import]] = []
+        for statement in function.body:
+            if not isinstance(statement, ast.Import):
+                continue
+            for imported in statement.names:
+                if imported.name == module_name:
+                    imports.append((imported.asname or imported.name, statement))
+        if len(imports) != 1:
+            raise AssertionError(f"delegation integrity import drift: {function_name}->{module_name}")
+        alias = imports[0][0]
+        direct_calls: list[tuple[str, ast.Expr, ast.Name]] = []
+        for statement in function.body:
+            if not isinstance(statement, ast.Expr) or not isinstance(statement.value, ast.Call):
+                continue
+            call = statement.value
+            if (
+                isinstance(call.func, ast.Attribute)
+                and isinstance(call.func.value, ast.Name)
+                and call.func.value.id == alias
+                and not call.args
+                and not call.keywords
+            ):
+                direct_calls.append((call.func.attr, statement, call.func.value))
+        if tuple(name for name, _, _ in direct_calls) != expected_calls:
+            raise AssertionError(
+                f"delegation integrity direct-call drift: {function_name}:"
+                f"actual={tuple(name for name, _, _ in direct_calls)} expected={expected_calls}"
+            )
+        alias_names = [node for node in ast.walk(function) if isinstance(node, ast.Name) and node.id == alias]
+        direct_name_nodes = [name_node for _, _, name_node in direct_calls]
+        if len(alias_names) != len(direct_name_nodes) or {id(node) for node in alias_names} != {id(node) for node in direct_name_nodes}:
+            raise AssertionError(f"delegation integrity alias interception/rebinding detected: {function_name}:{alias}")
+        for expected_name, statement, _ in direct_calls:
+            expected_line = f"{alias}.{expected_name}()"
+            if statement.lineno != statement.end_lineno or lines[statement.lineno - 1].strip() != expected_line:
+                raise AssertionError(f"delegation integrity physical-line drift: {function_name}:{expected_line}")
+            if ast.get_source_segment(source, statement.value) != expected_line:
+                raise AssertionError(f"delegation integrity expression drift: {function_name}:{expected_line}")
+        for node in ast.walk(function):
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in FORBIDDEN_DELEGATION_NAMESPACE_CALLS:
+                raise AssertionError(f"delegation integrity dynamic namespace access forbidden: {function_name}:{node.func.id}")
+            if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name) and node.value.id in {"inspect", "builtins"}:
+                raise AssertionError(f"delegation integrity reflective namespace access forbidden: {function_name}:{node.value.id}.{node.attr}")
+
 
 def must_fail(mutator, fragment: str) -> None:
+    _require_delegation_source_integrity()
     data = copy.deepcopy(validator.load())
     mutator(data)
     try:
@@ -20,6 +99,61 @@ def must_fail(mutator, fragment: str) -> None:
             raise AssertionError(f"expected {fragment!r}, got {exc!r}")
         return
     raise AssertionError(f"mutation unexpectedly accepted: {fragment}")
+
+
+def _isolated_readiness_permissive_rejection_child() -> int:
+    sys.argv = [str(Path(__file__).resolve())]
+    import test_validate_g1_identity_tenant_shell_scope_readiness as readiness_falsifier
+
+    base_sha = "a" * 40
+    head_sha = "b" * 40
+    run_id = 123456789
+    calls: list[dict] = []
+
+    def permissive_verifier(**kwargs):
+        calls.append(copy.deepcopy(kwargs))
+        return base_sha, head_sha, run_id
+
+    readiness_falsifier.readiness.validate_live_readiness = permissive_verifier
+    probe = getattr(readiness_falsifier, "falsify_live_readiness_guards", None)
+    if not callable(probe):
+        raise AssertionError("isolated G1 readiness probe missing")
+    try:
+        probe()
+    except AssertionError as exc:
+        if len(calls) != 3:
+            raise AssertionError(f"isolated G1 readiness permissive rejection boundary drift: calls={len(calls)} expected=3") from exc
+        if "readiness mutation unexpectedly accepted:" not in str(exc):
+            raise AssertionError(f"isolated G1 readiness permissive rejection is not authoritative: {exc}") from exc
+        print(ISOLATED_READINESS_PASS)
+        return 0
+    except Exception as exc:
+        raise AssertionError(f"isolated G1 readiness permissive rejection failed unexpectedly: {type(exc).__name__}:{exc}") from exc
+    raise AssertionError("isolated G1 readiness probe accepted a permissive verifier")
+
+
+def _assert_isolated_readiness_permissive_rejection() -> None:
+    script = str(Path(__file__).resolve())
+    child_code = (
+        "import runpy,sys;"
+        f"sys.argv=[{script!r},{ISOLATED_READINESS_CHILD_FLAG!r}];"
+        f"runpy.run_path({script!r},run_name='__main__')"
+    )
+    clean_env = {key: os.environ[key] for key in ("PATH", "SYSTEMROOT") if key in os.environ}
+    completed = subprocess.run(
+        [sys.executable, "-I", "-c", child_code],
+        cwd=str(ROOT),
+        env=clean_env,
+        text=True,
+        capture_output=True,
+        timeout=30,
+        check=False,
+    )
+    if completed.returncode != 0:
+        detail = (completed.stderr or completed.stdout).strip()
+        raise AssertionError(f"isolated G1 readiness child failed: rc={completed.returncode}: {detail}")
+    if ISOLATED_READINESS_PASS not in completed.stdout.splitlines():
+        raise AssertionError(f"isolated G1 readiness child missing authenticated PASS marker: {completed.stdout!r}")
 
 
 def falsify_successor_authority_transition() -> None:
@@ -88,6 +222,7 @@ def falsify_trusted_scope_readiness_execution() -> None:
     ]
     for mutation, fragment in mutations:
         must_fail(mutation, fragment)
+    _assert_isolated_readiness_permissive_rejection()
     import test_validate_g1_identity_tenant_shell_scope_readiness as readiness_falsifier
     readiness_falsifier.falsify_live_readiness_guards()
 
@@ -139,9 +274,11 @@ def main() -> int:
     falsify_g1_scope_and_invariants()
     falsify_merge_and_production_boundaries()
     falsify_successor_governance_rules()
-    print("g1_identity_tenant_shell_authorization_falsification=PASS authority_escalation=blocked implementation_path_expansion=blocked runtime_workflow_semantics=bounded trusted_default_branch_caller=bound status=evidence-only readiness=source-authenticated-live-preflight spoofed_status=blocked skip_ci_stale_base=blocked mutable_label=blocked candidate_workflow_authority=blocked candidate_relevance_bypass=blocked real_git_diff=executed")
+    print("g1_identity_tenant_shell_authorization_falsification=PASS authority_escalation=blocked implementation_path_expansion=blocked runtime_workflow_semantics=bounded trusted_default_branch_caller=bound status=evidence-only readiness=source-authenticated-live-preflight+isolated-permissive-rejection delegation_aliases=single-purpose-bound spoofed_status=blocked skip_ci_stale_base=blocked mutable_label=blocked candidate_workflow_authority=blocked candidate_relevance_bypass=blocked real_git_diff=executed")
     return 0
 
 
 if __name__ == "__main__":
-    main()
+    if ISOLATED_READINESS_CHILD_FLAG in sys.argv:
+        raise SystemExit(_isolated_readiness_permissive_rejection_child())
+    raise SystemExit(main())

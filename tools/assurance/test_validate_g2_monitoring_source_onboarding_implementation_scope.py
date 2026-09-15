@@ -150,10 +150,18 @@ def main() -> int:
         ("apps/g2-monitoring-source-onboarding/source.ts", "const ddl = `CREATE DATABASE g2_source_store`;"),
         ("apps/g2-monitoring-source-onboarding/source.ts", "const ddl = `CREATE FOREIGN TABLE source_cache (id uuid) SERVER remote`;"),
         ("apps/g2-monitoring-source-onboarding/source.ts", "const ddl = `CREATE GLOBAL TEMPORARY TABLE source_cache (id uuid)`;"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "await ((database.insert))({sourceId, value});"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "let store; store = database; await store.insert({sourceId, value});"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "const {password: pw} = payload; return reply.send({value: pw});"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "const ddl = `CREATE TABLESPACE g2_store LOCATION '/tmp/g2'`;"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "await fetch('/api/source-cutover');"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", 'provider["permi" + "ssions"].includes("source:write")'),
+        ("apps/g2-monitoring-source-onboarding/Мetric/page.ts", "export const enabled = true"),
     )
     for path, text in semantic_cases:
         if validator.validate_semantic_artifact(path, text, policy) == []:
             raise AssertionError(f"forbidden semantic artifact unexpectedly accepted: {path}: {text}")
+
     for text in (
         "export const sourceStatus = 'reconciliation_required'",
         "export const browser_automation = true",
@@ -164,6 +172,7 @@ def main() -> int:
         "return reply.send({credential_binding_ref: source.credential_binding_ref});",
         "export async function submitOnboarding(payload) { return fetch('/api/v1/tenants/current/monitoring-sources', {method: 'POST'}); }",
         'export function SourceForm({provider}) { return <div role="status">{provider.name}</div>; }',
+        'return reply.send({error: "password is required"});',
     ):
         errors = validator.validate_semantic_artifact("apps/g2-monitoring-source-onboarding/source.ts", text, policy)
         if errors:

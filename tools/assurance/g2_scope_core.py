@@ -46,6 +46,12 @@ EXPECTED_FORBIDDEN_CODE_MARKERS = (
 EXPECTED_SEMANTIC_SCAN_PREFIXES = EXPECTED_PREFIXES
 RUNTIME_ALLOWED_ACTIONS = ("actions/checkout", "actions/setup-python", "actions/setup-node")
 STRUCTURAL_MARKERS = {"create table monitoring.", "create schema monitoring", "src/jlmirror_monitoring", "sql/wave4", "alerting."}
+AUTHORIZED_IDENTIFIER_EXCEPTIONS = {"browserautomation"}
+PERSISTENCE_RECEIVERS = {"database", "db", "repository", "repo", "prisma", "postgres", "postgresql", "pg", "sqlalchemy", "psycopg"}
+PERSISTENCE_WRITES = {"insert", "update", "delete", "save", "upsert", "execute", "executemany", "commit", "persist"}
+PROVIDER_AUTHORITY_TERMS = {"role", "roles", "permission", "permissions", "admin", "authorize", "authorization", "authority", "acl"}
+SECRET_TERMS = {"password", "passwd", "secret", "token", "apikey", "credential", "credentials"}
+SECRET_SINK_TERMS = {"insert", "update", "save", "upsert", "persist", "log", "logger", "print", "response", "serialize", "write"}
 
 
 def git(root: Path, *args: str) -> str:
@@ -112,7 +118,7 @@ def validate_paths(paths: list[str], policy: dict[str, Any]) -> list[str]:
 
 
 def _decode_identifier_escapes(text: str) -> str:
-    pattern = re.compile(r"\\u\{([0-9A-Fa-f]{1,6})\}|\\u([0-9A-Fa-f]{4})")
+    pattern = re.compile(r"\\u\{([0-9A-Fa-f]+)\}|\\u([0-9A-Fa-f]{4})")
 
     def replace(match: re.Match[str]) -> str:
         raw = match.group(1) or match.group(2)
@@ -128,15 +134,25 @@ def _key(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", unicodedata.normalize("NFKC", value).casefold())
 
 
-def _identifiers(text: str) -> set[str]:
+def _split_components(value: str) -> list[str]:
+    normalized = unicodedata.normalize("NFKC", value)
+    normalized = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", normalized)
+    return [_key(part) for part in re.split(r"[^A-Za-z0-9]+", normalized) if _key(part)]
+
+
+def _raw_identifiers(text: str) -> list[str]:
     normalized = unicodedata.normalize("NFKC", _decode_identifier_escapes(text))
-    return {_key(v) for v in re.findall(r"[A-Za-z_][A-Za-z0-9_]*", normalized) if _key(v)}
+    return re.findall(r"[A-Za-z_][A-Za-z0-9_]*", normalized)
 
 
 def _path_keys(path: str) -> set[str]:
-    normalized = unicodedata.normalize("NFKC", path)
-    normalized = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", normalized)
-    return {_key(v) for v in re.split(r"[^A-Za-z0-9]+", normalized) if _key(v)}
+    keys: set[str] = set()
+    for part in re.split(r"[/\\]", unicodedata.normalize("NFKC", path)):
+        full = _key(part)
+        if full:
+            keys.add(full)
+        keys.update(_split_components(part))
+    return keys
 
 
 def _identifier_variants(marker: str) -> set[str]:
@@ -149,6 +165,51 @@ def _identifier_variants(marker: str) -> set[str]:
     return variants
 
 
+def _identifier_hits_marker(identifier: str, marker: str) -> bool:
+    full = _key(identifier)
+    if not full or full in AUTHORIZED_IDENTIFIER_EXCEPTIONS:
+        return False
+    variants = _identifier_variants(marker)
+    if full in variants:
+        return True
+    return bool(variants & set(_split_components(identifier)))
+
+
+def _strip_comments(text: str) -> str:
+    value = re.sub(r"/\*.*?\*/", " ", text, flags=re.DOTALL)
+    value = re.sub(r"--[^\n]*", " ", value)
+    return value
+
+
+def _structural_semantic_errors(path: str, decoded: str) -> list[str]:
+    errors: list[str] = []
+    suffix = Path(path).suffix.casefold()
+    folded = unicodedata.normalize("NFKC", decoded).casefold()
+    uncommented = _strip_comments(folded)
+    if suffix == ".sql":
+        errors.append(f"G2-owned SQL artifact forbidden; accepted Monitoring persistence must be reused: {path}")
+    if re.search(r"\b(?:create|alter|drop)\s+(?:table|schema)\b", uncommented):
+        errors.append(f"G2-owned DDL forbidden; accepted Monitoring persistence must be reused: {path}")
+
+    identifiers = _raw_identifiers(decoded)
+    components: set[str] = set()
+    for identifier in identifiers:
+        components.update(_split_components(identifier))
+
+    if "provider" in components and (components & PROVIDER_AUTHORITY_TERMS):
+        errors.append(f"provider-native authorization/authority semantics forbidden in G2: {path}")
+
+    receiver = "|".join(sorted(PERSISTENCE_RECEIVERS, key=len, reverse=True))
+    write = "|".join(sorted(PERSISTENCE_WRITES, key=len, reverse=True))
+    persistence_pattern = re.compile(rf"\b(?:{receiver})\s*(?:\.|\[\s*['\"])[^\n;]*?(?:{write})\s*(?:\]|\()", re.IGNORECASE)
+    if persistence_pattern.search(decoded):
+        errors.append(f"direct persistence write surface forbidden in G2 composition: {path}")
+
+    if components & SECRET_TERMS and components & SECRET_SINK_TERMS:
+        errors.append(f"raw secret persistence/exposure data-flow forbidden in G2: {path}")
+    return errors
+
+
 def validate_semantic_artifact(path: str, text: str, policy: dict[str, Any]) -> list[str]:
     if not any(path.startswith(p) for p in policy.get("semantic_scan_prefixes", [])):
         return []
@@ -156,19 +217,24 @@ def validate_semantic_artifact(path: str, text: str, policy: dict[str, Any]) -> 
     if any(ord(ch) > 127 for ch in text):
         errors.append(f"non-ASCII text forbidden in governed G2 artifact: {path}")
     decoded = _decode_identifier_escapes(text)
+    if any(ord(ch) > 127 for ch in decoded):
+        errors.append(f"identifier escape decodes to non-ASCII text in governed G2 artifact: {path}")
+
     path_keys = _path_keys(path)
     for token in policy.get("forbidden_path_tokens", []):
-        if _key(token) in path_keys:
+        if _identifier_variants(token) & path_keys:
             errors.append(f"forbidden G2 semantic path token '{token}' in {path}")
-    ids = _identifiers(decoded)
+
+    identifiers = _raw_identifiers(decoded)
     folded = unicodedata.normalize("NFKC", decoded).casefold()
     for marker in policy.get("forbidden_code_markers", []):
         if marker in STRUCTURAL_MARKERS:
             hit = unicodedata.normalize("NFKC", marker).casefold() in folded
         else:
-            hit = bool(_identifier_variants(marker) & ids)
+            hit = any(_identifier_hits_marker(identifier, marker) for identifier in identifiers)
         if hit:
             errors.append(f"forbidden G2 semantic code marker '{marker}' in {path}")
+    errors.extend(_structural_semantic_errors(path, decoded))
     return errors
 
 

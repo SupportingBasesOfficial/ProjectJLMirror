@@ -9,21 +9,8 @@
       "class_id": "ADV-SEMANTIC-ALLOWLIST-BYPASS",
       "invariant_ids": ["INV-BOUNDARY-002", "INV-OBS-002"],
       "root_cause": "The initial G2 implementation policy treated repository location as sufficient capability authority. Broad sql/g2 and src/jlmirror_g2 prefixes allowed a candidate to place G3 inventory, parallel Monitoring persistence/domain truth, or replacement behavior inside an otherwise allowlisted path while the scope gate still reported success.",
-      "horizontal_audit": [
-        "G2 path allowlist versus capability authority",
-        "parallel Monitoring Source persistence",
-        "parallel Monitoring domain implementation",
-        "G3 resource inventory concealment",
-        "metric/problem/health/Alerting concealment",
-        "source replacement and cutover concealment",
-        "shared Wave 4 substrate reuse boundary"
-      ],
-      "guardrails": [
-        {
-          "path": "tools/assurance/test_validate_g1_identity_tenant_shell_authorization.py",
-          "probe": "falsify_implementation_scope_gate_execution"
-        }
-      ],
+      "horizontal_audit": ["G2 path allowlist versus capability authority", "parallel Monitoring Source persistence", "parallel Monitoring domain implementation", "G3 resource inventory concealment", "metric/problem/health/Alerting concealment", "source replacement and cutover concealment", "shared Wave 4 substrate reuse boundary"],
+      "guardrails": [{"path": "tools/assurance/test_validate_g1_identity_tenant_shell_authorization.py", "probe": "falsify_implementation_scope_gate_execution"}],
       "systemic_guardrail_updated": true,
       "guardrail_generation": 114
     },
@@ -35,22 +22,8 @@
       "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP",
       "invariant_ids": ["INV-LEARNING-002"],
       "root_cause": "The G2 authorization validator originally authenticated the privileged issue_comment workflow mostly through raw marker presence. Required validator invocations or fail-closed publication semantics could therefore be moved into comments or bypassed while the same strings remained in the file and authorization validation still passed.",
-      "horizontal_audit": [
-        "trusted workflow trigger structure",
-        "resolve job authority checks",
-        "base-owned scope evaluator materialization",
-        "scope evaluator executable invocation",
-        "base-owned readiness verifier invocation",
-        "publish-final fail-closed state initialization",
-        "live-coordinate success branch",
-        "final success assertion"
-      ],
-      "guardrails": [
-        {
-          "path": "tools/assurance/test_validate_g1_identity_tenant_shell_authorization.py",
-          "probe": "falsify_trusted_scope_readiness_execution"
-        }
-      ],
+      "horizontal_audit": ["trusted workflow trigger structure", "resolve job authority checks", "base-owned scope evaluator materialization", "scope evaluator executable invocation", "base-owned readiness verifier invocation", "publish-final fail-closed state initialization", "live-coordinate success branch", "final success assertion"],
+      "guardrails": [{"path": "tools/assurance/test_validate_g1_identity_tenant_shell_authorization.py", "probe": "falsify_trusted_scope_readiness_execution"}],
       "systemic_guardrail_updated": true,
       "guardrail_generation": 115
     },
@@ -62,21 +35,8 @@
       "class_id": "ADV-LEARNING-SURFACE-OMISSION",
       "invariant_ids": ["INV-LEARNING-001"],
       "root_cause": "Trusted G2 status evidence selected the latest row using created_at alone even though GitHub status timestamps have only second-level resolution. Two trusted statuses created in the same second could therefore be returned in an arbitrary order and allow an older success to be selected ahead of a newer pending or failure result.",
-      "horizontal_audit": [
-        "trusted status same-second ordering",
-        "GitHub status numeric identity",
-        "newer pending after older success",
-        "newer failure after older success",
-        "duplicate ordering-key fail-closed behavior",
-        "scope and readiness status contexts",
-        "status provenance and workflow-run binding"
-      ],
-      "guardrails": [
-        {
-          "path": "tools/assurance/test_validate_adversarial_learning.py",
-          "probe": "falsify_head_status_publication"
-        }
-      ],
+      "horizontal_audit": ["trusted status same-second ordering", "GitHub status numeric identity", "newer pending after older success", "newer failure after older success", "duplicate ordering-key fail-closed behavior", "scope and readiness status contexts", "status provenance and workflow-run binding"],
+      "guardrails": [{"path": "tools/assurance/test_validate_adversarial_learning.py", "probe": "falsify_head_status_publication"}],
       "systemic_guardrail_updated": true,
       "guardrail_generation": 116
     },
@@ -88,20 +48,8 @@
       "class_id": "ADV-SEMANTIC-ALLOWLIST-BYPASS",
       "invariant_ids": ["INV-BOUNDARY-002", "INV-OBS-002"],
       "root_cause": "The first semantic hardening still omitted the allowlisted implementation/g2-monitoring-source-onboarding namespace from semantic scanning. Executable Python or other code placed beside the implementation claim could therefore carry G3 inventory or parallel Monitoring persistence semantics while remaining inside a path accepted by the trusted scope evaluator.",
-      "horizontal_audit": [
-        "implementation namespace executable artifacts",
-        "claim file adjacency",
-        "parallel Monitoring persistence markers",
-        "G3 metric and inventory markers",
-        "all allowlisted executable prefixes",
-        "base-owned semantic scan policy"
-      ],
-      "guardrails": [
-        {
-          "path": "tools/assurance/test_validate_g1_identity_tenant_shell_authorization.py",
-          "probe": "falsify_implementation_scope_gate_execution"
-        }
-      ],
+      "horizontal_audit": ["implementation namespace executable artifacts", "claim file adjacency", "parallel Monitoring persistence markers", "G3 metric and inventory markers", "all allowlisted executable prefixes", "base-owned semantic scan policy"],
+      "guardrails": [{"path": "tools/assurance/test_validate_g1_identity_tenant_shell_authorization.py", "probe": "falsify_implementation_scope_gate_execution"}],
       "systemic_guardrail_updated": true,
       "guardrail_generation": 117
     },
@@ -112,23 +60,76 @@
       "review_comment_id": 4013225242,
       "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP",
       "invariant_ids": ["INV-LEARNING-002"],
-      "root_cause": "The structural workflow validator proved that the trusted evaluator command existed as an active parsed shell command but did not prove unconditional reachability. An enclosing `if false; then ...; fi` could preserve the expected command text while causing Bash to skip candidate evaluation and still let the analyze job complete successfully.",
-      "horizontal_audit": [
-        "trusted scope evaluator run script",
-        "trusted readiness verifier run script",
-        "dead conditional branches",
-        "loop and case wrappers",
-        "shell control-flow reachability",
-        "publish-final dependency on worker success"
-      ],
-      "guardrails": [
-        {
-          "path": "tools/assurance/test_validate_g1_identity_tenant_shell_authorization.py",
-          "probe": "falsify_trusted_scope_readiness_execution"
-        }
-      ],
+      "root_cause": "The structural workflow validator proved that the trusted evaluator command existed as an active parsed shell command but did not prove unconditional reachability. An enclosing if-false branch could preserve the expected command text while causing Bash to skip candidate evaluation and still let the analyze job complete successfully.",
+      "horizontal_audit": ["trusted scope evaluator run script", "trusted readiness verifier run script", "dead conditional branches", "loop and case wrappers", "shell control-flow reachability", "publish-final dependency on worker success"],
+      "guardrails": [{"path": "tools/assurance/test_validate_g1_identity_tenant_shell_authorization.py", "probe": "falsify_trusted_scope_readiness_execution"}],
       "systemic_guardrail_updated": true,
       "guardrail_generation": 118
+    },
+    {
+      "id": "LEARN-PR154-006",
+      "pr": 154,
+      "source": "external_review",
+      "review_comment_id": 4013538173,
+      "class_id": "ADV-SEMANTIC-ALLOWLIST-BYPASS",
+      "invariant_ids": ["INV-BOUNDARY-002", "INV-OBS-002"],
+      "root_cause": "The semantic scan set still omitted the authorized tests/g2 prefix even though those Python or script artifacts can be imported or executed by G2 runtime code. A candidate could therefore hide parallel Monitoring persistence or G3 behavior in a test-named module while path admission and semantic validation both passed.",
+      "horizontal_audit": ["tests/g2 executable reachability", "runtime imports from test namespaces", "all authorized executable-capable prefixes", "parallel Monitoring persistence concealment", "G3 inventory concealment"],
+      "guardrails": [{"path": "tools/assurance/test_validate_g1_identity_tenant_shell_authorization.py", "probe": "falsify_implementation_scope_gate_execution"}],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 119
+    },
+    {
+      "id": "LEARN-PR154-007",
+      "pr": 154,
+      "source": "external_review",
+      "review_comment_id": 4013538179,
+      "class_id": "ADV-SEMANTIC-ALLOWLIST-BYPASS",
+      "invariant_ids": ["INV-BOUNDARY-002", "INV-OBS-002"],
+      "root_cause": "Semantic artifact inspection was gated by a finite filename-suffix allowlist. SQL, shell and extensionless executable text could remain inside an authorized prefix but skip forbidden-marker inspection entirely, allowing parallel Monitoring persistence or out-of-scope behavior to bypass the capability fence.",
+      "horizontal_audit": ["SQL artifacts", "shell scripts", "extensionless executable text", "future interpreter formats", "UTF-8 semantic scan fail-closed behavior", "parallel Monitoring DDL markers"],
+      "guardrails": [{"path": "tools/assurance/test_validate_g1_identity_tenant_shell_authorization.py", "probe": "falsify_implementation_scope_gate_execution"}],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 120
+    },
+    {
+      "id": "LEARN-PR154-008",
+      "pr": 154,
+      "source": "external_review",
+      "review_comment_id": 4013538187,
+      "class_id": "ADV-SEMANTIC-ALLOWLIST-BYPASS",
+      "invariant_ids": ["INV-BOUNDARY-002", "INV-OBS-002"],
+      "root_cause": "Forbidden capability markers were compared only in literal lowercase spellings. Equivalent camelCase, PascalCase or punctuation-free identifiers such as ResourceInventory and metricCurrentState therefore did not match snake-case markers and could encode excluded G3 behavior while passing semantic validation.",
+      "horizontal_audit": ["snake_case identifiers", "camelCase identifiers", "PascalCase identifiers", "hyphenated and punctuation variants", "SQL whitespace variants", "forbidden path-token normalization"],
+      "guardrails": [{"path": "tools/assurance/test_validate_g1_identity_tenant_shell_authorization.py", "probe": "falsify_implementation_scope_gate_execution"}],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 121
+    },
+    {
+      "id": "LEARN-PR154-009",
+      "pr": 154,
+      "source": "external_review",
+      "review_comment_id": 4013538196,
+      "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP",
+      "invariant_ids": ["INV-LEARNING-002"],
+      "root_cause": "The trusted evaluator command check accepted any logical command beginning with the expected Python invocation. Appending shell status suppression such as || true preserved the prefix while converting an evaluator failure into a successful step, allowing final trusted publication to proceed despite rejected candidate scope.",
+      "horizontal_audit": ["scope evaluator exact command", "readiness verifier exact command", "shell OR status suppression", "shell AND chaining", "trailing command injection", "set -e interaction"],
+      "guardrails": [{"path": "tools/assurance/test_validate_g1_identity_tenant_shell_authorization.py", "probe": "falsify_trusted_scope_readiness_execution"}],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 122
+    },
+    {
+      "id": "LEARN-PR154-010",
+      "pr": 154,
+      "source": "external_review",
+      "review_comment_id": 4013538207,
+      "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP",
+      "invariant_ids": ["INV-LEARNING-002"],
+      "root_cause": "The final publisher validator proved fail-closed state assignment and success-branch ordering but did not constrain later assignments to the worker result variable. A candidate workflow could overwrite result with success after state initialization and cause a failed analyze or readiness job to publish trusted success when live coordinates still matched.",
+      "horizontal_audit": ["ANALYZE_RESULT binding", "READY_RESULT binding", "result assignment cardinality", "assignments before state=failure", "success condition worker-result dependency", "final trusted status publication"],
+      "guardrails": [{"path": "tools/assurance/test_validate_g1_identity_tenant_shell_authorization.py", "probe": "falsify_trusted_scope_readiness_execution"}],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 123
     }
   ]
 }

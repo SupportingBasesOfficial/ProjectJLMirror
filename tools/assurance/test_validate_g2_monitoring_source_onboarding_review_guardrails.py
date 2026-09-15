@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import copy
-from pathlib import Path
 
 import validate_g2_monitoring_source_onboarding_authorization as authorization
 import validate_g2_monitoring_source_onboarding_implementation_scope as scope
@@ -66,6 +65,12 @@ def falsify_g2_semantic_scope_guard() -> None:
         policy,
     ):
         raise AssertionError("forbidden G3 resource semantics bypassed semantic guard")
+    if not scope.validate_semantic_artifact(
+        "implementation/g2-monitoring-source-onboarding/parallel_monitoring.py",
+        "CREATE TABLE monitoring.metric_current_state (id uuid)",
+        policy,
+    ):
+        raise AssertionError("implementation namespace executable artifact bypassed semantic guard")
     if scope.validate_semantic_artifact(
         "apps/g2-monitoring-source-onboarding/source.ts",
         "export const sourceStatus = 'reconciliation_required'",
@@ -81,15 +86,23 @@ def falsify_g2_trusted_workflow_semantics() -> None:
     mutations = (
         (
             workflow.replace('          python3 "$TRUSTED_VALIDATOR" \\\n', '          # python3 "$TRUSTED_VALIDATOR" \\\n', 1),
-            "trusted validator invocation",
+            "trusted validator",
         ),
         (
             workflow.replace('          python3 "$TRUSTED_READINESS_VALIDATOR" \\\n', '          # python3 "$TRUSTED_READINESS_VALIDATOR" \\\n', 1),
-            "readiness invocation",
+            "readiness",
         ),
         (
             workflow.replace("          state=failure\n", "          state=success\n", 1),
             "fail-closed control-flow",
+        ),
+        (
+            workflow.replace(
+                '          python3 "$TRUSTED_VALIDATOR" \\\n',
+                '          if false; then\n          python3 "$TRUSTED_VALIDATOR" \\\n',
+                1,
+            ).replace('            --base-repo "$PR_BASE_REPO"\n', '            --base-repo "$PR_BASE_REPO"\n          fi\n', 1),
+            "control-flow-free",
         ),
     )
     for mutated, expected in mutations:
@@ -140,7 +153,7 @@ def main() -> int:
     falsify_g2_semantic_scope_guard()
     falsify_g2_trusted_workflow_semantics()
     falsify_g2_same_second_status_ordering()
-    print("g2_review_guardrails=PASS probes=3")
+    print("g2_review_guardrails=PASS probes=3 semantic=implementation-prefix workflow=reachability status=total-order")
     return 0
 
 

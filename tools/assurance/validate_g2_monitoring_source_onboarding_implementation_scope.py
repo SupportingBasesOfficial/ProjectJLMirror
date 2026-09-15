@@ -34,37 +34,19 @@ EXPECTED_PREFIXES = (
 )
 EXPECTED_EXACT = (EXPECTED_RUNTIME_WORKFLOW,)
 EXPECTED_FORBIDDEN_PATH_TOKENS = (
-    "inventory",
-    "monitoring-resource",
-    "monitoring_resource",
-    "metric",
-    "problem",
-    "health",
-    "alert",
-    "replacement",
-    "cutover",
+    "inventory", "monitoring-resource", "monitoring_resource", "metric", "problem",
+    "health", "alert", "replacement", "cutover",
 )
 EXPECTED_FORBIDDEN_CODE_MARKERS = (
-    "monitoring_resource",
-    "resource_inventory",
-    "metric_definition",
-    "metric_current_state",
-    "metric_observation",
-    "problem_state",
-    "health_projection",
-    "alert_policy",
-    "alerting.",
-    "replacement_candidate",
-    "replace_source_instance",
-    "candidate_generation",
-    "create table monitoring.",
-    "create schema monitoring",
-    "src/jlmirror_monitoring",
-    "sql/wave4",
+    "monitoring_resource", "resource_inventory", "metric_definition", "metric_current_state",
+    "metric_observation", "problem_state", "health_projection", "alert_policy", "alerting.",
+    "replacement_candidate", "replace_source_instance", "candidate_generation",
+    "create table monitoring.", "create schema monitoring", "src/jlmirror_monitoring", "sql/wave4",
 )
 EXPECTED_SEMANTIC_SCAN_PREFIXES = (
     "apps/g2-monitoring-source-onboarding/",
     "contracts/g2-monitoring-source-onboarding/",
+    "implementation/g2-monitoring-source-onboarding/",
     "tools/g2/",
 )
 SEMANTIC_TEXT_SUFFIXES = {".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".json", ".toml", ".yml", ".yaml"}
@@ -314,7 +296,7 @@ def main() -> int:
         print(f"G2_IMPLEMENTATION_SCOPE_ERROR: {error}", file=sys.stderr)
     if errors:
         return 1
-    print("g2_implementation_scope=PASS classification=trusted_explicit_attestation path_scope=allowlisted semantic_scope=bounded-g2-only readiness=live-source-authenticated")
+    print("g2_implementation_scope=PASS classification=trusted_explicit_attestation path_scope=allowlisted semantic_scope=all-executable-authorized-prefixes readiness=live-source-authenticated")
     return 0
 
 

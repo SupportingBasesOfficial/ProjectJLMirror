@@ -104,7 +104,7 @@ def falsify_g2_trusted_workflow_semantics() -> None:
             "indirect result/state assignment",
         ),
         (
-            workflow.replace('          gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${PR_HEAD_SHA}" \\\n', '          printf -v state success\n          gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${PR_HEAD_SHA}" \\\n', 1),
+            workflow.replace('          test "$state" = success\n', '          printf -v state success\n          test "$state" = success\n', 1),
             "indirect result/state assignment",
         ),
     )

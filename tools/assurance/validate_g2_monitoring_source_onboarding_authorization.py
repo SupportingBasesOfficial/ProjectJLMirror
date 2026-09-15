@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-CORE_PATH = ROOT / "implementation/g2-monitoring-source-onboarding-authorization/g2_authorization_core.py"
+CORE_PATH = ROOT / "tools/assurance/g2_authorization_core.py"
 spec = importlib.util.spec_from_file_location("jlmirror_g2_authorization_core", CORE_PATH)
 if spec is None or spec.loader is None:
     raise RuntimeError("unable to load canonical G2 authorization core")

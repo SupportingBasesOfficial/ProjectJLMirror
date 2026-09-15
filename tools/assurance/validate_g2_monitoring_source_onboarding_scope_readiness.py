@@ -61,6 +61,14 @@ def evidence_contract(evidence: str, base_sha: str, head_sha: str) -> tuple[str,
     raise AssertionError("unknown G2 trusted evidence kind")
 
 
+def _trusted_status_order(row: dict[str, Any]) -> tuple[str, int]:
+    created_at = row.get("created_at")
+    status_id = row.get("id")
+    req(isinstance(created_at, str) and created_at, "trusted G2 status created_at missing")
+    req(type(status_id) is int and status_id > 0, "trusted G2 status id missing")
+    return created_at, status_id
+
+
 def select_trusted_evidence(statuses: list[dict[str, Any]], *, evidence: str, repo: str, server_url: str, base_sha: str, head_sha: str) -> tuple[dict[str, Any], int, str]:
     context, expected_description, label, mode = evidence_contract(evidence, base_sha, head_sha)
     trusted = [
@@ -71,8 +79,11 @@ def select_trusted_evidence(statuses: list[dict[str, Any]], *, evidence: str, re
         and (row.get("creator") or {}).get("id") == TRUSTED_CREATOR_ID
     ]
     req(bool(trusted), f"no trusted G2 {label} status from canonical GitHub Actions publisher")
-    trusted.sort(key=lambda row: str(row.get("created_at") or ""))
-    status = trusted[-1]
+    ordered = sorted(trusted, key=_trusted_status_order)
+    latest_key = _trusted_status_order(ordered[-1])
+    same_latest = [row for row in ordered if _trusted_status_order(row) == latest_key]
+    req(len(same_latest) == 1, f"trusted G2 {label} latest status ordering is ambiguous")
+    status = ordered[-1]
     req(status.get("state") == "success", f"latest trusted G2 {label} is not successful")
     req(status.get("description") == expected_description, f"trusted G2 {label} coordinates are stale or malformed")
     target_url = status.get("target_url")

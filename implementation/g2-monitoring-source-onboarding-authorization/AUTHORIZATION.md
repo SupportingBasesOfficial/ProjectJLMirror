@@ -25,9 +25,7 @@ The exact authorized slice is:
 g2.monitoring-source-onboarding@1
 ```
 
-The observable outcome is:
-
-> An authorized tenant user can create an initial Zabbix Monitoring Source without exposing raw credentials, observe its committed source identity and validation state, and receive truthful controlled failure/reconciliation presentation while stale/cross-tenant authority fails closed.
+The observable outcome is an authorized tenant user creating an initial Zabbix Monitoring Source without exposing raw credentials, observing committed source identity and validation state, and receiving truthful controlled failure/reconciliation presentation while stale/cross-tenant authority fails closed.
 
 `merge_authorization = not_granted` remains separate. This proposal does not authorize its own merge.
 
@@ -46,7 +44,7 @@ Canonical existing substrate includes, at minimum:
 - `implementation/wave-4/STATE.md` accepted initial-validation behavior;
 - accepted Monitoring domain/API/provider contracts.
 
-These shared existing paths are read-only under this authorization. G2-specific adapter/BFF/frontend composition belongs in the G2 namespaces authorized below. If completing the slice requires changing accepted shared Monitoring substrate, implementation MUST stop and obtain a separate successor authorization.
+These shared existing paths are read-only under this authorization. G2-specific BFF/frontend composition belongs only in the G2 namespaces authorized below. There is deliberately **no G2 SQL namespace and no G2 domain-source namespace** in this authorization: source persistence and domain truth already exist in accepted Wave 4. If completing the slice requires changing accepted shared Monitoring substrate or adding parallel domain/persistence truth, implementation MUST stop and obtain a separate successor authorization.
 
 ## Implementation path authority
 
@@ -55,14 +53,14 @@ Allowed prefixes:
 - `apps/g2-monitoring-source-onboarding/`;
 - `contracts/g2-monitoring-source-onboarding/`;
 - `implementation/g2-monitoring-source-onboarding/`;
-- `sql/g2/`;
-- `src/jlmirror_g2/`;
 - `tests/g2/`;
 - `tools/g2/`.
 
 Allowed exact path:
 
 - `.github/workflows/g2-monitoring-source-onboarding-runtime.yml`.
+
+Path admission alone is not sufficient. The trusted implementation-scope evaluator also applies a machine-verifiable semantic guard to executable G2 artifacts. It rejects forbidden G3/parallel-Monitoring path tokens and code markers such as canonical Monitoring resource/metric/problem/health/Alerting/replacement concepts or attempts to reference shared Monitoring implementation paths as writable implementation surface.
 
 Required implementation PR identity:
 
@@ -73,7 +71,7 @@ Required implementation PR identity:
 - same canonical repository;
 - base is the repository current default branch and exact current default-branch tip when trusted evidence is produced.
 
-Candidate-controlled relevance inference is forbidden. Once the trusted G2 scope command is invoked, omission of required branch/label/claim/path evidence fails closed.
+Candidate-controlled relevance inference is forbidden. Once the trusted G2 scope command is invoked, omission of required branch/label/claim/path/semantic evidence fails closed.
 
 ## Product behavior authorized
 

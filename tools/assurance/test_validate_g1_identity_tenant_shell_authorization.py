@@ -12,6 +12,7 @@ sys.path.insert(0, str(ROOT / "tools" / "assurance"))
 
 ISOLATED_READINESS_CHILD_FLAG = "--g1-readiness-isolated-child"
 ISOLATED_READINESS_PASS = "g1_readiness_isolated_permissive_rejection=PASS"
+ISOLATED_READINESS_HELPER = "_assert_isolated_readiness_permissive_rejection"
 DELEGATION_CONTRACTS = {
     "falsify_trusted_scope_readiness_execution": (
         "test_validate_g1_identity_tenant_shell_scope_readiness",
@@ -33,7 +34,49 @@ FORBIDDEN_DELEGATION_NAMESPACE_CALLS = {
 FORBIDDEN_DELEGATION_NAMES = {"sys", "inspect", "builtins"}
 FORBIDDEN_DELEGATION_REFLECTIVE_ATTRIBUTES = {
     "_getframe", "f_locals", "f_globals", "f_back", "gi_frame", "cr_frame", "tb_frame", "currentframe", "stack",
+    "settrace", "setprofile",
 }
+FIXED_CHILD_ENV = {"PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"}
+
+
+def _require_isolated_helper_source_integrity(source: str, functions: dict[str, ast.FunctionDef]) -> None:
+    helper = functions.get(ISOLATED_READINESS_HELPER)
+    if helper is None:
+        raise AssertionError("isolated readiness helper missing")
+    helper_text = ast.get_source_segment(source, helper) or ""
+    forbidden_markers = (
+        "os.environ", "os.getenv", "environ", "getenv", "_getframe", "f_locals", "f_globals",
+        "currentframe", "inspect.", "settrace", "setprofile", "shell=True", "env=None",
+    )
+    for marker in forbidden_markers:
+        if marker in helper_text:
+            raise AssertionError(f"isolated readiness helper mutable-channel drift: {marker}")
+    run_calls = [
+        node for node in ast.walk(helper)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == "subprocess"
+        and node.func.attr == "run"
+    ]
+    if len(run_calls) != 1:
+        raise AssertionError("isolated readiness helper subprocess cardinality drift")
+    run_call = run_calls[0]
+    env_keywords = [kw for kw in run_call.keywords if kw.arg == "env"]
+    if len(env_keywords) != 1 or not isinstance(env_keywords[0].value, ast.Dict):
+        raise AssertionError("isolated readiness helper must bind a literal fixed env")
+    env_node = env_keywords[0].value
+    env_value = ast.literal_eval(env_node)
+    if env_value != FIXED_CHILD_ENV:
+        raise AssertionError(f"isolated readiness helper fixed env drift: {env_value!r}")
+    argv = run_call.args[0] if run_call.args else None
+    if not isinstance(argv, ast.List) or len(argv.elts) < 3:
+        raise AssertionError("isolated readiness helper subprocess argv drift")
+    if not (
+        isinstance(argv.elts[1], ast.Constant) and argv.elts[1].value == "-I"
+        and isinstance(argv.elts[2], ast.Constant) and argv.elts[2].value == "-c"
+    ):
+        raise AssertionError("isolated readiness helper must use python -I -c")
 
 
 def _require_delegation_source_integrity() -> None:
@@ -41,6 +84,7 @@ def _require_delegation_source_integrity() -> None:
     tree = ast.parse(source, filename=__file__)
     lines = source.splitlines()
     functions = {node.name: node for node in tree.body if isinstance(node, ast.FunctionDef)}
+    _require_isolated_helper_source_integrity(source, functions)
     for function_name, (module_name, expected_calls) in DELEGATION_CONTRACTS.items():
         function = functions.get(function_name)
         if function is None:
@@ -56,7 +100,9 @@ def _require_delegation_source_integrity() -> None:
         if len(imports) != 1 or len(all_imports) != 1 or all_imports[0] is not imports[0][1]:
             raise AssertionError(f"delegation integrity import drift: {function_name}->{module_name}")
         alias = imports[0][0]
+        import_statement = imports[0][1]
         direct_calls: list[tuple[str, ast.Expr, ast.Name]] = []
+        helper_calls: list[ast.Expr] = []
         for statement in function.body:
             if not isinstance(statement, ast.Expr) or not isinstance(statement.value, ast.Call):
                 continue
@@ -69,6 +115,26 @@ def _require_delegation_source_integrity() -> None:
                 and not call.keywords
             ):
                 direct_calls.append((call.func.attr, statement, call.func.value))
+            if (
+                isinstance(call.func, ast.Name)
+                and call.func.id == ISOLATED_READINESS_HELPER
+                and not call.args
+                and not call.keywords
+            ):
+                helper_calls.append(statement)
+        if function_name == "falsify_trusted_scope_readiness_execution":
+            if len(helper_calls) != 1:
+                raise AssertionError("delegation integrity isolated helper cardinality drift")
+            helper_statement = helper_calls[0]
+            if function.body.index(helper_statement) + 1 != function.body.index(import_statement):
+                raise AssertionError("delegation integrity isolated helper must execute immediately before delegated import")
+            expected_helper_line = f"{ISOLATED_READINESS_HELPER}()"
+            if helper_statement.lineno != helper_statement.end_lineno or lines[helper_statement.lineno - 1].strip() != expected_helper_line:
+                raise AssertionError("delegation integrity isolated helper physical-line drift")
+            if ast.get_source_segment(source, helper_statement.value) != expected_helper_line:
+                raise AssertionError("delegation integrity isolated helper expression drift")
+        elif helper_calls:
+            raise AssertionError(f"delegation integrity isolated helper forbidden in {function_name}")
         if tuple(name for name, _, _ in direct_calls) != expected_calls:
             raise AssertionError(
                 f"delegation integrity direct-call drift: {function_name}:"
@@ -84,6 +150,9 @@ def _require_delegation_source_integrity() -> None:
                 raise AssertionError(f"delegation integrity physical-line drift: {function_name}:{expected_line}")
             if ast.get_source_segment(source, statement.value) != expected_line:
                 raise AssertionError(f"delegation integrity expression drift: {function_name}:{expected_line}")
+        allowed_named_calls = {"must_fail"}
+        if function_name == "falsify_trusted_scope_readiness_execution":
+            allowed_named_calls.add(ISOLATED_READINESS_HELPER)
         for node in ast.walk(function):
             if isinstance(node, ast.Name) and node.id in FORBIDDEN_DELEGATION_NAMES:
                 raise AssertionError(f"delegation integrity reflective namespace access forbidden: {function_name}:{node.id}")
@@ -92,9 +161,9 @@ def _require_delegation_source_integrity() -> None:
             if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
                 if node.func.id in FORBIDDEN_DELEGATION_NAMESPACE_CALLS:
                     raise AssertionError(f"delegation integrity dynamic namespace access forbidden: {function_name}:{node.func.id}")
-                if node.func.id != "must_fail":
+                if node.func.id not in allowed_named_calls:
                     raise AssertionError(f"delegation integrity helper indirection forbidden: {function_name}:{node.func.id}")
-            if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name) and node.value.id in {"inspect", "builtins"}:
+            if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name) and node.value.id in {"inspect", "builtins", "sys"}:
                 raise AssertionError(f"delegation integrity reflective namespace access forbidden: {function_name}:{node.value.id}.{node.attr}")
 
 

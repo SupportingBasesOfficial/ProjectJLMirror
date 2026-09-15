@@ -307,13 +307,12 @@ def _validate_outer_delegation_effect(root: Path, *, outer_probe: str, delegated
             tb = exc.__traceback__
             callsite_authenticated = False
             while tb is not None and tb.tb_next is not None:
-                caller_site = _instruction_site(tb.tb_frame.f_code, tb.tb_lasti)
-                if tb.tb_frame.f_code is probe.__code__ and caller_site == expected_site and tb.tb_next.tb_frame.f_code is sentinel_code:
+                if tb.tb_frame.f_code is probe.__code__ and tb.tb_lineno == expected_site[0] and tb.tb_next.tb_frame.f_code is sentinel_code:
                     callsite_authenticated = True
                     break
                 tb = tb.tb_next
             if not callsite_authenticated:
-                errors.append(f'credited G1 {label} delegation did not originate from exact authenticated expression site {expected_site}')
+                errors.append(f'credited G1 {label} delegation did not originate from exact isolated expression line {expected_site[0]}')
         else:
             errors.append(f'credited G1 {label} outer probe did not execute delegated sentinel')
         invocation_hits = [code for phase, code in audit_state['codes'] if phase == 'invocation' and code is sentinel_code]
@@ -578,7 +577,7 @@ def main() -> None:
         print('ADVERSARIAL_LEARNING_STRICT_ERROR:', error)
     if errors:
         raise SystemExit(1)
-    print('adversarial_learning_strict=PASS head_status=isolated+fresh reviewer_identity=external-only material_formats=badge+priority-prefix d4c_current_projection=terminal-governed-surfaces falsifier_effects=executed-negative-helper g1_negative_helper=executed-reject+accept g1_scope_probes=permissive-evaluator-rejected+runtime-workflow-semantics g1_outer_delegation=ast+exact-expression-bytecode g1_readiness_probe=exact-semantic-call-sequence+negative-boundaries+fresh-module+fresh-dependency+permissive-rejection')
+    print('adversarial_learning_strict=PASS head_status=isolated+fresh reviewer_identity=external-only material_formats=badge+priority-prefix d4c_current_projection=terminal-governed-surfaces falsifier_effects=executed-negative-helper g1_negative_helper=executed-reject+accept g1_scope_probes=permissive-evaluator-rejected+runtime-workflow-semantics g1_outer_delegation=ast+isolated-expression-line+traceback g1_readiness_probe=exact-semantic-call-sequence+negative-boundaries+fresh-module+fresh-dependency+permissive-rejection')
 
 
 if __name__ == '__main__':

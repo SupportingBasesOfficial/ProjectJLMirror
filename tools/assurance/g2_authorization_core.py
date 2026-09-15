@@ -17,7 +17,7 @@ REVIEW_GUARDRAILS = ROOT / "tools/assurance/test_validate_g2_monitoring_source_o
 LEARNING_LEDGER = ROOT / "governance/adversarial/learning-ledger.d/pr-154-g2-authorization-review-findings.json"
 BASE_SHA = "8e26b05596aeca2e45578908ca4afc4f1fa175d6"
 AUTH_ID = "g2.monitoring-source-onboarding@1"
-EXPECTED_SCOPE_WORKFLOW_BLOB = "cc269388b179d985bcd8468a79c0ec7eac7e3170"
+EXPECTED_SCOPE_WORKFLOW_BLOB = "f19ed6d94ffc63f3acffd773eaf9246217a80495"
 
 _SCOPE_CORE_PATH = ROOT / "tools/assurance/g2_scope_core.py"
 _spec = importlib.util.spec_from_file_location("jlmirror_g2_scope_core_for_auth", _SCOPE_CORE_PATH)

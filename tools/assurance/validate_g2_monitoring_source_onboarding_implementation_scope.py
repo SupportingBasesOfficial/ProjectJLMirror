@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -47,9 +48,9 @@ EXPECTED_SEMANTIC_SCAN_PREFIXES = (
     "apps/g2-monitoring-source-onboarding/",
     "contracts/g2-monitoring-source-onboarding/",
     "implementation/g2-monitoring-source-onboarding/",
+    "tests/g2/",
     "tools/g2/",
 )
-SEMANTIC_TEXT_SUFFIXES = {".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".json", ".toml", ".yml", ".yaml"}
 RUNTIME_ALLOWED_TRIGGERS = {"pull_request", "workflow_dispatch"}
 RUNTIME_ALLOWED_ACTIONS = ("actions/checkout", "actions/setup-python", "actions/setup-node")
 
@@ -156,20 +157,23 @@ def validate_paths(paths: list[str], policy: dict[str, Any]) -> list[str]:
     return errors
 
 
+def _semantic_key(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", value.lower())
+
+
 def validate_semantic_artifact(path: str, text: str, policy: dict[str, Any]) -> list[str]:
     errors: list[str] = []
     if not any(path.startswith(prefix) for prefix in policy.get("semantic_scan_prefixes", [])):
         return errors
     lowered_path = path.lower()
+    normalized_path = _semantic_key(path)
     for token in policy.get("forbidden_path_tokens", []):
-        if token.lower() in lowered_path:
+        if token.lower() in lowered_path or _semantic_key(token) in normalized_path:
             errors.append(f"forbidden G2 semantic path token '{token}' in {path}")
-    suffix = Path(path).suffix.lower()
-    if suffix not in SEMANTIC_TEXT_SUFFIXES:
-        return errors
     lowered_text = text.lower()
+    normalized_text = _semantic_key(text)
     for marker in policy.get("forbidden_code_markers", []):
-        if marker.lower() in lowered_text:
+        if marker.lower() in lowered_text or _semantic_key(marker) in normalized_text:
             errors.append(f"forbidden G2 semantic code marker '{marker}' in {path}")
     return errors
 
@@ -296,7 +300,7 @@ def main() -> int:
         print(f"G2_IMPLEMENTATION_SCOPE_ERROR: {error}", file=sys.stderr)
     if errors:
         return 1
-    print("g2_implementation_scope=PASS classification=trusted_explicit_attestation path_scope=allowlisted semantic_scope=all-executable-authorized-prefixes readiness=live-source-authenticated")
+    print("g2_implementation_scope=PASS classification=trusted_explicit_attestation path_scope=allowlisted semantic_scope=all-utf8-authorized-prefixes readiness=live-source-authenticated")
     return 0
 
 

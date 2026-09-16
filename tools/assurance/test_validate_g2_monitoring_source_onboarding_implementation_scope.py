@@ -176,6 +176,12 @@ def main() -> int:
         ("apps/g2-monitoring-source-onboarding/source.ts", 'const p = (provider); if (p.role === "admin") allow();'),
         ("apps/g2-monitoring-source-onboarding/source.ts", 'const {role = "viewer"} = provider; if (role === "admin") allow();'),
         ("apps/g2-monitoring-source-onboarding/source.ts", "const ddl = `CREATE RECURSIVE VIEW nums(n) AS VALUES (1)`;"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", 'Reflect["apply"](database.insert, database, [{sourceId, value}]);'),
+        ("apps/g2-monitoring-source-onboarding/source.ts", '(reply["send"])({value: payload.password});'),
+        ("apps/g2-monitoring-source-onboarding/source.ts", 'const {["ro" + ("le")]: r = "viewer"} = (provider); if (r === "admin") allow();'),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "const ddl = `CREATE CONSTRAINT TRIGGER g2 AFTER INSERT ON existing DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION f()`;"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "const ddl = `CREATE TRUSTED PROCEDURAL LANGUAGE plpython3u`;"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "const ddl = `CREATE DEFAULT CONVERSION g2 FOR 'UTF8' TO 'LATIN1' FROM func`;"),
     )
     for path, text in semantic_cases:
         if validator.validate_semantic_artifact(path, text, policy) == []:
@@ -194,6 +200,7 @@ def main() -> int:
         'return reply.send({error: "password is required"});',
         "return reply.send({error: `password is required`});",
         'export const providerDisplayRole = "status";',
+        'const providerRoleLabel = "Provider status"; return <div role="status" aria-label={providerRoleLabel}/>;',
     ):
         errors = validator.validate_semantic_artifact("apps/g2-monitoring-source-onboarding/source.ts", text, policy)
         if errors:

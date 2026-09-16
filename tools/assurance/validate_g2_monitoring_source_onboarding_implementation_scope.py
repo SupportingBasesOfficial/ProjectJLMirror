@@ -25,7 +25,11 @@ DEFAULT_ROOT = Path.cwd()
 EXPECTED_READINESS_VALIDATOR = "tools/assurance/validate_g2_monitoring_source_onboarding_scope_readiness.py"
 _ORIGINAL_VALIDATE_SEMANTIC_ARTIFACT = _core.validate_semantic_artifact
 _DDL_MODIFIERS = "temp|temporary|unlogged|unique|concurrently|global|local|recursive"
-_DDL_OBJECTS = rf"(?:{_core.DDL_OBJECTS}|database|foreign\s+table|tablespace|server|foreign\s+data\s+wrapper|user\s+mapping|publication|subscription|role|user|group|domain|aggregate|collation|conversion|language|operator(?:\s+(?:class|family))?|statistics|rule|access\s+method|event\s+trigger|routine|cast|transform|text\s+search\s+(?:configuration|dictionary|parser|template))"
+_DDL_OBJECTS = rf"(?:{_core.DDL_OBJECTS}|database|foreign\s+table|tablespace|server|foreign\s+data\s+wrapper|user\s+mapping|publication|subscription|role|user|group|domain|aggregate|collation|(?:default\s+)?conversion|(?:trusted\s+)?(?:procedural\s+)?language|operator(?:\s+(?:class|family))?|statistics|rule|access\s+method|(?:constraint\s+)?trigger|event\s+trigger|routine|cast|transform|text\s+search\s+(?:configuration|dictionary|parser|template))"
+
+
+def _reflect_apply_prefix() -> str:
+    return r"\bReflect\s*(?:\.\s*apply|\[\s*['\"`]apply['\"`]\s*\])\s*\("
 
 
 def _decode_executable_escapes(text: str) -> str:
@@ -263,7 +267,7 @@ def _has_hardened_persistence_write(decoded: str) -> bool:
     if any(re.search(pattern, decoded, flags=re.IGNORECASE) for pattern in direct_patterns):
         return True
     if re.search(
-        rf"\bReflect\s*\.\s*apply\s*\(\s*{grouped_member_expr}\s*,",
+        rf"{_reflect_apply_prefix()}\s*{grouped_member_expr}\s*,",
         decoded,
         flags=re.IGNORECASE,
     ):
@@ -279,7 +283,7 @@ def _has_hardened_persistence_write(decoded: str) -> bool:
         if _static_computed_member(match.group(1)) in _core.PERSISTENCE_WRITES:
             return True
     for match in re.finditer(
-        rf"\bReflect\s*\.\s*apply\s*\(\s*{grouped_computed_expr}\s*,",
+        rf"{_reflect_apply_prefix()}\s*{grouped_computed_expr}\s*,",
         decoded,
         flags=re.IGNORECASE,
     ):
@@ -306,7 +310,7 @@ def _has_hardened_persistence_write(decoded: str) -> bool:
     return any(
         re.search(rf"\b{re.escape(alias)}\s*{invoke}", decoded)
         or re.search(
-            rf"\bReflect\s*\.\s*apply\s*\(\s*{re.escape(alias)}\s*,",
+            rf"{_reflect_apply_prefix()}\s*{re.escape(alias)}\s*,",
             decoded,
             flags=re.IGNORECASE,
         )
@@ -439,12 +443,12 @@ def _sink_call_contains(text: str, names: set[str]) -> bool:
         if _contains_secret_reference(match.group(1), names):
             return True
     for match in re.finditer(
-        r"\b[A-Za-z_$][A-Za-z0-9_$]*\s*\[([^\]]+)\]\s*\((.*?)\)",
+        r"(?:\(\s*)*\b[A-Za-z_$][A-Za-z0-9_$]*\s*\[(?P<member>[^\]]+)\](?:\s*\))*\s*\((?P<args>.*?)\)",
         text,
         flags=re.IGNORECASE | re.DOTALL,
     ):
-        member = _static_computed_member(match.group(1))
-        if member in _core.SECRET_SINK_TERMS and _contains_secret_reference(match.group(2), names):
+        member = _static_computed_member(match.group("member"))
+        if member in _core.SECRET_SINK_TERMS and _contains_secret_reference(match.group("args"), names):
             return True
     if re.search(r"\breturn\s+\{", text) and _contains_secret_reference(text, names):
         return True
@@ -575,9 +579,10 @@ def _provider_authority_related(decoded: str) -> bool:
     authority = "|".join(sorted(_core.PROVIDER_AUTHORITY_TERMS, key=len, reverse=True))
     aliases = _provider_aliases(decoded)
     provider = "|".join(re.escape(name) for name in sorted(aliases, key=len, reverse=True))
+    grouped_provider = rf"(?:\(\s*)*(?:{provider})(?:\s*\))*"
     destructuring_patterns = (
-        rf"\b(?:const|let|var)\s*\{{([^}}]*)\}}\s*=\s*(?:{provider})\b",
-        rf"(?<![A-Za-z0-9_$])\(\s*\{{([^}}]*)\}}\s*=\s*(?:{provider})\s*\)",
+        rf"\b(?:const|let|var)\s*\{{([^}}]*)\}}\s*=\s*{grouped_provider}(?=\s*(?:[;\n]|$))",
+        rf"(?<![A-Za-z0-9_$])\(\s*\{{([^}}]*)\}}\s*=\s*{grouped_provider}\s*\)",
     )
     for pattern in destructuring_patterns:
         for match in re.finditer(pattern, decoded, flags=re.IGNORECASE):
@@ -599,6 +604,8 @@ def _provider_authority_related(decoded: str) -> bool:
                 return True
     for identifier in _core._raw_identifiers(decoded):
         parts = _core._split_components(identifier)
+        if len(parts) != 2:
+            continue
         for index in range(len(parts) - 1):
             pair = {parts[index], parts[index + 1]}
             if pair & {alias.casefold() for alias in aliases} and pair & _core.PROVIDER_AUTHORITY_TERMS:

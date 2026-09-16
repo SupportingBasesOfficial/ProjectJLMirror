@@ -29,7 +29,9 @@ on:
       - 'implementation/wave-4/STATE.md'
       - 'docs/00-foundation/ai-e2e-delivery/**'
   push:
-    branches: [main]
+    branches:
+      - main
+      - governance/g2-monitoring-source-onboarding-authorization
     paths:
       - 'implementation/g2-monitoring-source-onboarding-authorization/**'
       - 'tools/assurance/g2_scope_core.py'

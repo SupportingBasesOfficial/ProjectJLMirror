@@ -190,6 +190,16 @@ def main() -> int:
         ("apps/g2-monitoring-source-onboarding/source.ts", "const ddl = `DROP DATABASE g2`;"),
         ("apps/g2-monitoring-source-onboarding/source.ts", "const ddl = `DROP SERVER g2 CASCADE`;"),
         ("apps/g2-monitoring-source-onboarding/source.ts", "const ddl = `ALTER ROLE app SUPERUSER`;"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", 'const key = "password", unused = 0; reply.send({value: payload[key]});'),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "reply.send.call(reply, {value: payload.password});"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "reply.send.apply(reply, [{value: payload.password}]);"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "let out; out ??= payload.password; reply.send({value: out});"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "let out; out ||= payload.password; reply.send({value: out});"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "let out; out &&= payload.password; reply.send({value: out});"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "database.insert.bind(database)({sourceId, value});"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "const ddl = `ALTER DEFAULT PRIVILEGES GRANT SELECT ON TABLES TO app`;"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "const ddl = `ALTER LARGE OBJECT 123 OWNER TO app`;"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "const ddl = `DROP OWNED BY app CASCADE`;"),
     )
     for path, text in semantic_cases:
         if validator.validate_semantic_artifact(path, text, policy) == []:
@@ -209,6 +219,7 @@ def main() -> int:
         "return reply.send({error: `password is required`});",
         'export const providerDisplayRole = "status";',
         'const providerRoleLabel = "Provider status"; return <div role="status" aria-label={providerRoleLabel}/>;',
+        'const passwordError = "Password is required"; reply.send({error: passwordError});',
     ):
         errors = validator.validate_semantic_artifact("apps/g2-monitoring-source-onboarding/source.ts", text, policy)
         if errors:

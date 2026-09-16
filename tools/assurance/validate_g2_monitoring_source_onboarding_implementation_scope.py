@@ -25,7 +25,7 @@ DEFAULT_ROOT = Path.cwd()
 EXPECTED_READINESS_VALIDATOR = "tools/assurance/validate_g2_monitoring_source_onboarding_scope_readiness.py"
 _ORIGINAL_VALIDATE_SEMANTIC_ARTIFACT = _core.validate_semantic_artifact
 _DDL_MODIFIERS = "temp|temporary|unlogged|unique|concurrently|global|local|recursive"
-_DDL_OBJECTS = rf"(?:{_core.DDL_OBJECTS}|database|foreign\s+table|tablespace|server|foreign\s+data\s+wrapper|user\s+mapping|publication|subscription|role|user|group|domain|aggregate|collation|(?:default\s+)?conversion|(?:trusted\s+)?(?:procedural\s+)?language|operator(?:\s+(?:class|family))?|statistics|rule|access\s+method|(?:constraint\s+)?trigger|event\s+trigger|routine|cast|transform|text\s+search\s+(?:configuration|dictionary|parser|template))"
+_DDL_OBJECTS = rf"(?:{_core.DDL_OBJECTS}|database|foreign\s+table|tablespace|server|foreign\s+data\s+wrapper|user\s+mapping|publication|subscription|role|user|group|domain|aggregate|collation|(?:default\s+)?conversion|(?:trusted\s+)?(?:procedural\s+)?language|operator(?:\s+(?:class|family))?|statistics|rule|access\s+method|(?:constraint\s+)?trigger|event\s+trigger|routine|cast|transform|default\s+privileges|large\s+object|owned|text\s+search\s+(?:configuration|dictionary|parser|template))"
 
 
 def _reflect_apply_prefix() -> str:
@@ -167,6 +167,45 @@ def _split_static_concat(expr: str) -> list[str]:
     return pieces
 
 
+def _split_top_level_commas(expr: str) -> list[str]:
+    pieces: list[str] = []
+    start = 0
+    depths = {"(": 0, "[": 0, "{": 0}
+    closing = {")": "(", "]": "[", "}": "{"}
+    quote: str | None = None
+    escaped = False
+    for index, char in enumerate(expr):
+        if quote is not None:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == quote:
+                quote = None
+            continue
+        if char in "'\"`":
+            quote = char
+        elif char in depths:
+            depths[char] += 1
+        elif char in closing:
+            depths[closing[char]] = max(0, depths[closing[char]] - 1)
+        elif char == "," and not any(depths.values()):
+            pieces.append(expr[start:index])
+            start = index + 1
+    pieces.append(expr[start:])
+    return pieces
+
+
+def _variable_declarators(text: str) -> list[tuple[str, str]]:
+    declarators: list[tuple[str, str]] = []
+    for statement in re.finditer(r"\b(?:const|let|var)\s+([^;\n]+)", text):
+        for item in _split_top_level_commas(statement.group(1)):
+            match = re.fullmatch(r"\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*(.+?)\s*", item)
+            if match:
+                declarators.append((match.group(1), match.group(2)))
+    return declarators
+
+
 def _static_computed_member(expr: str) -> str | None:
     expr = _strip_balanced_parentheses(expr)
     pieces = _split_static_concat(expr)
@@ -201,11 +240,7 @@ def _resolve_static_computed_aliases(text: str) -> str:
     changed = True
     while changed:
         changed = False
-        for match in re.finditer(
-            r"\b(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*([^;\n]+)",
-            text,
-        ):
-            name, expression = match.group(1), match.group(2).strip()
+        for name, expression in _variable_declarators(text):
             value = _static_computed_member(expression)
             if value is None and re.fullmatch(r"[A-Za-z_$][A-Za-z0-9_$]*", expression):
                 value = aliases.get(expression)
@@ -249,7 +284,7 @@ def _destructured_member_binding(item: str) -> tuple[str, str] | None:
 
 
 def _invocation_suffix() -> str:
-    return r"(?:\(|\?\.\s*\(|\.\s*(?:call|apply)\s*\()"
+    return r"(?:\(|\?\.\s*\(|\.\s*(?:call|apply)\s*\(|\.\s*bind\s*\([^)]*\)\s*\()"
 
 
 def _has_hardened_persistence_write(decoded: str) -> bool:
@@ -378,23 +413,31 @@ def _contains_secret_reference(text: str, tainted: set[str]) -> bool:
             return True
     code = _strip_plain_string_literals(text)
     for identifier in _core._raw_identifiers(code):
-        if identifier in tainted or _raw_secret_identifier(identifier):
+        if identifier in tainted:
             return True
     return False
 
 
 def _secret_taint(decoded: str) -> set[str]:
     code = _strip_plain_string_literals(decoded)
-    tainted = {identifier for identifier in _core._raw_identifiers(code) if _raw_secret_identifier(identifier)}
+    literal_backed = {
+        name
+        for name, expression in _variable_declarators(decoded)
+        if _static_computed_member(expression) is not None
+    }
+    tainted = {
+        identifier
+        for identifier in _core._raw_identifiers(code)
+        if _raw_secret_identifier(identifier) and identifier not in literal_backed
+    }
     changed = True
     while changed:
         changed = False
-        for match in re.finditer(r"\b(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*([^;\n]+)", decoded):
-            target, expression = match.group(1), match.group(2)
+        for target, expression in _variable_declarators(decoded):
             if target not in tainted and _contains_secret_reference(expression, tainted):
                 tainted.add(target)
                 changed = True
-        for match in re.finditer(r"(?<![=!<>A-Za-z0-9_$])([A-Za-z_$][A-Za-z0-9_$]*)\s*=(?!=|>)\s*([^;\n]+)", decoded):
+        for match in re.finditer(r"(?<![=!<>A-Za-z0-9_$])([A-Za-z_$][A-Za-z0-9_$]*)\s*(?:\?\?=|\|\|=|&&=|=(?!=|>))\s*([^;\n]+)", decoded):
             target, expression = match.group(1), match.group(2)
             if target not in tainted and _contains_secret_reference(expression, tainted):
                 tainted.add(target)
@@ -436,15 +479,16 @@ def _secret_taint(decoded: str) -> set[str]:
 
 def _sink_call_contains(text: str, names: set[str]) -> bool:
     sink = "|".join(sorted(_core.SECRET_SINK_TERMS, key=len, reverse=True))
+    invoke = r"(?:\.\s*(?:call|apply)\s*)?\("
     for match in re.finditer(
-        rf"(?:\(\s*)*(?:\b[A-Za-z_$][A-Za-z0-9_$]*\s*\.)?\b(?:{sink})(?:\s*\))*\s*\((.*?)\)",
+        rf"(?:\(\s*)*(?:\b[A-Za-z_$][A-Za-z0-9_$]*\s*\.)?\b(?:{sink})(?:\s*\))*\s*{invoke}(.*?)\)",
         text,
         flags=re.IGNORECASE | re.DOTALL,
     ):
         if _contains_secret_reference(match.group(1), names):
             return True
     for match in re.finditer(
-        r"(?:\(\s*)*\b[A-Za-z_$][A-Za-z0-9_$]*\s*\[(?P<member>[^\]]+)\](?:\s*\))*\s*\((?P<args>.*?)\)",
+        rf"(?:\(\s*)*\b[A-Za-z_$][A-Za-z0-9_$]*\s*\[(?P<member>[^\]]+)\](?:\s*\))*\s*{invoke}(?P<args>.*?)\)",
         text,
         flags=re.IGNORECASE | re.DOTALL,
     ):

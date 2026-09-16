@@ -25,7 +25,16 @@ DEFAULT_ROOT = Path.cwd()
 EXPECTED_READINESS_VALIDATOR = "tools/assurance/validate_g2_monitoring_source_onboarding_scope_readiness.py"
 _ORIGINAL_VALIDATE_SEMANTIC_ARTIFACT = _core.validate_semantic_artifact
 _DDL_MODIFIERS = "temp|temporary|unlogged|unique|concurrently|global|local"
-_DDL_OBJECTS = rf"(?:{_core.DDL_OBJECTS}|database|foreign\s+table|tablespace)"
+_DDL_OBJECTS = rf"(?:{_core.DDL_OBJECTS}|database|foreign\s+table|tablespace|server|foreign\s+data\s+wrapper|user\s+mapping|publication|subscription|role|domain|aggregate|collation|conversion|language|operator|statistics|rule|access\s+method)"
+
+
+def _decode_executable_escapes(text: str) -> str:
+    decoded = _core._decode_identifier_escapes(text)
+
+    def replace_hex(match: re.Match[str]) -> str:
+        return chr(int(match.group(1), 16))
+
+    return re.sub(r"\\x([0-9A-Fa-f]{2})", replace_hex, decoded)
 
 
 def _component_sequence_hit(identifier: str, marker: str) -> bool:
@@ -103,6 +112,10 @@ def _static_computed_member(expr: str) -> str | None:
     return "".join(values).casefold()
 
 
+def _invocation_suffix() -> str:
+    return r"(?:\(|\?\.\s*\(|\.\s*(?:call|apply)\s*\()"
+
+
 def _has_hardened_persistence_write(decoded: str) -> bool:
     aliases = _persistence_aliases(decoded)
     receiver = "|".join(re.escape(name) for name in sorted(aliases, key=len, reverse=True))
@@ -110,8 +123,9 @@ def _has_hardened_persistence_write(decoded: str) -> bool:
     receiver_expr = rf"(?:\(\s*)*(?:{receiver})(?:\s*\))*"
     member_expr = rf"{receiver_expr}\s*(?:\?\.|\.)\s*(?:{write})"
     grouped_member_expr = rf"(?:\(\s*)*{member_expr}(?:\s*\))*"
+    invoke = _invocation_suffix()
     direct_patterns = (
-        rf"(?<![A-Za-z0-9_$]){grouped_member_expr}\s*(?:\(|\.\s*(?:call|apply)\s*\()",
+        rf"(?<![A-Za-z0-9_$]){grouped_member_expr}\s*{invoke}",
         rf"\b(?:const|let|var)\s+[A-Za-z_$][A-Za-z0-9_$]*\s*=\s*{member_expr}\b",
         rf"\b(?:const|let|var)\s*\{{[^}}]*\b(?:{write})\b[^}}]*\}}\s*=\s*{receiver_expr}\b",
     )
@@ -121,7 +135,7 @@ def _has_hardened_persistence_write(decoded: str) -> bool:
     computed_expr = rf"{receiver_expr}\s*(?:\?\.)?\s*\[([^\]]+)\]"
     grouped_computed_expr = rf"(?:\(\s*)*{computed_expr}(?:\s*\))*"
     for match in re.finditer(
-        rf"(?<![A-Za-z0-9_$]){grouped_computed_expr}\s*(?:\(|\.\s*(?:call|apply)\s*\()",
+        rf"(?<![A-Za-z0-9_$]){grouped_computed_expr}\s*{invoke}",
         decoded,
         flags=re.IGNORECASE,
     ):
@@ -135,10 +149,7 @@ def _has_hardened_persistence_write(decoded: str) -> bool:
     for match in re.finditer(rf"{alias_prefix}{computed_expr}", decoded, flags=re.IGNORECASE):
         if _static_computed_member(match.group(2)) in _core.PERSISTENCE_WRITES:
             method_aliases.add(match.group(1))
-    return any(
-        re.search(rf"\b{re.escape(alias)}\s*(?:\(|\.\s*(?:call|apply)\s*\()", decoded)
-        for alias in method_aliases
-    )
+    return any(re.search(rf"\b{re.escape(alias)}\s*{invoke}", decoded) for alias in method_aliases)
 
 
 def _raw_secret_identifier(identifier: str) -> bool:
@@ -183,6 +194,11 @@ def _secret_taint(decoded: str) -> set[str]:
     while changed:
         changed = False
         for match in re.finditer(r"\b(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*([^;\n]+)", decoded):
+            target, expression = match.group(1), match.group(2)
+            if target not in tainted and _contains_secret_reference(expression, tainted):
+                tainted.add(target)
+                changed = True
+        for match in re.finditer(r"(?<![=!<>A-Za-z0-9_$])([A-Za-z_$][A-Za-z0-9_$]*)\s*=(?!=|>)\s*([^;\n]+)", decoded):
             target, expression = match.group(1), match.group(2)
             if target not in tainted and _contains_secret_reference(expression, tainted):
                 tainted.add(target)
@@ -253,17 +269,22 @@ def _function_definitions(decoded: str) -> list[tuple[str, str, str]]:
         if block is not None:
             body, _end = block
             definitions.append((match.group(1), match.group(2), body))
-    for match in re.finditer(r"\b(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*\(([^)]*)\)\s*=>\s*", decoded):
-        start = match.end()
-        if start < len(decoded) and decoded[start:start + 1] == "{":
-            block = _balanced_block(decoded, start)
-            if block is not None:
-                body, _end = block
+    arrow_patterns = (
+        r"\b(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*\(([^)]*)\)\s*=>\s*",
+        r"\b(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*=>\s*",
+    )
+    for pattern in arrow_patterns:
+        for match in re.finditer(pattern, decoded):
+            start = match.end()
+            if start < len(decoded) and decoded[start:start + 1] == "{":
+                block = _balanced_block(decoded, start)
+                if block is not None:
+                    body, _end = block
+                    definitions.append((match.group(1), match.group(2), body))
+            else:
+                end = decoded.find(";", start)
+                body = decoded[start:] if end < 0 else decoded[start:end]
                 definitions.append((match.group(1), match.group(2), body))
-        else:
-            end = decoded.find(";", start)
-            body = decoded[start:] if end < 0 else decoded[start:end]
-            definitions.append((match.group(1), match.group(2), body))
     return definitions
 
 
@@ -315,22 +336,44 @@ def _has_hardened_ddl(decoded: str) -> bool:
     )
 
 
+def _provider_aliases(decoded: str) -> set[str]:
+    aliases = {"provider"}
+    changed = True
+    while changed:
+        changed = False
+        source = "|".join(re.escape(name) for name in sorted(aliases, key=len, reverse=True))
+        patterns = (
+            rf"\b(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*(?:{source})\b",
+            rf"(?<![A-Za-z0-9_$])([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*(?:{source})\b",
+        )
+        for pattern in patterns:
+            for match in re.finditer(pattern, decoded, flags=re.IGNORECASE):
+                alias = match.group(1)
+                if alias not in aliases:
+                    aliases.add(alias)
+                    changed = True
+    return aliases
+
+
 def _provider_authority_related(decoded: str) -> bool:
     authority = "|".join(sorted(_core.PROVIDER_AUTHORITY_TERMS, key=len, reverse=True))
+    aliases = _provider_aliases(decoded)
+    provider = "|".join(re.escape(name) for name in sorted(aliases, key=len, reverse=True))
     direct_patterns = (
-        rf"\bprovider\s*(?:\?\.|\.)\s*(?:{authority})\b",
-        rf"\bprovider\s*\[\s*['\"](?:{authority})['\"]\s*\]",
-        rf"\b(?:{authority})\s*(?:\?\.|\.)\s*provider\b",
+        rf"\b(?:{provider})\s*(?:\?\.|\.)\s*(?:{authority})\b",
+        rf"\b(?:{provider})\s*\[\s*['\"](?:{authority})['\"]\s*\]",
+        rf"\b(?:{authority})\s*(?:\?\.|\.)\s*(?:{provider})\b",
     )
     if any(re.search(pattern, decoded, flags=re.IGNORECASE) for pattern in direct_patterns):
         return True
-    for match in re.finditer(r"\bprovider\s*\[([^\]]+)\]", decoded, flags=re.IGNORECASE):
-        member = _static_computed_member(match.group(1))
-        if member in _core.PROVIDER_AUTHORITY_TERMS:
-            return True
+    for alias in aliases:
+        for match in re.finditer(rf"\b{re.escape(alias)}\s*\[([^\]]+)\]", decoded, flags=re.IGNORECASE):
+            member = _static_computed_member(match.group(1))
+            if member in _core.PROVIDER_AUTHORITY_TERMS:
+                return True
     for identifier in _core._raw_identifiers(decoded):
         parts = _core._split_components(identifier)
-        if "provider" in parts and any(term in parts for term in _core.PROVIDER_AUTHORITY_TERMS):
+        if any(alias.casefold() in parts for alias in aliases) and any(term in parts for term in _core.PROVIDER_AUTHORITY_TERMS):
             return True
     return False
 
@@ -339,7 +382,7 @@ def validate_semantic_artifact(path: str, text: str, policy: dict) -> list[str]:
     errors = list(_ORIGINAL_VALIDATE_SEMANTIC_ARTIFACT(path, text, policy))
     if not any(path.startswith(prefix) for prefix in policy.get("semantic_scan_prefixes", [])):
         return errors
-    decoded = _core._decode_identifier_escapes(text)
+    decoded = _decode_executable_escapes(text)
 
     if any(ord(char) > 127 for char in path):
         errors.append(f"non-ASCII/confusable path forbidden in governed G2 artifact: {path}")

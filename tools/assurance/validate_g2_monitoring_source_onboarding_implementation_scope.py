@@ -25,7 +25,7 @@ DEFAULT_ROOT = Path.cwd()
 EXPECTED_READINESS_VALIDATOR = "tools/assurance/validate_g2_monitoring_source_onboarding_scope_readiness.py"
 _ORIGINAL_VALIDATE_SEMANTIC_ARTIFACT = _core.validate_semantic_artifact
 _DDL_MODIFIERS = "temp|temporary|unlogged|unique|concurrently|global|local"
-_DDL_OBJECTS = rf"(?:{_core.DDL_OBJECTS}|database|foreign\s+table|tablespace|server|foreign\s+data\s+wrapper|user\s+mapping|publication|subscription|role|domain|aggregate|collation|conversion|language|operator|statistics|rule|access\s+method|event\s+trigger)"
+_DDL_OBJECTS = rf"(?:{_core.DDL_OBJECTS}|database|foreign\s+table|tablespace|server|foreign\s+data\s+wrapper|user\s+mapping|publication|subscription|role|user|group|domain|aggregate|collation|conversion|language|operator(?:\s+(?:class|family))?|statistics|rule|access\s+method|event\s+trigger|routine|cast|transform|text\s+search\s+(?:configuration|dictionary|parser|template))"
 
 
 def _decode_executable_escapes(text: str) -> str:
@@ -114,6 +114,73 @@ def _static_computed_member(expr: str) -> str | None:
     return "".join(values).casefold()
 
 
+def _fold_static_string_concatenations(text: str) -> str:
+    literal = r"(?:'(?:\\.|[^'\\])*'|\"(?:\\.|[^\"\\])*\"|\`(?:\\.|[^\`\\])*\`)"
+    pattern = re.compile(rf"{literal}(?:\s*\+\s*{literal})+")
+    previous = None
+    while previous != text:
+        previous = text
+
+        def replace(match: re.Match[str]) -> str:
+            value = _static_computed_member(match.group(0))
+            return json.dumps(value) if value is not None else match.group(0)
+
+        text = pattern.sub(replace, text)
+    return text
+
+
+def _resolve_static_computed_aliases(text: str) -> str:
+    aliases: dict[str, str] = {}
+    changed = True
+    while changed:
+        changed = False
+        for match in re.finditer(
+            r"\b(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*([^;\n]+)",
+            text,
+        ):
+            name, expression = match.group(1), match.group(2).strip()
+            value = _static_computed_member(expression)
+            if value is None and re.fullmatch(r"[A-Za-z_$][A-Za-z0-9_$]*", expression):
+                value = aliases.get(expression)
+            if value is not None and aliases.get(name) != value:
+                aliases[name] = value
+                changed = True
+    if not aliases:
+        return text
+    names = "|".join(re.escape(name) for name in sorted(aliases, key=len, reverse=True))
+
+    def replace(match: re.Match[str]) -> str:
+        return f"{match.group(1)}[{json.dumps(aliases[match.group(2)])}]"
+
+    return re.sub(
+        rf"([A-Za-z0-9_$)\]])\s*\[\s*({names})\s*\]",
+        replace,
+        text,
+    )
+
+
+def _destructured_member_binding(item: str) -> tuple[str, str] | None:
+    item = item.strip()
+    if not item or item.startswith("..."):
+        return None
+    if item.startswith("["):
+        close = item.find("]")
+        if close < 0:
+            return None
+        source_name = _static_computed_member(item[1:close])
+        remainder = item[close + 1:].strip()
+        if source_name is None or not remainder.startswith(":"):
+            return None
+        target = remainder[1:].split("=", 1)[0].strip()
+    else:
+        pair = [part.strip() for part in item.split(":", 1)]
+        source_name = pair[0].casefold()
+        target = pair[-1].split("=", 1)[0].strip()
+    if not re.fullmatch(r"[A-Za-z_$][A-Za-z0-9_$]*", target):
+        return None
+    return source_name, target
+
+
 def _invocation_suffix() -> str:
     return r"(?:\(|\?\.\s*\(|\.\s*(?:call|apply)\s*\()"
 
@@ -151,6 +218,16 @@ def _has_hardened_persistence_write(decoded: str) -> bool:
     for match in re.finditer(rf"{alias_prefix}{computed_expr}", decoded, flags=re.IGNORECASE):
         if _static_computed_member(match.group(2)) in _core.PERSISTENCE_WRITES:
             method_aliases.add(match.group(1))
+    destructuring_patterns = (
+        rf"\b(?:const|let|var)\s*\{{([^}}]*)\}}\s*=\s*{receiver_expr}\b",
+        rf"(?<![A-Za-z0-9_$])\(\s*\{{([^}}]*)\}}\s*=\s*{receiver_expr}\s*\)",
+    )
+    for pattern in destructuring_patterns:
+        for match in re.finditer(pattern, decoded, flags=re.IGNORECASE):
+            for item in match.group(1).split(","):
+                binding = _destructured_member_binding(item)
+                if binding is not None and binding[0] in _core.PERSISTENCE_WRITES:
+                    method_aliases.add(binding[1])
     return any(re.search(rf"\b{re.escape(alias)}\s*{invoke}", decoded) for alias in method_aliases)
 
 
@@ -163,22 +240,47 @@ def _raw_secret_identifier(identifier: str) -> bool:
 
 def _strip_plain_string_literals(text: str) -> str:
     chars = list(text)
+    template_expressions: list[str] = []
     quote: str | None = None
     escaped = False
-    for index, char in enumerate(text):
+    index = 0
+    while index < len(text):
+        char = text[index]
         if quote is None:
-            if char in "'\"":
+            if char == "`":
+                start = index
+                index += 1
+                escaped_template = False
+                while index < len(text):
+                    current = text[index]
+                    if escaped_template:
+                        escaped_template = False
+                    elif current == "\\":
+                        escaped_template = True
+                    elif current == "`":
+                        break
+                    index += 1
+                end = min(index, len(text) - 1)
+                segment = text[start + 1:end]
+                template_expressions.extend(
+                    match.group(1)
+                    for match in re.finditer(r"\$\{(.*?)\}", segment, flags=re.DOTALL)
+                )
+                for position in range(start, end + 1):
+                    chars[position] = " "
+            elif char in "'\"":
                 quote = char
                 chars[index] = " "
-            continue
-        chars[index] = " "
-        if escaped:
-            escaped = False
-        elif char == "\\":
-            escaped = True
-        elif char == quote:
-            quote = None
-    return "".join(chars)
+        else:
+            chars[index] = " "
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == quote:
+                quote = None
+        index += 1
+    return "".join(chars) + "\n" + "\n".join(template_expressions)
 
 
 def _contains_secret_reference(text: str, tainted: set[str]) -> bool:
@@ -388,8 +490,8 @@ def _provider_authority_related(decoded: str) -> bool:
     for pattern in destructuring_patterns:
         for match in re.finditer(pattern, decoded, flags=re.IGNORECASE):
             for item in match.group(1).split(","):
-                source_name = item.split(":", 1)[0].strip().casefold()
-                if source_name in _core.PROVIDER_AUTHORITY_TERMS:
+                binding = _destructured_member_binding(item)
+                if binding is not None and binding[0] in _core.PROVIDER_AUTHORITY_TERMS:
                     return True
     direct_patterns = (
         rf"\b(?:{provider})\s*(?:\?\.|\.)\s*(?:{authority})\b",
@@ -415,6 +517,8 @@ def validate_semantic_artifact(path: str, text: str, policy: dict) -> list[str]:
     if not any(path.startswith(prefix) for prefix in policy.get("semantic_scan_prefixes", [])):
         return errors
     decoded = _decode_executable_escapes(text)
+    decoded = _fold_static_string_concatenations(decoded)
+    decoded = _resolve_static_computed_aliases(decoded)
 
     if any(ord(char) > 127 for char in path):
         errors.append(f"non-ASCII/confusable path forbidden in governed G2 artifact: {path}")

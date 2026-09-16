@@ -200,6 +200,10 @@ def main() -> int:
         ("apps/g2-monitoring-source-onboarding/source.ts", "const ddl = `ALTER DEFAULT PRIVILEGES GRANT SELECT ON TABLES TO app`;"),
         ("apps/g2-monitoring-source-onboarding/source.ts", "const ddl = `ALTER LARGE OBJECT 123 OWNER TO app`;"),
         ("apps/g2-monitoring-source-onboarding/source.ts", "const ddl = `DROP OWNED BY app CASCADE`;"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "reply.send.bind(reply)({value: payload.password});"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", 'let password = "Password label"; password = payload.password; reply.send({value: password});'),
+        ("apps/g2-monitoring-source-onboarding/source.ts", 'const opts = { fn(){ return "x"; } }, key = "password"; reply.send({value: payload[key]});'),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "const ddl = `ALTER SYSTEM SET log_statement = 'all'`;"),
     )
     for path, text in semantic_cases:
         if validator.validate_semantic_artifact(path, text, policy) == []:

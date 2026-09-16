@@ -25,7 +25,7 @@ DEFAULT_ROOT = Path.cwd()
 EXPECTED_READINESS_VALIDATOR = "tools/assurance/validate_g2_monitoring_source_onboarding_scope_readiness.py"
 _ORIGINAL_VALIDATE_SEMANTIC_ARTIFACT = _core.validate_semantic_artifact
 _DDL_MODIFIERS = "temp|temporary|unlogged|unique|concurrently|global|local|recursive"
-_DDL_OBJECTS = rf"(?:{_core.DDL_OBJECTS}|database|foreign\s+table|tablespace|server|foreign\s+data\s+wrapper|user\s+mapping|publication|subscription|role|user|group|domain|aggregate|collation|(?:default\s+)?conversion|(?:trusted\s+)?(?:procedural\s+)?language|operator(?:\s+(?:class|family))?|statistics|rule|access\s+method|(?:constraint\s+)?trigger|event\s+trigger|routine|cast|transform|default\s+privileges|large\s+object|owned|text\s+search\s+(?:configuration|dictionary|parser|template))"
+_DDL_OBJECTS = rf"(?:{_core.DDL_OBJECTS}|database|foreign\s+table|tablespace|server|system|foreign\s+data\s+wrapper|user\s+mapping|publication|subscription|role|user|group|domain|aggregate|collation|(?:default\s+)?conversion|(?:trusted\s+)?(?:procedural\s+)?language|operator(?:\s+(?:class|family))?|statistics|rule|access\s+method|(?:constraint\s+)?trigger|event\s+trigger|routine|cast|transform|default\s+privileges|large\s+object|owned|text\s+search\s+(?:configuration|dictionary|parser|template))"
 
 
 def _reflect_apply_prefix() -> str:
@@ -198,8 +198,36 @@ def _split_top_level_commas(expr: str) -> list[str]:
 
 def _variable_declarators(text: str) -> list[tuple[str, str]]:
     declarators: list[tuple[str, str]] = []
-    for statement in re.finditer(r"\b(?:const|let|var)\s+([^;\n]+)", text):
-        for item in _split_top_level_commas(statement.group(1)):
+    for start_match in re.finditer(r"\b(?:const|let|var)\s+", text):
+        start = start_match.end()
+        depths = {"(": 0, "[": 0, "{": 0}
+        closing = {")": "(", "]": "[", "}": "{"}
+        quote: str | None = None
+        escaped = False
+        end = len(text)
+        for index in range(start, len(text)):
+            char = text[index]
+            if quote is not None:
+                if escaped:
+                    escaped = False
+                elif char == "\\":
+                    escaped = True
+                elif char == quote:
+                    quote = None
+                continue
+            if char in "'\"`":
+                quote = char
+            elif char in depths:
+                depths[char] += 1
+            elif char in closing:
+                depths[closing[char]] = max(0, depths[closing[char]] - 1)
+            elif not any(depths.values()) and char == ";":
+                end = index
+                break
+            elif not any(depths.values()) and char == "\n":
+                end = index
+                break
+        for item in _split_top_level_commas(text[start:end]):
             match = re.fullmatch(r"\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*(.+?)\s*", item)
             if match:
                 declarators.append((match.group(1), match.group(2)))
@@ -425,10 +453,16 @@ def _secret_taint(decoded: str) -> set[str]:
         for name, expression in _variable_declarators(decoded)
         if _static_computed_member(expression) is not None
     }
+    property_secret_names = {
+        match.group(1)
+        for match in re.finditer(r"\.\s*([A-Za-z_$][A-Za-z0-9_$]*)", code)
+        if _raw_secret_identifier(match.group(1))
+    }
     tainted = {
         identifier
         for identifier in _core._raw_identifiers(code)
-        if _raw_secret_identifier(identifier) and identifier not in literal_backed
+        if _raw_secret_identifier(identifier)
+        and (identifier not in literal_backed or identifier in property_secret_names)
     }
     changed = True
     while changed:
@@ -479,7 +513,7 @@ def _secret_taint(decoded: str) -> set[str]:
 
 def _sink_call_contains(text: str, names: set[str]) -> bool:
     sink = "|".join(sorted(_core.SECRET_SINK_TERMS, key=len, reverse=True))
-    invoke = r"(?:\.\s*(?:call|apply)\s*)?\("
+    invoke = r"(?:(?:\.\s*(?:call|apply)\s*)?\(|\.\s*bind\s*\([^)]*\)\s*\()"
     for match in re.finditer(
         rf"(?:\(\s*)*(?:\b[A-Za-z_$][A-Za-z0-9_$]*\s*\.)?\b(?:{sink})(?:\s*\))*\s*{invoke}(.*?)\)",
         text,

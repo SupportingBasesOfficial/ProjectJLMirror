@@ -157,6 +157,12 @@ def main() -> int:
         ("apps/g2-monitoring-source-onboarding/source.ts", "await fetch('/api/source-cutover');"),
         ("apps/g2-monitoring-source-onboarding/source.ts", 'provider["permi" + "ssions"].includes("source:write")'),
         ("apps/g2-monitoring-source-onboarding/Мetric/page.ts", "export const enabled = true"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "await database[`insert`]({sourceId, value});"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", 'return reply.send({value: payload["password"]});'),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "let pw; ({password: pw} = payload); return reply.send({value: pw});"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", 'const {role} = provider; if (role === "admin") allow();'),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "const ddl = `CREATE EVENT TRIGGER audit_ddl ON ddl_command_start EXECUTE FUNCTION capture()`;"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "await fetch('/api/me" + "\\\\" + "\\n" + "tric');"),
     )
     for path, text in semantic_cases:
         if validator.validate_semantic_artifact(path, text, policy) == []:

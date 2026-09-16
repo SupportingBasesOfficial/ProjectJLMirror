@@ -234,6 +234,62 @@ def _has_secret_to_sink(decoded: str) -> bool:
     return any(re.search(pattern, decoded, flags=re.IGNORECASE | re.DOTALL) for pattern in patterns)
 
 
+def _live_secret_reference(text: str) -> bool:
+    secret = "|".join(sorted(SECRET_TERMS, key=len, reverse=True))
+    receiver = r"(?:payload|body|request|req|input|credentials?|provider)"
+    dot = rf"\b{receiver}\s*(?:\?\.|\.)\s*(?:{secret})\b"
+    computed = rf"\b{receiver}\s*(?:\?\.)?\s*\[\s*['\"](?:{secret})['\"]\s*\]"
+    return bool(re.search(dot, text, flags=re.IGNORECASE) or re.search(computed, text, flags=re.IGNORECASE))
+
+
+def _review_secret_aliases(decoded: str) -> set[str]:
+    aliases: set[str] = set()
+    assignment = re.compile(
+        r"(?<![A-Za-z0-9_$])([A-Za-z_$][A-Za-z0-9_$]*)\s*(?:\?\?=|\|\|=|&&=|[+\-*/%&|^]=|=(?!=|>))\s*([^;\n]+)",
+        flags=re.IGNORECASE,
+    )
+    changed = True
+    while changed:
+        changed = False
+        for match in assignment.finditer(decoded):
+            target, expression = match.group(1), match.group(2)
+            alias_hit = any(re.search(rf"\b{re.escape(alias)}\b", expression) for alias in aliases)
+            if target not in aliases and (_live_secret_reference(expression) or alias_hit):
+                aliases.add(target)
+                changed = True
+    return aliases
+
+
+def _review_contains_secret(text: str, aliases: set[str]) -> bool:
+    if _live_secret_reference(text):
+        return True
+    return any(re.search(rf"\b{re.escape(alias)}\b", text) for alias in aliases)
+
+
+def _review_secret_sink_flow(decoded: str) -> bool:
+    aliases = _review_secret_aliases(decoded)
+    sink = "|".join(sorted(SECRET_SINK_TERMS, key=len, reverse=True))
+    helper = r"(?:(?:\.|\?\.)\s*(?:call|apply)\s*(?:\?\.\s*)?)?"
+    invocation = r"(?:\?\.\s*)?\("
+    direct = re.compile(
+        rf"(?:\b[A-Za-z_$][A-Za-z0-9_$]*\s*(?:\?\.|\.)\s*)?\b(?:{sink})\b\s*{helper}\s*{invocation}(.*?)\)",
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    computed = re.compile(
+        rf"\b[A-Za-z_$][A-Za-z0-9_$]*\s*(?:\?\.\s*)?\[\s*['\"](?:{sink})['\"]\s*\]\s*{helper}\s*{invocation}(.*?)\)",
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    return any(_review_contains_secret(match.group(1), aliases) for match in direct.finditer(decoded)) or any(
+        _review_contains_secret(match.group(1), aliases) for match in computed.finditer(decoded)
+    )
+
+
+def _review_sql_authority_call(decoded: str) -> bool:
+    execution = r"\b(?:query|execute|exec|run|sql)\s*\("
+    authority = r"\b(?:grant|revoke|reassign\s+owned)\b"
+    return bool(re.search(rf"{execution}[^;]*{authority}", decoded, flags=re.IGNORECASE | re.DOTALL))
+
+
 def _structural_semantic_errors(path: str, decoded: str) -> list[str]:
     errors: list[str] = []
     suffix = Path(path).suffix.casefold()
@@ -258,6 +314,10 @@ def _structural_semantic_errors(path: str, decoded: str) -> list[str]:
 
     if components & SECRET_TERMS and _has_secret_to_sink(decoded):
         errors.append(f"raw secret persistence/exposure data-flow forbidden in G2: {path}")
+    if _review_secret_sink_flow(decoded):
+        errors.append(f"raw secret sink-equivalence data-flow forbidden in G2: {path}")
+    if _review_sql_authority_call(decoded):
+        errors.append(f"SQL authority-changing execution surface forbidden in G2: {path}")
     return errors
 
 

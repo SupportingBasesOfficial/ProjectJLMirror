@@ -232,6 +232,13 @@ def main() -> int:
         ("apps/g2-monitoring-source-onboarding/source.ts", 'const emit = reply["send"]; emit({value: payload.password});'),
         ("apps/g2-monitoring-source-onboarding/source.ts", "const {send: emit} = reply; emit({value: payload.password});"),
         ("apps/g2-monitoring-source-onboarding/source.ts", "db.query(sql`GRANT SELECT ON TABLE monitoring.sources TO app`);"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", 'let out; out = /[//]/.test(input) ? payload.password : ""; reply.send({value: out});'),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "reply.send?.({value: payload.password});"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "const emit = reply.send; emit?.({value: payload.password});"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "let emit; ({send: emit} = reply); emit({value: payload.password});"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", 'let emit; ({["send"]: emit} = reply); emit({value: payload.password});'),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "db.query(Prisma.sql`GRANT SELECT ON TABLE monitoring.sources TO app`);"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "db.query(sql.raw`GRANT SELECT ON TABLE monitoring.sources TO app`);"),
     )
     for path, text in semantic_cases:
         if validator.validate_semantic_artifact(path, text, policy) == []:

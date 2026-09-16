@@ -199,10 +199,27 @@ def _split_top_level_commas(expr: str) -> list[str]:
 def _mask_js_comments(text: str, *, flatten_block_newlines: bool = False) -> str:
     chars = list(text)
     quote: str | None = None
+    regex_literal = False
+    regex_char_class = False
     escaped = False
+    previous_significant = ""
     index = 0
     while index < len(text):
         char = text[index]
+        if regex_literal:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == "[":
+                regex_char_class = True
+            elif char == "]":
+                regex_char_class = False
+            elif char == "/" and not regex_char_class:
+                regex_literal = False
+                previous_significant = "/"
+            index += 1
+            continue
         if quote is not None:
             if escaped:
                 escaped = False
@@ -210,6 +227,7 @@ def _mask_js_comments(text: str, *, flatten_block_newlines: bool = False) -> str
                 escaped = True
             elif char == quote:
                 quote = None
+                previous_significant = char
             index += 1
             continue
         if char in "'\"`":
@@ -231,6 +249,13 @@ def _mask_js_comments(text: str, *, flatten_block_newlines: bool = False) -> str
                 chars[position] = " "
             index = end
             continue
+        if char == "/" and (not previous_significant or previous_significant in "(=:[,!&|?{};+*-~%^<>"):
+            regex_literal = True
+            regex_char_class = False
+            index += 1
+            continue
+        if not char.isspace():
+            previous_significant = char
         index += 1
     return "".join(chars)
 
@@ -785,18 +810,23 @@ def _sink_aliases(decoded: str) -> set[str]:
             if source_name in known and target not in aliases:
                 aliases.add(target)
                 changed = True
-        for match in re.finditer(r"\b(?:const|let|var)\s*\{([^}]*)\}\s*=", text):
-            for item in _split_top_level_commas(match.group(1)):
-                pieces = item.split(":", 1)
-                source = pieces[0].strip()
-                target = pieces[-1].split("=", 1)[0].strip()
-                if source.startswith("[") and source.endswith("]"):
-                    source_name = _static_computed_member(source[1:-1])
-                else:
-                    source_name = source.casefold()
-                if source_name in known and re.fullmatch(r"[A-Za-z_$][A-Za-z0-9_$]*", target) and target not in aliases:
-                    aliases.add(target)
-                    changed = True
+        destructuring_patterns = (
+            r"\b(?:const|let|var)\s*\{([^}]*)\}\s*=",
+            r"(?<![A-Za-z0-9_$])\(\s*\{([^}]*)\}\s*=",
+        )
+        for pattern in destructuring_patterns:
+            for match in re.finditer(pattern, text):
+                for item in _split_top_level_commas(match.group(1)):
+                    pieces = item.split(":", 1)
+                    source = pieces[0].strip()
+                    target = pieces[-1].split("=", 1)[0].strip()
+                    if source.startswith("[") and source.endswith("]"):
+                        source_name = _static_computed_member(source[1:-1])
+                    else:
+                        source_name = source.casefold()
+                    if source_name in known and re.fullmatch(r"[A-Za-z_$][A-Za-z0-9_$]*", target) and target not in aliases:
+                        aliases.add(target)
+                        changed = True
     return aliases
 
 
@@ -804,7 +834,7 @@ def _sink_call_contains(text: str, names: set[str], sink_aliases: set[str] | Non
     text = _mask_js_comments(text)
     sink_names = set(_core.SECRET_SINK_TERMS) | (sink_aliases or set())
     sink = "|".join(re.escape(name) for name in sorted(sink_names, key=len, reverse=True))
-    invoke = r"(?:(?:\.\s*(?:call|apply)\s*)?\(|\.\s*bind\s*\([^)]*\)\s*\()"
+    invoke = r"(?:(?:\?\.\s*)?\(|(?:\.|\?\.)\s*(?:call|apply)\s*\(|(?:\.|\?\.)\s*bind\s*\([^)]*\)\s*(?:\?\.\s*)?\()"
     grouped_receiver = r"(?:\(\s*)*\b[A-Za-z_$][A-Za-z0-9_$]*(?:\s*\))*"
     for match in re.finditer(
         rf"(?:\(\s*)*(?:\b[A-Za-z_$][A-Za-z0-9_$]*\s*\.)?\b(?:{sink})(?:\s*\))*\s*{invoke}(.*?)\)",
@@ -960,7 +990,7 @@ def _has_hardened_ddl(decoded: str) -> bool:
         flags=re.IGNORECASE | re.DOTALL,
     )
     tagged_sql_call = re.compile(
-        r"\b(?:query|execute|exec|run|sql)\s*\(\s*[a-z_$][a-z0-9_$]*\s*`(.*?)`",
+        r"\b(?:query|execute|exec|run|sql)\s*\(\s*[a-z_$][a-z0-9_$]*(?:\s*\.\s*[a-z_$][a-z0-9_$]*)*\s*`(.*?)`",
         flags=re.IGNORECASE | re.DOTALL,
     )
     sql_authority_surfaces.extend(match.group(2) for match in sql_binding.finditer(uncommented))

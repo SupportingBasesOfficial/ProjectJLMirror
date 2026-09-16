@@ -334,10 +334,10 @@ def _sink_wrappers(decoded: str) -> set[str]:
 
 def _has_hardened_secret_flow(decoded: str) -> bool:
     tainted = _secret_taint(decoded)
-    if not tainted:
-        return False
     if _sink_call_contains(decoded, tainted):
         return True
+    if not tainted:
+        return False
     for wrapper in _sink_wrappers(decoded):
         for match in re.finditer(rf"\b{re.escape(wrapper)}\s*\((.*?)\)", decoded, flags=re.DOTALL):
             if _contains_secret_reference(match.group(1), tainted):

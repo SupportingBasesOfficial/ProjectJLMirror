@@ -274,7 +274,14 @@ def _assignment_expressions(text: str) -> list[tuple[str, str]]:
                 break
             elif not any(depths.values()) and char == "\n":
                 lookahead = text[index + 1:].lstrip()
-                if previous_significant not in "+-*/%&|^?:,.=([{":
+                expression_prefix = text[start:index]
+                keyword_continuation = bool(
+                    re.search(
+                        r"\b(?:as|await|delete|in|instanceof|new|satisfies|typeof|void|yield)\s*$",
+                        expression_prefix,
+                    )
+                )
+                if previous_significant not in "+-*/%&|^?:,.=([{<>!~" and not keyword_continuation:
                     if not lookahead.startswith((".", "?.", "?", ":", ",")):
                         end = index
                         break
@@ -859,10 +866,10 @@ def _has_hardened_ddl(decoded: str) -> bool:
     grant_membership = rf"\bgrant\s+{sql_identifier_list}\s+to\s+{sql_identifier_list}\b"
     revoke_membership = rf"\brevoke\s+(?:admin\s+option\s+for\s+)?{sql_identifier_list}\s+from\s+{sql_identifier_list}\b"
     privilege_or_ownership = rf"(?:{grant_privilege}|{revoke_privilege}|\breassign\s+owned\b)"
-    sql_membership_surfaces = [
+    sql_authority_surfaces = [
         statement
         for statement in re.split(r";", uncommented)
-        if re.match(r"\s*(?:grant|revoke)\b", statement)
+        if re.match(r"\s*(?:grant|revoke|reassign\s+owned)\b", statement)
     ]
     sql_binding = re.compile(
         r"\b(?:const|let|var)\s+(?:[a-z0-9_$]*(?:ddl|sql|query|statement|migration)[a-z0-9_$]*)\s*=\s*([\"'`])(.*?)\1",
@@ -872,12 +879,13 @@ def _has_hardened_ddl(decoded: str) -> bool:
         r"\b(?:query|execute|exec|run|sql)\s*\(\s*([\"'`])(.*?)\1",
         flags=re.IGNORECASE | re.DOTALL,
     )
-    sql_membership_surfaces.extend(match.group(2) for match in sql_binding.finditer(uncommented))
-    sql_membership_surfaces.extend(match.group(2) for match in sql_call.finditer(uncommented))
-    membership_authority = any(
-        re.search(grant_membership, surface, flags=re.IGNORECASE)
+    sql_authority_surfaces.extend(match.group(2) for match in sql_binding.finditer(uncommented))
+    sql_authority_surfaces.extend(match.group(2) for match in sql_call.finditer(uncommented))
+    sql_authority = any(
+        re.search(privilege_or_ownership, surface, flags=re.IGNORECASE)
+        or re.search(grant_membership, surface, flags=re.IGNORECASE)
         or re.search(revoke_membership, surface, flags=re.IGNORECASE)
-        for surface in sql_membership_surfaces
+        for surface in sql_authority_surfaces
     )
     return bool(
         re.search(create, uncommented, flags=re.IGNORECASE)
@@ -885,8 +893,7 @@ def _has_hardened_ddl(decoded: str) -> bool:
         or re.search(index_nulls_distinct, uncommented, flags=re.IGNORECASE)
         or re.search(foreign_table, uncommented, flags=re.IGNORECASE)
         or re.search(alter_or_drop, uncommented, flags=re.IGNORECASE)
-        or re.search(privilege_or_ownership, uncommented, flags=re.IGNORECASE)
-        or membership_authority
+        or sql_authority
     )
 
 

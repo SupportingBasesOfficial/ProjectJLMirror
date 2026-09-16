@@ -182,6 +182,14 @@ def main() -> int:
         ("apps/g2-monitoring-source-onboarding/source.ts", "const ddl = `CREATE CONSTRAINT TRIGGER g2 AFTER INSERT ON existing DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION f()`;"),
         ("apps/g2-monitoring-source-onboarding/source.ts", "const ddl = `CREATE TRUSTED PROCEDURAL LANGUAGE plpython3u`;"),
         ("apps/g2-monitoring-source-onboarding/source.ts", "const ddl = `CREATE DEFAULT CONVERSION g2 FOR 'UTF8' TO 'LATIN1' FROM func`;"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "(Reflect.apply)(database.insert, database, [{sourceId, value}]);"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "(reply.send)({value: payload.password});"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", 'const {password: pw = ""} = payload; reply.send({value: pw});'),
+        ("apps/g2-monitoring-source-onboarding/source.ts", 'const key = "role"; const {[key]: r = "viewer"} = (((provider))); if (r === "admin") allow();'),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "const ddl = `CREATE UNIQUE NULLS NOT DISTINCT INDEX g2_idx ON existing(source_id)`;"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "const ddl = `DROP DATABASE g2`;"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "const ddl = `DROP SERVER g2 CASCADE`;"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "const ddl = `ALTER ROLE app SUPERUSER`;"),
     )
     for path, text in semantic_cases:
         if validator.validate_semantic_artifact(path, text, policy) == []:

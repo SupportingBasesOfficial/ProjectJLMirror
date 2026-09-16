@@ -29,7 +29,8 @@ _DDL_OBJECTS = rf"(?:{_core.DDL_OBJECTS}|database|foreign\s+table|tablespace|ser
 
 
 def _reflect_apply_prefix() -> str:
-    return r"\bReflect\s*(?:\.\s*apply|\[\s*['\"`]apply['\"`]\s*\])\s*\("
+    member = r"\bReflect\s*(?:\.\s*apply|\[\s*['\"`]apply['\"`]\s*\])"
+    return rf"(?:\(\s*)*{member}(?:\s*\))*\s*\("
 
 
 def _decode_executable_escapes(text: str) -> str:
@@ -216,10 +217,10 @@ def _resolve_static_computed_aliases(text: str) -> str:
     names = "|".join(re.escape(name) for name in sorted(aliases, key=len, reverse=True))
 
     def replace(match: re.Match[str]) -> str:
-        return f"{match.group(1)}[{json.dumps(aliases[match.group(2)])}]"
+        return f"[{json.dumps(aliases[match.group(1)])}]"
 
     return re.sub(
-        rf"([A-Za-z0-9_$)\]])\s*\[\s*({names})\s*\]",
+        rf"\[\s*({names})\s*\]",
         replace,
         text,
     )
@@ -407,7 +408,7 @@ def _secret_taint(decoded: str) -> set[str]:
                     continue
                 pair = [part.strip() for part in item.split(":", 1)]
                 source_name = pair[0]
-                target = pair[-1]
+                target = pair[-1].split("=", 1)[0].strip()
                 if not re.fullmatch(r"[A-Za-z_$][A-Za-z0-9_$]*", target):
                     continue
                 if _raw_secret_identifier(source_name) or (source_tainted and _raw_secret_identifier(target)):
@@ -423,7 +424,7 @@ def _secret_taint(decoded: str) -> set[str]:
                     continue
                 pair = [part.strip() for part in item.split(":", 1)]
                 source_name = pair[0]
-                target = pair[-1]
+                target = pair[-1].split("=", 1)[0].strip()
                 if not re.fullmatch(r"[A-Za-z_$][A-Za-z0-9_$]*", target):
                     continue
                 if _raw_secret_identifier(source_name) or (source_tainted and _raw_secret_identifier(target)):
@@ -436,7 +437,7 @@ def _secret_taint(decoded: str) -> set[str]:
 def _sink_call_contains(text: str, names: set[str]) -> bool:
     sink = "|".join(sorted(_core.SECRET_SINK_TERMS, key=len, reverse=True))
     for match in re.finditer(
-        rf"(?:\b[A-Za-z_$][A-Za-z0-9_$]*\s*\.)?\b(?:{sink})\s*\((.*?)\)",
+        rf"(?:\(\s*)*(?:\b[A-Za-z_$][A-Za-z0-9_$]*\s*\.)?\b(?:{sink})(?:\s*\))*\s*\((.*?)\)",
         text,
         flags=re.IGNORECASE | re.DOTALL,
     ):
@@ -547,11 +548,15 @@ def _has_hardened_ddl(decoded: str) -> bool:
     modifiers = rf"(?:\s+(?:{_DDL_MODIFIERS}))*"
     create = rf"\bcreate(?:\s+or\s+replace)?{modifiers}\s+{_DDL_OBJECTS}\b"
     index_concurrently = r"\bcreate(?:\s+unique)?\s+index\s+concurrently\b"
+    index_nulls_distinct = r"\bcreate\s+unique\s+nulls\s+(?:not\s+)?distinct\s+index\b"
     foreign_table = r"\bcreate(?:\s+(?:global|local|temp|temporary|unlogged))*\s+foreign\s+table\b"
+    alter_or_drop = rf"\b(?:alter|drop)\s+{_DDL_OBJECTS}\b"
     return bool(
         re.search(create, uncommented, flags=re.IGNORECASE)
         or re.search(index_concurrently, uncommented, flags=re.IGNORECASE)
+        or re.search(index_nulls_distinct, uncommented, flags=re.IGNORECASE)
         or re.search(foreign_table, uncommented, flags=re.IGNORECASE)
+        or re.search(alter_or_drop, uncommented, flags=re.IGNORECASE)
     )
 
 

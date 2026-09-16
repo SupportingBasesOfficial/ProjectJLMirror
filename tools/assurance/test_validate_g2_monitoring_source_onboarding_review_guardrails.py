@@ -88,6 +88,14 @@ def falsify_g2_semantic_scope_guard() -> None:
         ("apps/g2-monitoring-source-onboarding/source.ts", "await fetch('/api/source-cutover');"),
         ("apps/g2-monitoring-source-onboarding/source.ts", 'provider["permi" + "ssions"].includes("source:write")'),
         ("apps/g2-monitoring-source-onboarding/Мetric/page.ts", "export const enabled = true"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "await database.insert?.({sourceId, value});"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "await (database.insert)?.({sourceId, value});"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", 'await database["insert"]?.({sourceId, value});'),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "let pw; pw = payload.password; return reply.send({value: pw});"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "const emit = v => reply.send({value: v}); emit(payload.password);"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "const ddl = `CREATE SERVER g2 FOREIGN DATA WRAPPER postgres_fdw`;"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", 'const p = provider; if (p.role === "admin") allow();'),
+        ("apps/g2-monitoring-source-onboarding/source.ts", r'fetch("/api/\x6detric")'),
     )
     for path, text in rejected:
         if not scope.validate_semantic_artifact(path, text, policy):
@@ -109,6 +117,20 @@ def falsify_g2_semantic_scope_guard() -> None:
         errors = scope.validate_semantic_artifact("apps/g2-monitoring-source-onboarding/source.ts", text, policy)
         if errors:
             raise AssertionError(f"bounded G2 semantics false-positive: {text}: {errors}")
+
+
+def falsify_g2_authorization_ledger_admission() -> None:
+    required = {
+        "governance/adversarial/learning-ledger.d/pr-154-g2-authorization-review-findings.zz-026-031.json",
+        "governance/adversarial/learning-ledger.d/z-pr-154-g2-authorization-review-findings-047-054.json",
+    }
+    missing = required - authorization.AUTH_PR_ALLOWED_PATHS
+    if missing:
+        raise AssertionError(f"governed learning-ledger fragments missing from authorization allowlist: {sorted(missing)}")
+    workflow = (authorization.ROOT / ".github/workflows/g2-monitoring-source-onboarding-authorization.yml").read_text(encoding="utf-8")
+    for path in required:
+        if workflow.count(path) < 2:
+            raise AssertionError(f"governed learning-ledger fragment missing from pull/push workflow filters: {path}")
 
 
 def falsify_g2_materialized_scope_package() -> None:
@@ -191,10 +213,11 @@ def falsify_g2_same_second_status_ordering() -> None:
 
 def main() -> int:
     falsify_g2_semantic_scope_guard()
+    falsify_g2_authorization_ledger_admission()
     falsify_g2_materialized_scope_package()
     falsify_g2_trusted_workflow_semantics()
     falsify_g2_same_second_status_ordering()
-    print("g2_review_guardrails=PASS semantic=balanced-call+post-decl-alias+destructure-taint+ddl-tablespace+separator-sequence+provider-computed+path-confusable+literal-safe workflow=blob-exact status=total-order")
+    print("g2_review_guardrails=PASS semantic=optional-call+late-taint+arrow-wrapper+ddl-server+provider-alias+hex-escape authorization=ledger-fragments workflow=blob-exact status=total-order")
     return 0
 
 

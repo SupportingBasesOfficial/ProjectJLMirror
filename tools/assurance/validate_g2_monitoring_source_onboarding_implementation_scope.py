@@ -196,7 +196,7 @@ def _split_top_level_commas(expr: str) -> list[str]:
     return pieces
 
 
-def _mask_js_comments(text: str) -> str:
+def _mask_js_comments(text: str, *, flatten_block_newlines: bool = False) -> str:
     chars = list(text)
     quote: str | None = None
     escaped = False
@@ -220,7 +220,7 @@ def _mask_js_comments(text: str) -> str:
             end = text.find("*/", index + 2)
             end = len(text) - 2 if end < 0 else end
             for position in range(index, min(len(text), end + 2)):
-                if chars[position] != "\n":
+                if flatten_block_newlines or chars[position] != "\n":
                     chars[position] = " "
             index = end + 2
             continue
@@ -618,14 +618,14 @@ def _secret_taint(decoded: str) -> set[str]:
         and (identifier not in literal_backed or identifier in property_secret_names)
     }
     changed = True
-    assignment_text = _mask_js_comments(decoded).replace("\n", " ")
+    assignment_text = _mask_js_comments(decoded, flatten_block_newlines=True)
     while changed:
         changed = False
         for target, expression in _variable_declarators(decoded):
             if target not in tainted and _contains_secret_reference(expression, tainted):
                 tainted.add(target)
                 changed = True
-        for match in re.finditer(r"(?<![=!<>A-Za-z0-9_$])([A-Za-z_$][A-Za-z0-9_$]*)\s*(?:\*\*=|>>>?=|<<=|\?\?=|\|\|=|&&=|[+\-*/%&|^]=|=(?!=|>))\s*([^;]+)", assignment_text):
+        for match in re.finditer(r"(?<![=!<>A-Za-z0-9_$])([A-Za-z_$][A-Za-z0-9_$]*)\s*(?:\*\*=|>>>?=|<<=|\?\?=|\|\|=|&&=|[+\-*/%&|^]=|=(?!=|>))\s*([^;\n]+)", assignment_text):
             target, expression = match.group(1), match.group(2)
             if target not in tainted and _contains_secret_reference(expression, tainted):
                 tainted.add(target)
@@ -668,6 +668,7 @@ def _secret_taint(decoded: str) -> set[str]:
 def _sink_call_contains(text: str, names: set[str]) -> bool:
     sink = "|".join(sorted(_core.SECRET_SINK_TERMS, key=len, reverse=True))
     invoke = r"(?:(?:\.\s*(?:call|apply)\s*)?\(|\.\s*bind\s*\([^)]*\)\s*\()"
+    grouped_receiver = r"(?:\(\s*)*\b[A-Za-z_$][A-Za-z0-9_$]*(?:\s*\))*"
     for match in re.finditer(
         rf"(?:\(\s*)*(?:\b[A-Za-z_$][A-Za-z0-9_$]*\s*\.)?\b(?:{sink})(?:\s*\))*\s*{invoke}(.*?)\)",
         text,
@@ -676,7 +677,7 @@ def _sink_call_contains(text: str, names: set[str]) -> bool:
         if _contains_secret_reference(match.group(1), names):
             return True
     for match in re.finditer(
-        rf"(?:\(\s*)*\b[A-Za-z_$][A-Za-z0-9_$]*\s*\[(?P<member>[^\]]+)\](?:\s*\))*\s*{invoke}(?P<args>.*?)\)",
+        rf"{grouped_receiver}\s*\[(?P<member>[^\]]+)\](?:\s*\))*\s*{invoke}(?P<args>.*?)\)",
         text,
         flags=re.IGNORECASE | re.DOTALL,
     ):
@@ -692,7 +693,7 @@ def _sink_call_contains(text: str, names: set[str]) -> bool:
         if _contains_secret_reference(match.group(1), names):
             return True
     for match in re.finditer(
-        rf"{_reflect_apply_prefix()}\s*(?:\(\s*)*\b[A-Za-z_$][A-Za-z0-9_$]*\s*\[([^\]]+)\](?:\s*\))*\s*,(.*?)(?:;|$)",
+        rf"{_reflect_apply_prefix()}\s*{grouped_receiver}\s*\[([^\]]+)\](?:\s*\))*\s*,(.*?)(?:;|$)",
         text,
         flags=re.IGNORECASE | re.DOTALL,
     ):
@@ -798,7 +799,16 @@ def _has_hardened_ddl(decoded: str) -> bool:
     index_nulls_distinct = r"\bcreate\s+unique\s+nulls\s+(?:not\s+)?distinct\s+index\b"
     foreign_table = r"\bcreate(?:\s+(?:global|local|temp|temporary|unlogged))*\s+foreign\s+table\b"
     alter_or_drop = rf"\b(?:alter|drop)\s+{_DDL_OBJECTS}\b"
-    privilege_or_ownership = r"\b(?:grant|revoke|reassign\s+owned)\b"
+    sql_identifier = r'(?:"(?:[^"]|"")*"|[a-z_][a-z0-9_$]*)'
+    sql_identifier_list = rf"{sql_identifier}(?:\s*,\s*{sql_identifier})*"
+    privilege = r"(?:all(?:\s+privileges)?|select|insert|update|delete|truncate|references|trigger|usage|create|connect|temporary|execute|maintain|set|alter\s+system)"
+    privilege_item = rf"{privilege}(?:\s*\([^)]*\))?"
+    privilege_list = rf"{privilege_item}(?:\s*,\s*{privilege_item})*"
+    grant_privilege = rf"\bgrant\s+{privilege_list}\s+on\b"
+    revoke_privilege = rf"\brevoke\s+(?:grant\s+option\s+for\s+)?{privilege_list}\s+on\b"
+    grant_membership = rf"\bgrant\s+{sql_identifier_list}\s+to\s+{sql_identifier_list}\b"
+    revoke_membership = rf"\brevoke\s+(?:admin\s+option\s+for\s+)?{sql_identifier_list}\s+from\s+{sql_identifier_list}\b"
+    privilege_or_ownership = rf"(?:{grant_privilege}|{revoke_privilege}|{grant_membership}|{revoke_membership}|\breassign\s+owned\b)"
     return bool(
         re.search(create, uncommented, flags=re.IGNORECASE)
         or re.search(index_concurrently, uncommented, flags=re.IGNORECASE)

@@ -13,6 +13,7 @@ on:
       - 'tools/assurance/validate_g2_monitoring_source_onboarding_scope_readiness.py'
       - 'tools/assurance/test_validate_g2_monitoring_source_onboarding_scope_readiness.py'
       - 'tools/assurance/test_validate_g2_monitoring_source_onboarding_review_guardrails.py'
+      # PR154 adversarial-learning shards are authorization truth and must trigger this gate.
       - 'governance/adversarial/learning-ledger.d/pr-154-g2-authorization-review-findings.json'
       - 'governance/adversarial/learning-ledger.d/pr-154-g2-authorization-review-findings.zz-026-031.json'
       - 'governance/adversarial/learning-ledger.d/z-pr-154-g2-authorization-review-findings-032-037.json'
@@ -40,6 +41,7 @@ on:
       - 'tools/assurance/validate_g2_monitoring_source_onboarding_scope_readiness.py'
       - 'tools/assurance/test_validate_g2_monitoring_source_onboarding_scope_readiness.py'
       - 'tools/assurance/test_validate_g2_monitoring_source_onboarding_review_guardrails.py'
+      # PR154 adversarial-learning shards are authorization truth and must trigger this gate.
       - 'governance/adversarial/learning-ledger.d/pr-154-g2-authorization-review-findings.json'
       - 'governance/adversarial/learning-ledger.d/pr-154-g2-authorization-review-findings.zz-026-031.json'
       - 'governance/adversarial/learning-ledger.d/z-pr-154-g2-authorization-review-findings-032-037.json'

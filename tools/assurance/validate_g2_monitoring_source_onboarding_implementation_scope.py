@@ -235,6 +235,56 @@ def _mask_js_comments(text: str, *, flatten_block_newlines: bool = False) -> str
     return "".join(chars)
 
 
+def _assignment_expressions(text: str) -> list[tuple[str, str]]:
+    assignments: list[tuple[str, str]] = []
+    pattern = re.compile(
+        r"(?<![=!<>A-Za-z0-9_$])([A-Za-z_$][A-Za-z0-9_$]*)\s*"
+        r"(?:\*\*=|>>>?=|<<=|\?\?=|\|\|=|&&=|[+\-*/%&|^]=|=(?!=|>))"
+    )
+    for match in pattern.finditer(text):
+        start = match.end()
+        while start < len(text) and text[start].isspace():
+            start += 1
+        depths = {"(": 0, "[": 0, "{": 0}
+        closing = {")": "(", "]": "[", "}": "{"}
+        quote: str | None = None
+        escaped = False
+        previous_significant = ""
+        end = len(text)
+        index = start
+        while index < len(text):
+            char = text[index]
+            if quote is not None:
+                if escaped:
+                    escaped = False
+                elif char == "\\":
+                    escaped = True
+                elif char == quote:
+                    quote = None
+                index += 1
+                continue
+            if char in "'\"`":
+                quote = char
+            elif char in depths:
+                depths[char] += 1
+            elif char in closing:
+                depths[closing[char]] = max(0, depths[closing[char]] - 1)
+            elif not any(depths.values()) and char == ";":
+                end = index
+                break
+            elif not any(depths.values()) and char == "\n":
+                lookahead = text[index + 1:].lstrip()
+                if previous_significant not in "+-*/%&|^?:,.=([{":
+                    if not lookahead.startswith((".", "?.", "?", ":", ",")):
+                        end = index
+                        break
+            if not char.isspace():
+                previous_significant = char
+            index += 1
+        assignments.append((match.group(1), text[start:end]))
+    return assignments
+
+
 def _variable_declarators(text: str) -> list[tuple[str, str]]:
     declarators: list[tuple[str, str]] = []
     text = _mask_js_comments(text)
@@ -625,8 +675,7 @@ def _secret_taint(decoded: str) -> set[str]:
             if target not in tainted and _contains_secret_reference(expression, tainted):
                 tainted.add(target)
                 changed = True
-        for match in re.finditer(r"(?<![=!<>A-Za-z0-9_$])([A-Za-z_$][A-Za-z0-9_$]*)\s*(?:\*\*=|>>>?=|<<=|\?\?=|\|\|=|&&=|[+\-*/%&|^]=|=(?!=|>))\s*([^;\n]+)", assignment_text):
-            target, expression = match.group(1), match.group(2)
+        for target, expression in _assignment_expressions(assignment_text):
             if target not in tainted and _contains_secret_reference(expression, tainted):
                 tainted.add(target)
                 changed = True
@@ -666,6 +715,7 @@ def _secret_taint(decoded: str) -> set[str]:
 
 
 def _sink_call_contains(text: str, names: set[str]) -> bool:
+    text = _mask_js_comments(text)
     sink = "|".join(sorted(_core.SECRET_SINK_TERMS, key=len, reverse=True))
     invoke = r"(?:(?:\.\s*(?:call|apply)\s*)?\(|\.\s*bind\s*\([^)]*\)\s*\()"
     grouped_receiver = r"(?:\(\s*)*\b[A-Za-z_$][A-Za-z0-9_$]*(?:\s*\))*"
@@ -801,14 +851,34 @@ def _has_hardened_ddl(decoded: str) -> bool:
     alter_or_drop = rf"\b(?:alter|drop)\s+{_DDL_OBJECTS}\b"
     sql_identifier = r'(?:"(?:[^"]|"")*"|[a-z_][a-z0-9_$]*)'
     sql_identifier_list = rf"{sql_identifier}(?:\s*,\s*{sql_identifier})*"
-    privilege = r"(?:all(?:\s+privileges)?|select|insert|update|delete|truncate|references|trigger|usage|create|connect|temporary|execute|maintain|set|alter\s+system)"
+    privilege = r"(?:all(?:\s+privileges)?|select|insert|update|delete|truncate|references|trigger|usage|create|connect|temp(?:orary)?|execute|maintain|set|alter\s+system)"
     privilege_item = rf"{privilege}(?:\s*\([^)]*\))?"
     privilege_list = rf"{privilege_item}(?:\s*,\s*{privilege_item})*"
     grant_privilege = rf"\bgrant\s+{privilege_list}\s+on\b"
     revoke_privilege = rf"\brevoke\s+(?:grant\s+option\s+for\s+)?{privilege_list}\s+on\b"
     grant_membership = rf"\bgrant\s+{sql_identifier_list}\s+to\s+{sql_identifier_list}\b"
     revoke_membership = rf"\brevoke\s+(?:admin\s+option\s+for\s+)?{sql_identifier_list}\s+from\s+{sql_identifier_list}\b"
-    privilege_or_ownership = rf"(?:{grant_privilege}|{revoke_privilege}|{grant_membership}|{revoke_membership}|\breassign\s+owned\b)"
+    privilege_or_ownership = rf"(?:{grant_privilege}|{revoke_privilege}|\breassign\s+owned\b)"
+    sql_membership_surfaces = [
+        statement
+        for statement in re.split(r";", uncommented)
+        if re.match(r"\s*(?:grant|revoke)\b", statement)
+    ]
+    sql_binding = re.compile(
+        r"\b(?:const|let|var)\s+(?:[a-z0-9_$]*(?:ddl|sql|query|statement|migration)[a-z0-9_$]*)\s*=\s*([\"'`])(.*?)\1",
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    sql_call = re.compile(
+        r"\b(?:query|execute|exec|run|sql)\s*\(\s*([\"'`])(.*?)\1",
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    sql_membership_surfaces.extend(match.group(2) for match in sql_binding.finditer(uncommented))
+    sql_membership_surfaces.extend(match.group(2) for match in sql_call.finditer(uncommented))
+    membership_authority = any(
+        re.search(grant_membership, surface, flags=re.IGNORECASE)
+        or re.search(revoke_membership, surface, flags=re.IGNORECASE)
+        for surface in sql_membership_surfaces
+    )
     return bool(
         re.search(create, uncommented, flags=re.IGNORECASE)
         or re.search(index_concurrently, uncommented, flags=re.IGNORECASE)
@@ -816,6 +886,7 @@ def _has_hardened_ddl(decoded: str) -> bool:
         or re.search(foreign_table, uncommented, flags=re.IGNORECASE)
         or re.search(alter_or_drop, uncommented, flags=re.IGNORECASE)
         or re.search(privilege_or_ownership, uncommented, flags=re.IGNORECASE)
+        or membership_authority
     )
 
 

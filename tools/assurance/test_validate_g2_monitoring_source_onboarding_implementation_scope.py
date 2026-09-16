@@ -220,6 +220,10 @@ def main() -> int:
         ("apps/g2-monitoring-source-onboarding/source.ts", "const ddl = `REVOKE ADMIN OPTION FOR app_role FROM app`;"),
         ("apps/g2-monitoring-source-onboarding/source.ts", 'Reflect.apply((reply)["send"], reply, [{value: payload.password}]);'),
         ("apps/g2-monitoring-source-onboarding/source.ts", "const ddl = `GRANT SELECT (source_id) ON monitoring.sources TO app`;"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "let out; out = (\n payload.password\n); reply.send({value: out});"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", 'Reflect.apply((reply /* harmless */)["send"], reply, [{value: payload.password}]);'),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "const ddl = `GRANT TEMP ON DATABASE app TO role`;"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "const ddl = `REVOKE TEMP ON DATABASE app FROM role`;"),
     )
     for path, text in semantic_cases:
         if validator.validate_semantic_artifact(path, text, policy) == []:
@@ -246,6 +250,7 @@ def main() -> int:
         'message = getDisplayValue()\nconst x = payload.password; reply.send({value: message});',
         'const label = "Grant camera access";',
         'function revoke() { return false; }',
+        'const label = "Grant access to user";',
     ):
         errors = validator.validate_semantic_artifact("apps/g2-monitoring-source-onboarding/source.ts", text, policy)
         if errors:

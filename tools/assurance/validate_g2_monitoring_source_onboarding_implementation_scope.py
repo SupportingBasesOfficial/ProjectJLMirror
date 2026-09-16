@@ -196,8 +196,48 @@ def _split_top_level_commas(expr: str) -> list[str]:
     return pieces
 
 
+def _mask_js_comments(text: str) -> str:
+    chars = list(text)
+    quote: str | None = None
+    escaped = False
+    index = 0
+    while index < len(text):
+        char = text[index]
+        if quote is not None:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == quote:
+                quote = None
+            index += 1
+            continue
+        if char in "'\"`":
+            quote = char
+            index += 1
+            continue
+        if char == "/" and index + 1 < len(text) and text[index + 1] == "*":
+            end = text.find("*/", index + 2)
+            end = len(text) - 2 if end < 0 else end
+            for position in range(index, min(len(text), end + 2)):
+                if chars[position] != "\n":
+                    chars[position] = " "
+            index = end + 2
+            continue
+        if char == "/" and index + 1 < len(text) and text[index + 1] == "/":
+            end = text.find("\n", index + 2)
+            end = len(text) if end < 0 else end
+            for position in range(index, end):
+                chars[position] = " "
+            index = end
+            continue
+        index += 1
+    return "".join(chars)
+
+
 def _variable_declarators(text: str) -> list[tuple[str, str]]:
     declarators: list[tuple[str, str]] = []
+    text = _mask_js_comments(text)
     for start_match in re.finditer(r"\b(?:const|let|var)\s+", text):
         start = start_match.end()
         depths = {"(": 0, "[": 0, "{": 0}
@@ -309,9 +349,11 @@ def _static_computed_member(expr: str) -> str | None:
                 return ""
             return value
 
-        body = re.sub(r"\$\{([^{}]*)\}", replace_interpolation, body)
-        if failed or "${" in body:
-            return None
+        while "${" in body:
+            previous = body
+            body = re.sub(r"\$\{([^{}]*)\}", replace_interpolation, body)
+            if failed or body == previous:
+                return None
         values.append(body)
     return "".join(values).casefold()
 
@@ -576,13 +618,14 @@ def _secret_taint(decoded: str) -> set[str]:
         and (identifier not in literal_backed or identifier in property_secret_names)
     }
     changed = True
+    assignment_text = _mask_js_comments(decoded).replace("\n", " ")
     while changed:
         changed = False
         for target, expression in _variable_declarators(decoded):
             if target not in tainted and _contains_secret_reference(expression, tainted):
                 tainted.add(target)
                 changed = True
-        for match in re.finditer(r"(?<![=!<>A-Za-z0-9_$])([A-Za-z_$][A-Za-z0-9_$]*)\s*(?:\*\*=|>>>?=|<<=|\?\?=|\|\|=|&&=|[+\-*/%&|^]=|=(?!=|>))\s*([^;\n]+)", decoded):
+        for match in re.finditer(r"(?<![=!<>A-Za-z0-9_$])([A-Za-z_$][A-Za-z0-9_$]*)\s*(?:\*\*=|>>>?=|<<=|\?\?=|\|\|=|&&=|[+\-*/%&|^]=|=(?!=|>))\s*([^;]+)", assignment_text):
             target, expression = match.group(1), match.group(2)
             if target not in tainted and _contains_secret_reference(expression, tainted):
                 tainted.add(target)
@@ -647,6 +690,13 @@ def _sink_call_contains(text: str, names: set[str]) -> bool:
         flags=re.IGNORECASE | re.DOTALL,
     ):
         if _contains_secret_reference(match.group(1), names):
+            return True
+    for match in re.finditer(
+        rf"{_reflect_apply_prefix()}\s*(?:\(\s*)*\b[A-Za-z_$][A-Za-z0-9_$]*\s*\[([^\]]+)\](?:\s*\))*\s*,(.*?)(?:;|$)",
+        text,
+        flags=re.IGNORECASE | re.DOTALL,
+    ):
+        if _static_computed_member(match.group(1)) in _core.SECRET_SINK_TERMS and _contains_secret_reference(match.group(2), names):
             return True
     if re.search(r"\breturn\s+\{", text) and _contains_secret_reference(text, names):
         return True
@@ -748,7 +798,7 @@ def _has_hardened_ddl(decoded: str) -> bool:
     index_nulls_distinct = r"\bcreate\s+unique\s+nulls\s+(?:not\s+)?distinct\s+index\b"
     foreign_table = r"\bcreate(?:\s+(?:global|local|temp|temporary|unlogged))*\s+foreign\s+table\b"
     alter_or_drop = rf"\b(?:alter|drop)\s+{_DDL_OBJECTS}\b"
-    privilege_or_ownership = r"\b(?:(?:grant|revoke)\s+(?:all|select|insert|update|delete|truncate|references|trigger|usage|create|connect|temporary|execute|maintain|set|alter\s+system)|reassign\s+owned)\b"
+    privilege_or_ownership = r"\b(?:grant|revoke|reassign\s+owned)\b"
     return bool(
         re.search(create, uncommented, flags=re.IGNORECASE)
         or re.search(index_concurrently, uncommented, flags=re.IGNORECASE)

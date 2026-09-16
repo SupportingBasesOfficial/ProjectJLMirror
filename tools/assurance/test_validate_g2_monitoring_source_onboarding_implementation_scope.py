@@ -214,6 +214,10 @@ def main() -> int:
         ("apps/g2-monitoring-source-onboarding/source.ts", "const ddl = `GRANT SELECT ON TABLE monitoring.sources TO app`;"),
         ("apps/g2-monitoring-source-onboarding/source.ts", "const ddl = `REVOKE SELECT ON TABLE monitoring.sources FROM app`;"),
         ("apps/g2-monitoring-source-onboarding/source.ts", "const ddl = `REASSIGN OWNED BY app TO admin`;"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", 'Reflect.apply(reply["send"], reply, [{value: payload.password}]);'),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "let out; out = /* explanation\n*/ payload.password; reply.send({value: out});"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "const ddl = `GRANT app_role TO app`;"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "const ddl = `REVOKE ADMIN OPTION FOR app_role FROM app`;"),
     )
     for path, text in semantic_cases:
         if validator.validate_semantic_artifact(path, text, policy) == []:
@@ -235,6 +239,8 @@ def main() -> int:
         'const providerRoleLabel = "Provider status"; return <div role="status" aria-label={providerRoleLabel}/>;',
         'const passwordError = "Password is required"; reply.send({error: passwordError});',
         'const passwordError = `Password ${"is"} required`; reply.send({error: passwordError});',
+        '// const key = "password";\nconst key = getDisplayKey(); reply.send({value: payload[key]});',
+        'const passwordError = `Password ${`${"is"}`} required`; reply.send({error: passwordError});',
     ):
         errors = validator.validate_semantic_artifact("apps/g2-monitoring-source-onboarding/source.ts", text, policy)
         if errors:

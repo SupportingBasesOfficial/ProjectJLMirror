@@ -24,7 +24,7 @@ for _name in dir(_core):
 DEFAULT_ROOT = Path.cwd()
 EXPECTED_READINESS_VALIDATOR = "tools/assurance/validate_g2_monitoring_source_onboarding_scope_readiness.py"
 _ORIGINAL_VALIDATE_SEMANTIC_ARTIFACT = _core.validate_semantic_artifact
-_DDL_MODIFIERS = "temp|temporary|unlogged|unique|concurrently|global|local"
+_DDL_MODIFIERS = "temp|temporary|unlogged|unique|concurrently|global|local|recursive"
 _DDL_OBJECTS = rf"(?:{_core.DDL_OBJECTS}|database|foreign\s+table|tablespace|server|foreign\s+data\s+wrapper|user\s+mapping|publication|subscription|role|user|group|domain|aggregate|collation|conversion|language|operator(?:\s+(?:class|family))?|statistics|rule|access\s+method|event\s+trigger|routine|cast|transform|text\s+search\s+(?:configuration|dictionary|parser|template))"
 
 
@@ -103,11 +103,72 @@ def _persistence_aliases(decoded: str) -> set[str]:
     return aliases
 
 
+def _strip_balanced_parentheses(value: str) -> str:
+    value = value.strip()
+    while value.startswith("(") and value.endswith(")"):
+        depth = 0
+        quote: str | None = None
+        escaped = False
+        encloses_all = True
+        for index, char in enumerate(value):
+            if quote is not None:
+                if escaped:
+                    escaped = False
+                elif char == "\\":
+                    escaped = True
+                elif char == quote:
+                    quote = None
+                continue
+            if char in "'\"`":
+                quote = char
+            elif char == "(":
+                depth += 1
+            elif char == ")":
+                depth -= 1
+                if depth == 0 and index != len(value) - 1:
+                    encloses_all = False
+                    break
+        if not encloses_all or depth != 0:
+            break
+        value = value[1:-1].strip()
+    return value
+
+
+def _split_static_concat(expr: str) -> list[str]:
+    pieces: list[str] = []
+    start = 0
+    depth = 0
+    quote: str | None = None
+    escaped = False
+    for index, char in enumerate(expr):
+        if quote is not None:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == quote:
+                quote = None
+            continue
+        if char in "'\"`":
+            quote = char
+        elif char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+        elif char == "+" and depth == 0:
+            pieces.append(expr[start:index])
+            start = index + 1
+    pieces.append(expr[start:])
+    return pieces
+
+
 def _static_computed_member(expr: str) -> str | None:
-    pieces = re.split(r"\s*\+\s*", expr.strip())
+    expr = _strip_balanced_parentheses(expr)
+    pieces = _split_static_concat(expr)
     values: list[str] = []
     for piece in pieces:
-        match = re.fullmatch(r"([\'\"`])([^\'\"`]*)\1", piece.strip())
+        piece = _strip_balanced_parentheses(piece)
+        match = re.fullmatch(r"([\'\"`])([^\'\"`]*)\1", piece)
         if not match or (match.group(1) == "`" and "${" in match.group(2)):
             return None
         values.append(match.group(2))
@@ -116,7 +177,8 @@ def _static_computed_member(expr: str) -> str | None:
 
 def _fold_static_string_concatenations(text: str) -> str:
     literal = r"(?:'(?:\\.|[^'\\])*'|\"(?:\\.|[^\"\\])*\"|\`(?:\\.|[^\`\\])*\`)"
-    pattern = re.compile(rf"{literal}(?:\s*\+\s*{literal})+")
+    grouped_literal = rf"(?:\(\s*)*{literal}(?:\s*\))*"
+    pattern = re.compile(rf"{grouped_literal}(?:\s*\+\s*{grouped_literal})+")
     previous = None
     while previous != text:
         previous = text
@@ -174,7 +236,7 @@ def _destructured_member_binding(item: str) -> tuple[str, str] | None:
         target = remainder[1:].split("=", 1)[0].strip()
     else:
         pair = [part.strip() for part in item.split(":", 1)]
-        source_name = pair[0].casefold()
+        source_name = pair[0].split("=", 1)[0].strip().casefold()
         target = pair[-1].split("=", 1)[0].strip()
     if not re.fullmatch(r"[A-Za-z_$][A-Za-z0-9_$]*", target):
         return None
@@ -200,11 +262,24 @@ def _has_hardened_persistence_write(decoded: str) -> bool:
     )
     if any(re.search(pattern, decoded, flags=re.IGNORECASE) for pattern in direct_patterns):
         return True
+    if re.search(
+        rf"\bReflect\s*\.\s*apply\s*\(\s*{grouped_member_expr}\s*,",
+        decoded,
+        flags=re.IGNORECASE,
+    ):
+        return True
 
     computed_expr = rf"{receiver_expr}\s*(?:\?\.)?\s*\[([^\]]+)\]"
     grouped_computed_expr = rf"(?:\(\s*)*{computed_expr}(?:\s*\))*"
     for match in re.finditer(
         rf"(?<![A-Za-z0-9_$]){grouped_computed_expr}\s*{invoke}",
+        decoded,
+        flags=re.IGNORECASE,
+    ):
+        if _static_computed_member(match.group(1)) in _core.PERSISTENCE_WRITES:
+            return True
+    for match in re.finditer(
+        rf"\bReflect\s*\.\s*apply\s*\(\s*{grouped_computed_expr}\s*,",
         decoded,
         flags=re.IGNORECASE,
     ):
@@ -228,7 +303,15 @@ def _has_hardened_persistence_write(decoded: str) -> bool:
                 binding = _destructured_member_binding(item)
                 if binding is not None and binding[0] in _core.PERSISTENCE_WRITES:
                     method_aliases.add(binding[1])
-    return any(re.search(rf"\b{re.escape(alias)}\s*{invoke}", decoded) for alias in method_aliases)
+    return any(
+        re.search(rf"\b{re.escape(alias)}\s*{invoke}", decoded)
+        or re.search(
+            rf"\bReflect\s*\.\s*apply\s*\(\s*{re.escape(alias)}\s*,",
+            decoded,
+            flags=re.IGNORECASE,
+        )
+        for alias in method_aliases
+    )
 
 
 def _raw_secret_identifier(identifier: str) -> bool:
@@ -355,6 +438,14 @@ def _sink_call_contains(text: str, names: set[str]) -> bool:
     ):
         if _contains_secret_reference(match.group(1), names):
             return True
+    for match in re.finditer(
+        r"\b[A-Za-z_$][A-Za-z0-9_$]*\s*\[([^\]]+)\]\s*\((.*?)\)",
+        text,
+        flags=re.IGNORECASE | re.DOTALL,
+    ):
+        member = _static_computed_member(match.group(1))
+        if member in _core.SECRET_SINK_TERMS and _contains_secret_reference(match.group(2), names):
+            return True
     if re.search(r"\breturn\s+\{", text) and _contains_secret_reference(text, names):
         return True
     return False
@@ -466,9 +557,10 @@ def _provider_aliases(decoded: str) -> set[str]:
     while changed:
         changed = False
         source = "|".join(re.escape(name) for name in sorted(aliases, key=len, reverse=True))
+        grouped_source = rf"(?:\(\s*)*(?:{source})(?:\s*\))*"
         patterns = (
-            rf"\b(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*(?:{source})\b",
-            rf"(?<![A-Za-z0-9_$])([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*(?:{source})\b",
+            rf"\b(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*{grouped_source}\s*(?:[;\n]|$)",
+            rf"(?<![A-Za-z0-9_$])([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*{grouped_source}\s*(?:[;\n]|$)",
         )
         for pattern in patterns:
             for match in re.finditer(pattern, decoded, flags=re.IGNORECASE):
@@ -507,8 +599,10 @@ def _provider_authority_related(decoded: str) -> bool:
                 return True
     for identifier in _core._raw_identifiers(decoded):
         parts = _core._split_components(identifier)
-        if any(alias.casefold() in parts for alias in aliases) and any(term in parts for term in _core.PROVIDER_AUTHORITY_TERMS):
-            return True
+        for index in range(len(parts) - 1):
+            pair = {parts[index], parts[index + 1]}
+            if pair & {alias.casefold() for alias in aliases} and pair & _core.PROVIDER_AUTHORITY_TERMS:
+                return True
     return False
 
 

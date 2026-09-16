@@ -83,7 +83,6 @@ AUTH_PR_ALLOWED_PATHS = {
     "governance/adversarial/learning-ledger.d/pr-154-g2-authorization-review-findings.zz-026-031.json",
     "governance/adversarial/learning-ledger.d/z-pr-154-g2-authorization-review-findings-032-037.json",
     "governance/adversarial/learning-ledger.d/z-pr-154-g2-authorization-review-findings-047-054.json",
-    "governance/adversarial/learning-ledger.d/zz-pr-154-g2-authorization-review-findings-133-136.json",
     "implementation/g2-monitoring-source-onboarding-authorization/AUTHORIZATION.md",
     "implementation/g2-monitoring-source-onboarding-authorization/AUTHORIZATION_MANIFEST.json",
     "implementation/g2-monitoring-source-onboarding-authorization/TASK_PACKET.md",

@@ -202,21 +202,69 @@ def _variable_declarators(text: str) -> list[tuple[str, str]]:
         start = start_match.end()
         depths = {"(": 0, "[": 0, "{": 0}
         closing = {")": "(", "]": "[", "}": "{"}
-        quote: str | None = None
+        contexts: list[tuple[str, int]] = []
         escaped = False
         end = len(text)
-        for index in range(start, len(text)):
+        index = start
+        previous_significant = ""
+        while index < len(text):
             char = text[index]
-            if quote is not None:
+            context = contexts[-1][0] if contexts else "code"
+            if context in {"single", "double"}:
                 if escaped:
                     escaped = False
                 elif char == "\\":
                     escaped = True
-                elif char == quote:
-                    quote = None
+                elif (context == "single" and char == "'") or (context == "double" and char == '"'):
+                    contexts.pop()
+                index += 1
                 continue
-            if char in "'\"`":
-                quote = char
+            if context == "template":
+                if escaped:
+                    escaped = False
+                elif char == "\\":
+                    escaped = True
+                elif char == "`":
+                    contexts.pop()
+                elif char == "$" and index + 1 < len(text) and text[index + 1] == "{":
+                    contexts.append(("interpolation", 1))
+                    index += 1
+                index += 1
+                continue
+            if context == "interpolation":
+                depth = contexts[-1][1]
+                if char == "'":
+                    contexts.append(("single", 0))
+                elif char == '"':
+                    contexts.append(("double", 0))
+                elif char == "`":
+                    contexts.append(("template", 0))
+                elif char == "{":
+                    contexts[-1] = ("interpolation", depth + 1)
+                elif char == "}":
+                    if depth == 1:
+                        contexts.pop()
+                    else:
+                        contexts[-1] = ("interpolation", depth - 1)
+                index += 1
+                continue
+            if char == "/" and index + 1 < len(text) and text[index + 1] == "*":
+                close = text.find("*/", index + 2)
+                index = len(text) if close < 0 else close + 2
+                continue
+            if char == "/" and index + 1 < len(text) and text[index + 1] == "/":
+                newline = text.find("\n", index + 2)
+                if newline < 0:
+                    end = len(text)
+                    break
+                index = newline
+                char = "\n"
+            if char == "'":
+                contexts.append(("single", 0))
+            elif char == '"':
+                contexts.append(("double", 0))
+            elif char == "`":
+                contexts.append(("template", 0))
             elif char in depths:
                 depths[char] += 1
             elif char in closing:
@@ -224,9 +272,12 @@ def _variable_declarators(text: str) -> list[tuple[str, str]]:
             elif not any(depths.values()) and char == ";":
                 end = index
                 break
-            elif not any(depths.values()) and char == "\n":
+            elif not any(depths.values()) and char == "\n" and previous_significant != ",":
                 end = index
                 break
+            if not char.isspace():
+                previous_significant = char
+            index += 1
         for item in _split_top_level_commas(text[start:end]):
             match = re.fullmatch(r"\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*(.+?)\s*", item)
             if match:
@@ -240,11 +291,71 @@ def _static_computed_member(expr: str) -> str | None:
     values: list[str] = []
     for piece in pieces:
         piece = _strip_balanced_parentheses(piece)
-        match = re.fullmatch(r"([\'\"`])([^\'\"`]*)\1", piece)
-        if not match or (match.group(1) == "`" and "${" in match.group(2)):
+        match = re.fullmatch(r"([\'\"])([^\'\"]*)\1", piece, flags=re.DOTALL)
+        if match:
+            values.append(match.group(2))
+            continue
+        template = re.fullmatch(r"`(.*)`", piece, flags=re.DOTALL)
+        if not template:
             return None
-        values.append(match.group(2))
+        body = template.group(1)
+        failed = False
+
+        def replace_interpolation(interpolation: re.Match[str]) -> str:
+            nonlocal failed
+            value = _static_computed_member(interpolation.group(1))
+            if value is None:
+                failed = True
+                return ""
+            return value
+
+        body = re.sub(r"\$\{([^{}]*)\}", replace_interpolation, body)
+        if failed or "${" in body:
+            return None
+        values.append(body)
     return "".join(values).casefold()
+
+
+def _normalize_bound_call_arguments(text: str) -> str:
+    pieces: list[str] = []
+    cursor = 0
+    search_from = 0
+    while True:
+        match = re.search(r"\.\s*bind\s*\(", text[search_from:])
+        if not match:
+            pieces.append(text[cursor:])
+            return "".join(pieces)
+        match_start = search_from + match.start()
+        open_index = text.find("(", match_start)
+        depth = 0
+        quote: str | None = None
+        escaped = False
+        close_index = -1
+        for index in range(open_index, len(text)):
+            char = text[index]
+            if quote is not None:
+                if escaped:
+                    escaped = False
+                elif char == "\\":
+                    escaped = True
+                elif char == quote:
+                    quote = None
+                continue
+            if char in "'\"`":
+                quote = char
+            elif char == "(":
+                depth += 1
+            elif char == ")":
+                depth -= 1
+                if depth == 0:
+                    close_index = index
+                    break
+        if close_index < 0:
+            pieces.append(text[cursor:])
+            return "".join(pieces)
+        pieces.append(text[cursor:open_index + 1])
+        cursor = close_index
+        search_from = close_index + 1
 
 
 def _fold_static_string_concatenations(text: str) -> str:
@@ -471,7 +582,7 @@ def _secret_taint(decoded: str) -> set[str]:
             if target not in tainted and _contains_secret_reference(expression, tainted):
                 tainted.add(target)
                 changed = True
-        for match in re.finditer(r"(?<![=!<>A-Za-z0-9_$])([A-Za-z_$][A-Za-z0-9_$]*)\s*(?:\?\?=|\|\|=|&&=|=(?!=|>))\s*([^;\n]+)", decoded):
+        for match in re.finditer(r"(?<![=!<>A-Za-z0-9_$])([A-Za-z_$][A-Za-z0-9_$]*)\s*(?:\*\*=|>>>?=|<<=|\?\?=|\|\|=|&&=|[+\-*/%&|^]=|=(?!=|>))\s*([^;\n]+)", decoded):
             target, expression = match.group(1), match.group(2)
             if target not in tainted and _contains_secret_reference(expression, tainted):
                 tainted.add(target)
@@ -528,6 +639,14 @@ def _sink_call_contains(text: str, names: set[str]) -> bool:
     ):
         member = _static_computed_member(match.group("member"))
         if member in _core.SECRET_SINK_TERMS and _contains_secret_reference(match.group("args"), names):
+            return True
+    direct_sink = rf"(?:\(\s*)*(?:\b[A-Za-z_$][A-Za-z0-9_$]*\s*\.)?\b(?:{sink})(?:\s*\))*"
+    for match in re.finditer(
+        rf"{_reflect_apply_prefix()}\s*{direct_sink}\s*,(.*?)(?:;|$)",
+        text,
+        flags=re.IGNORECASE | re.DOTALL,
+    ):
+        if _contains_secret_reference(match.group(1), names):
             return True
     if re.search(r"\breturn\s+\{", text) and _contains_secret_reference(text, names):
         return True
@@ -629,12 +748,14 @@ def _has_hardened_ddl(decoded: str) -> bool:
     index_nulls_distinct = r"\bcreate\s+unique\s+nulls\s+(?:not\s+)?distinct\s+index\b"
     foreign_table = r"\bcreate(?:\s+(?:global|local|temp|temporary|unlogged))*\s+foreign\s+table\b"
     alter_or_drop = rf"\b(?:alter|drop)\s+{_DDL_OBJECTS}\b"
+    privilege_or_ownership = r"\b(?:(?:grant|revoke)\s+(?:all|select|insert|update|delete|truncate|references|trigger|usage|create|connect|temporary|execute|maintain|set|alter\s+system)|reassign\s+owned)\b"
     return bool(
         re.search(create, uncommented, flags=re.IGNORECASE)
         or re.search(index_concurrently, uncommented, flags=re.IGNORECASE)
         or re.search(index_nulls_distinct, uncommented, flags=re.IGNORECASE)
         or re.search(foreign_table, uncommented, flags=re.IGNORECASE)
         or re.search(alter_or_drop, uncommented, flags=re.IGNORECASE)
+        or re.search(privilege_or_ownership, uncommented, flags=re.IGNORECASE)
     )
 
 
@@ -703,6 +824,7 @@ def validate_semantic_artifact(path: str, text: str, policy: dict) -> list[str]:
     decoded = _decode_executable_escapes(text)
     decoded = _fold_static_string_concatenations(decoded)
     decoded = _resolve_static_computed_aliases(decoded)
+    decoded = _normalize_bound_call_arguments(decoded)
 
     if any(ord(char) > 127 for char in path):
         errors.append(f"non-ASCII/confusable path forbidden in governed G2 artifact: {path}")

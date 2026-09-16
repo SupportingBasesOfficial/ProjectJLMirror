@@ -204,6 +204,16 @@ def main() -> int:
         ("apps/g2-monitoring-source-onboarding/source.ts", 'let password = "Password label"; password = payload.password; reply.send({value: password});'),
         ("apps/g2-monitoring-source-onboarding/source.ts", 'const opts = { fn(){ return "x"; } }, key = "password"; reply.send({value: payload[key]});'),
         ("apps/g2-monitoring-source-onboarding/source.ts", "const ddl = `ALTER SYSTEM SET log_statement = 'all'`;"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", 'const first = 0,\n key = "password"; reply.send({value: payload[key]});'),
+        ("apps/g2-monitoring-source-onboarding/source.ts", 'const first = 0 /* ; */, key = "password"; reply.send({value: payload[key]});'),
+        ("apps/g2-monitoring-source-onboarding/source.ts", 'const opts = `${true ? `foo;` : `bar;`}`, key = "password"; reply.send({value: payload[key]});'),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "Reflect.apply(reply.send, reply, [{value: payload.password}]);"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", 'Reflect["apply"](reply.send, reply, [{value: payload.password}]);'),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "reply.send.bind(getReply())({value: payload.password});"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", 'let passwordError = "Password is required"; passwordError += payload.password; reply.send({value: passwordError});'),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "const ddl = `GRANT SELECT ON TABLE monitoring.sources TO app`;"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "const ddl = `REVOKE SELECT ON TABLE monitoring.sources FROM app`;"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "const ddl = `REASSIGN OWNED BY app TO admin`;"),
     )
     for path, text in semantic_cases:
         if validator.validate_semantic_artifact(path, text, policy) == []:
@@ -224,6 +234,7 @@ def main() -> int:
         'export const providerDisplayRole = "status";',
         'const providerRoleLabel = "Provider status"; return <div role="status" aria-label={providerRoleLabel}/>;',
         'const passwordError = "Password is required"; reply.send({error: passwordError});',
+        'const passwordError = `Password ${"is"} required`; reply.send({error: passwordError});',
     ):
         errors = validator.validate_semantic_artifact("apps/g2-monitoring-source-onboarding/source.ts", text, policy)
         if errors:

@@ -169,6 +169,13 @@ def main() -> int:
         ("apps/g2-monitoring-source-onboarding/source.ts", "const ddl = `CREATE TEXT SEARCH CONFIGURATION g2_cfg (COPY = english)`;"),
         ("apps/g2-monitoring-source-onboarding/source.ts", 'fetch("/api/me" + "tric")'),
         ("apps/g2-monitoring-source-onboarding/source.ts", "reply.send({value: `${payload.password}`});"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", 'fetch("/api/me" + ("tric"))'),
+        ("apps/g2-monitoring-source-onboarding/source.ts", 'reply.send({value: payload["pass" + ("word")]});'),
+        ("apps/g2-monitoring-source-onboarding/source.ts", 'reply["send"]({value: payload.password});'),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "Reflect.apply(database.insert, database, [{sourceId, value}]);"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", 'const p = (provider); if (p.role === "admin") allow();'),
+        ("apps/g2-monitoring-source-onboarding/source.ts", 'const {role = "viewer"} = provider; if (role === "admin") allow();'),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "const ddl = `CREATE RECURSIVE VIEW nums(n) AS VALUES (1)`;"),
     )
     for path, text in semantic_cases:
         if validator.validate_semantic_artifact(path, text, policy) == []:
@@ -186,6 +193,7 @@ def main() -> int:
         'export function SourceForm({provider}) { return <div role="status">{provider.name}</div>; }',
         'return reply.send({error: "password is required"});',
         "return reply.send({error: `password is required`});",
+        'export const providerDisplayRole = "status";',
     ):
         errors = validator.validate_semantic_artifact("apps/g2-monitoring-source-onboarding/source.ts", text, policy)
         if errors:

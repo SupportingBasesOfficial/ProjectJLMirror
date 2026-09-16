@@ -248,12 +248,27 @@ def _assignment_expressions(text: str) -> list[tuple[str, str]]:
         depths = {"(": 0, "[": 0, "{": 0}
         closing = {")": "(", "]": "[", "}": "{"}
         quote: str | None = None
+        regex_literal = False
+        regex_char_class = False
         escaped = False
         previous_significant = ""
         end = len(text)
         index = start
         while index < len(text):
             char = text[index]
+            if regex_literal:
+                if escaped:
+                    escaped = False
+                elif char == "\\":
+                    escaped = True
+                elif char == "[":
+                    regex_char_class = True
+                elif char == "]":
+                    regex_char_class = False
+                elif char == "/" and not regex_char_class:
+                    regex_literal = False
+                index += 1
+                continue
             if quote is not None:
                 if escaped:
                     escaped = False
@@ -265,6 +280,9 @@ def _assignment_expressions(text: str) -> list[tuple[str, str]]:
                 continue
             if char in "'\"`":
                 quote = char
+            elif char == "/" and (not previous_significant or previous_significant in "(=:[,!&|?{};+*-~%^<>"):
+                regex_literal = True
+                regex_char_class = False
             elif char in depths:
                 depths[char] += 1
             elif char in closing:
@@ -290,6 +308,29 @@ def _assignment_expressions(text: str) -> list[tuple[str, str]]:
             index += 1
         assignments.append((match.group(1), text[start:end]))
     return assignments
+
+
+def _split_semicolon_statements(text: str) -> list[str]:
+    statements: list[str] = []
+    start = 0
+    quote: str | None = None
+    escaped = False
+    for index, char in enumerate(text):
+        if quote is not None:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == quote:
+                quote = None
+            continue
+        if char in "'\"`":
+            quote = char
+        elif char == ";":
+            statements.append(text[start:index])
+            start = index + 1
+    statements.append(text[start:])
+    return statements
 
 
 def _variable_declarators(text: str) -> list[tuple[str, str]]:
@@ -721,9 +762,48 @@ def _secret_taint(decoded: str) -> set[str]:
     return tainted
 
 
-def _sink_call_contains(text: str, names: set[str]) -> bool:
+def _sink_aliases(decoded: str) -> set[str]:
+    text = _mask_js_comments(decoded, flatten_block_newlines=True)
+    aliases: set[str] = set()
+    bindings = _variable_declarators(text) + _assignment_expressions(text)
+    changed = True
+    while changed:
+        changed = False
+        known = set(_core.SECRET_SINK_TERMS) | aliases
+        for target, raw_expression in bindings:
+            expression = raw_expression.strip()
+            expression = re.sub(r"\.\s*bind\s*\(.*\)\s*$", "", expression, flags=re.DOTALL)
+            expression = _strip_balanced_parentheses(expression)
+            direct = re.search(r"\.\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*$", expression)
+            computed = re.search(r"\[([^\]]+)\]\s*$", expression, flags=re.DOTALL)
+            bare = re.fullmatch(r"[A-Za-z_$][A-Za-z0-9_$]*", expression)
+            source_name = direct.group(1).casefold() if direct else None
+            if computed:
+                source_name = _static_computed_member(computed.group(1))
+            if bare:
+                source_name = bare.group(0)
+            if source_name in known and target not in aliases:
+                aliases.add(target)
+                changed = True
+        for match in re.finditer(r"\b(?:const|let|var)\s*\{([^}]*)\}\s*=", text):
+            for item in _split_top_level_commas(match.group(1)):
+                pieces = item.split(":", 1)
+                source = pieces[0].strip()
+                target = pieces[-1].split("=", 1)[0].strip()
+                if source.startswith("[") and source.endswith("]"):
+                    source_name = _static_computed_member(source[1:-1])
+                else:
+                    source_name = source.casefold()
+                if source_name in known and re.fullmatch(r"[A-Za-z_$][A-Za-z0-9_$]*", target) and target not in aliases:
+                    aliases.add(target)
+                    changed = True
+    return aliases
+
+
+def _sink_call_contains(text: str, names: set[str], sink_aliases: set[str] | None = None) -> bool:
     text = _mask_js_comments(text)
-    sink = "|".join(sorted(_core.SECRET_SINK_TERMS, key=len, reverse=True))
+    sink_names = set(_core.SECRET_SINK_TERMS) | (sink_aliases or set())
+    sink = "|".join(re.escape(name) for name in sorted(sink_names, key=len, reverse=True))
     invoke = r"(?:(?:\.\s*(?:call|apply)\s*)?\(|\.\s*bind\s*\([^)]*\)\s*\()"
     grouped_receiver = r"(?:\(\s*)*\b[A-Za-z_$][A-Za-z0-9_$]*(?:\s*\))*"
     for match in re.finditer(
@@ -837,7 +917,7 @@ def _sink_wrappers(decoded: str) -> set[str]:
 
 def _has_hardened_secret_flow(decoded: str) -> bool:
     tainted = _secret_taint(decoded)
-    if _sink_call_contains(decoded, tainted):
+    if _sink_call_contains(decoded, tainted, _sink_aliases(decoded)):
         return True
     if not tainted:
         return False
@@ -868,7 +948,7 @@ def _has_hardened_ddl(decoded: str) -> bool:
     privilege_or_ownership = rf"(?:{grant_privilege}|{revoke_privilege}|\breassign\s+owned\b)"
     sql_authority_surfaces = [
         statement
-        for statement in re.split(r";", uncommented)
+        for statement in _split_semicolon_statements(uncommented)
         if re.match(r"\s*(?:grant|revoke|reassign\s+owned)\b", statement)
     ]
     sql_binding = re.compile(
@@ -879,8 +959,13 @@ def _has_hardened_ddl(decoded: str) -> bool:
         r"\b(?:query|execute|exec|run|sql)\s*\(\s*([\"'`])(.*?)\1",
         flags=re.IGNORECASE | re.DOTALL,
     )
+    tagged_sql_call = re.compile(
+        r"\b(?:query|execute|exec|run|sql)\s*\(\s*[a-z_$][a-z0-9_$]*\s*`(.*?)`",
+        flags=re.IGNORECASE | re.DOTALL,
+    )
     sql_authority_surfaces.extend(match.group(2) for match in sql_binding.finditer(uncommented))
     sql_authority_surfaces.extend(match.group(2) for match in sql_call.finditer(uncommented))
+    sql_authority_surfaces.extend(match.group(1) for match in tagged_sql_call.finditer(uncommented))
     sql_authority = any(
         re.search(privilege_or_ownership, surface, flags=re.IGNORECASE)
         or re.search(grant_membership, surface, flags=re.IGNORECASE)

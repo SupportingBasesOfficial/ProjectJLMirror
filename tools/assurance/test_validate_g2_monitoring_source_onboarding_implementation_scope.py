@@ -226,6 +226,12 @@ def main() -> int:
         ("apps/g2-monitoring-source-onboarding/source.ts", "const ddl = `REVOKE TEMP ON DATABASE app FROM role`;"),
         ("apps/g2-monitoring-source-onboarding/source.ts", "async function f(){ let out; out = await\n payload.password; reply.send({value: out}); }"),
         ("apps/g2-monitoring-source-onboarding/source.ts", "let out; out = typeof\n payload.password; reply.send({value: out});"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", 'let out; out = /;/.test(input) ? payload.password : ""; reply.send({value: out});'),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "const emit = reply.send.bind(reply); emit({value: payload.password});"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "const emit = reply.send; emit({value: payload.password});"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", 'const emit = reply["send"]; emit({value: payload.password});'),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "const {send: emit} = reply; emit({value: payload.password});"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "db.query(sql`GRANT SELECT ON TABLE monitoring.sources TO app`);"),
     )
     for path, text in semantic_cases:
         if validator.validate_semantic_artifact(path, text, policy) == []:
@@ -254,6 +260,7 @@ def main() -> int:
         'function revoke() { return false; }',
         'const label = "Grant access to user";',
         'const help = "Grant SELECT on a table";',
+        'const help = "Permissions; Grant SELECT on a table";',
     ):
         errors = validator.validate_semantic_artifact("apps/g2-monitoring-source-onboarding/source.ts", text, policy)
         if errors:

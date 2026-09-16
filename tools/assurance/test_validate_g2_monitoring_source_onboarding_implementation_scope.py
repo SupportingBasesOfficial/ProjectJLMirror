@@ -163,6 +163,12 @@ def main() -> int:
         ("apps/g2-monitoring-source-onboarding/source.ts", 'const {role} = provider; if (role === "admin") allow();'),
         ("apps/g2-monitoring-source-onboarding/source.ts", "const ddl = `CREATE EVENT TRIGGER audit_ddl ON ddl_command_start EXECUTE FUNCTION capture()`;"),
         ("apps/g2-monitoring-source-onboarding/source.ts", "await fetch('/api/me" + "\\" + "\n" + "tric');"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "let write; ({insert: write} = database); write({sourceId, value});"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", 'const key = "password"; reply.send({value: payload[key]});'),
+        ("apps/g2-monitoring-source-onboarding/source.ts", 'let r; const p = provider; ({["role"]: r} = p); if (r === "admin") allow();'),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "const ddl = `CREATE TEXT SEARCH CONFIGURATION g2_cfg (COPY = english)`;"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", 'fetch("/api/me" + "tric")'),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "reply.send({value: `${payload.password}`});"),
     )
     for path, text in semantic_cases:
         if validator.validate_semantic_artifact(path, text, policy) == []:
@@ -179,6 +185,7 @@ def main() -> int:
         "export async function submitOnboarding(payload) { return fetch('/api/v1/tenants/current/monitoring-sources', {method: 'POST'}); }",
         'export function SourceForm({provider}) { return <div role="status">{provider.name}</div>; }',
         'return reply.send({error: "password is required"});',
+        "return reply.send({error: `password is required`});",
     ):
         errors = validator.validate_semantic_artifact("apps/g2-monitoring-source-onboarding/source.ts", text, policy)
         if errors:

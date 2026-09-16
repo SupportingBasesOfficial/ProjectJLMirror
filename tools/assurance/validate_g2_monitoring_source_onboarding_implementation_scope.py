@@ -25,11 +25,13 @@ DEFAULT_ROOT = Path.cwd()
 EXPECTED_READINESS_VALIDATOR = "tools/assurance/validate_g2_monitoring_source_onboarding_scope_readiness.py"
 _ORIGINAL_VALIDATE_SEMANTIC_ARTIFACT = _core.validate_semantic_artifact
 _DDL_MODIFIERS = "temp|temporary|unlogged|unique|concurrently|global|local"
-_DDL_OBJECTS = rf"(?:{_core.DDL_OBJECTS}|database|foreign\s+table|tablespace|server|foreign\s+data\s+wrapper|user\s+mapping|publication|subscription|role|domain|aggregate|collation|conversion|language|operator|statistics|rule|access\s+method)"
+_DDL_OBJECTS = rf"(?:{_core.DDL_OBJECTS}|database|foreign\s+table|tablespace|server|foreign\s+data\s+wrapper|user\s+mapping|publication|subscription|role|domain|aggregate|collation|conversion|language|operator|statistics|rule|access\s+method|event\s+trigger)"
 
 
 def _decode_executable_escapes(text: str) -> str:
-    decoded = _core._decode_identifier_escapes(text)
+    # JavaScript removes escaped physical line terminators before evaluating string contents.
+    continued = re.sub(r"\\(?:\r\n|[\n\r\u2028\u2029])", "", text)
+    decoded = _core._decode_identifier_escapes(continued)
 
     def replace_hex(match: re.Match[str]) -> str:
         return chr(int(match.group(1), 16))
@@ -105,10 +107,10 @@ def _static_computed_member(expr: str) -> str | None:
     pieces = re.split(r"\s*\+\s*", expr.strip())
     values: list[str] = []
     for piece in pieces:
-        match = re.fullmatch(r"['\"]([^'\"]*)['\"]", piece.strip())
-        if not match:
+        match = re.fullmatch(r"([\'\"`])([^\'\"`]*)\1", piece.strip())
+        if not match or (match.group(1) == "`" and "${" in match.group(2)):
             return None
-        values.append(match.group(1))
+        values.append(match.group(2))
     return "".join(values).casefold()
 
 
@@ -180,6 +182,10 @@ def _strip_plain_string_literals(text: str) -> str:
 
 
 def _contains_secret_reference(text: str, tainted: set[str]) -> bool:
+    for match in re.finditer(r"\[([^\]]+)\]", text):
+        member = _static_computed_member(match.group(1))
+        if member is not None and (member in tainted or _raw_secret_identifier(member)):
+            return True
     code = _strip_plain_string_literals(text)
     for identifier in _core._raw_identifiers(code):
         if identifier in tainted or _raw_secret_identifier(identifier):
@@ -204,6 +210,22 @@ def _secret_taint(decoded: str) -> set[str]:
                 tainted.add(target)
                 changed = True
         for match in re.finditer(r"\b(?:const|let|var)\s*\{([^}]*)\}\s*=\s*([^;\n]+)", decoded):
+            bindings, source = match.group(1), match.group(2)
+            source_tainted = _contains_secret_reference(source, tainted)
+            for item in bindings.split(","):
+                item = item.strip()
+                if not item:
+                    continue
+                pair = [part.strip() for part in item.split(":", 1)]
+                source_name = pair[0]
+                target = pair[-1]
+                if not re.fullmatch(r"[A-Za-z_$][A-Za-z0-9_$]*", target):
+                    continue
+                if _raw_secret_identifier(source_name) or (source_tainted and _raw_secret_identifier(target)):
+                    if target not in tainted:
+                        tainted.add(target)
+                        changed = True
+        for match in re.finditer(r"(?<![A-Za-z0-9_$])\(\s*\{([^}]*)\}\s*=\s*([^;\n)]+)\s*\)", decoded):
             bindings, source = match.group(1), match.group(2)
             source_tainted = _contains_secret_reference(source, tainted)
             for item in bindings.split(","):
@@ -359,6 +381,16 @@ def _provider_authority_related(decoded: str) -> bool:
     authority = "|".join(sorted(_core.PROVIDER_AUTHORITY_TERMS, key=len, reverse=True))
     aliases = _provider_aliases(decoded)
     provider = "|".join(re.escape(name) for name in sorted(aliases, key=len, reverse=True))
+    destructuring_patterns = (
+        rf"\b(?:const|let|var)\s*\{{([^}}]*)\}}\s*=\s*(?:{provider})\b",
+        rf"(?<![A-Za-z0-9_$])\(\s*\{{([^}}]*)\}}\s*=\s*(?:{provider})\s*\)",
+    )
+    for pattern in destructuring_patterns:
+        for match in re.finditer(pattern, decoded, flags=re.IGNORECASE):
+            for item in match.group(1).split(","):
+                source_name = item.split(":", 1)[0].strip().casefold()
+                if source_name in _core.PROVIDER_AUTHORITY_TERMS:
+                    return True
     direct_patterns = (
         rf"\b(?:{provider})\s*(?:\?\.|\.)\s*(?:{authority})\b",
         rf"\b(?:{provider})\s*\[\s*['\"](?:{authority})['\"]\s*\]",

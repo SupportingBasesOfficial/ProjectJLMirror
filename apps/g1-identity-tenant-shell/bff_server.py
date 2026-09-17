@@ -15,10 +15,21 @@ from threading import Lock
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
 from jlmirror_authority.browser import VerifiedOidcIdentity
-from jlmirror_authority.model import AdmissionDenied
+from jlmirror_authority.control_plane import (
+    AuthorizationDecision,
+    FinalAdmissionEvidence,
+    PlacementEvidence,
+    RuntimeLifecycle,
+)
+from jlmirror_authority.model import (
+    AdmissionDenied,
+    EnvironmentClass,
+)
+from jlmirror_authority.runtime_profiles import API_AUTH_BOUNDARY
 from jlmirror_authority.session import BrowserSessionRecord
+from jlmirror_g1.authority import CanonicalTenantAdmission
 from jlmirror_g1.csrf import CsrfKeyRing
-from jlmirror_g1.shell import IdentityTenantShell, TenantShellAdmission
+from jlmirror_g1.shell import IdentityTenantShell
 
 
 ROOT = Path(__file__).resolve().parent
@@ -142,7 +153,7 @@ class Sessions:
             return True
 
 
-class FixtureTenantAdmission:
+class FixtureAuthorityState:
     def __init__(self) -> None:
         self._mode_by_principal: dict[str, str] = {}
         self._lock = Lock()
@@ -157,17 +168,149 @@ class FixtureTenantAdmission:
         with self._lock:
             return self._mode_by_principal.get(principal_id, "allowed")
 
-    def require_current(self, *, principal, tenant_id: str, now: datetime, authentication_strength) -> TenantShellAdmission:
-        if authentication_strength is None or authentication_strength.is_current(now) is not True:
-            raise AdmissionDenied("current authentication strength is unavailable")
-        mode = self.mode_for(principal.principal_id)
-        if mode == "revoked":
-            raise AdmissionDenied("current authority is revoked")
-        if mode == "forbidden" or tenant_id != "tenant-a":
-            raise AdmissionDenied("current tenant authority denied")
-        return TenantShellAdmission(
+
+class FixturePrincipalAuthority:
+    def __init__(self, state: FixtureAuthorityState) -> None:
+        self._state = state
+
+    def is_current(self, *, principal, now: datetime) -> bool:
+        del now
+        return principal.active is True and self._state.mode_for(principal.principal_id) != "revoked"
+
+
+class FixturePlacementAuthority:
+    def __init__(self, state: FixtureAuthorityState) -> None:
+        self._state = state
+
+    @staticmethod
+    def _evidence() -> PlacementEvidence:
+        return PlacementEvidence(
             tenant_id="tenant-a",
+            cell_id="cell-a",
+            placement_version="placement-r1",
+            runtime_generation="runtime-api-g1",
+            runtime_profile_id=API_AUTH_BOUNDARY.runtime_profile_id,
+            runtime_isolation_class=API_AUTH_BOUNDARY.isolation_class,
+            configuration_generation="configuration-g1",
+            workload_credential_generation="workload-g1",
+            network_policy_generation="network-g1",
+            environment_class=EnvironmentClass.VALIDATION,
+            isolation_class="pooled",
+            runtime_lifecycle=RuntimeLifecycle.ACTIVE,
+            placement_current=True,
+            operation_eligible=True,
+            cell_admission_current=True,
+            fence_scope_id="tenant-a",
+            fence_epoch=1,
+        )
+
+    def resolve_current(self, tenant_id: str):
+        return self._evidence() if tenant_id == "tenant-a" else None
+
+    def context_is_current(self, context) -> bool:
+        evidence = self.resolve_current(context.tenant_id)
+        if evidence is None or self._state.mode_for(context.principal_id) == "revoked":
+            return False
+        return (
+            context.cell_id == evidence.cell_id
+            and context.placement_version == evidence.placement_version
+            and context.runtime_generation == evidence.runtime_generation
+            and context.runtime_profile_id == evidence.runtime_profile_id
+            and context.runtime_isolation_class == evidence.runtime_isolation_class
+            and context.configuration_generation == evidence.configuration_generation
+            and context.workload_credential_generation == evidence.workload_credential_generation
+            and context.network_policy_generation == evidence.network_policy_generation
+            and context.environment_class is evidence.environment_class
+            and context.isolation_class == evidence.isolation_class
+            and context.fence_scope_id == evidence.fence_scope_id
+            and context.fence_epoch == evidence.fence_epoch
+        )
+
+
+class FixtureAuthorizationAuthority:
+    def __init__(self, state: FixtureAuthorityState) -> None:
+        self._state = state
+
+    def evaluate(self, *, principal, context, declaration) -> AuthorizationDecision:
+        del declaration
+        granted = (
+            context is not None
+            and context.tenant_id == "tenant-a"
+            and self._state.mode_for(principal.principal_id) == "allowed"
+        )
+        return AuthorizationDecision(
+            granted=granted,
+            current=True,
+            policy_revision="fixture-membership-permission-r1",
+        )
+
+
+class FixtureStrengthPolicy:
+    def permits(self, *, policy_id: str, evidence, now: datetime) -> bool:
+        return (
+            policy_id == "shell-access-v1"
+            and evidence.policy_version == "fixture-auth-strength-v1"
+            and evidence.is_current(now) is True
+        )
+
+
+class FixtureFinalAdmissionAuthority:
+    def __init__(self, state: FixtureAuthorityState) -> None:
+        self._state = state
+
+    def finalize_current_admission(
+        self,
+        *,
+        principal,
+        context,
+        declaration,
+        expected_runtime_binding,
+        authentication_strength_evidence,
+        cross_tenant_target,
+    ) -> FinalAdmissionEvidence:
+        if (
+            context is None
+            or context.tenant_id != "tenant-a"
+            or expected_runtime_binding != API_AUTH_BOUNDARY
+            or cross_tenant_target is not None
+            or authentication_strength_evidence is None
+            or self._state.mode_for(principal.principal_id) != "allowed"
+        ):
+            raise AdmissionDenied("fixture final current admission denied")
+        return FinalAdmissionEvidence(
+            granted=True,
+            current=True,
             admission_revision="fixture-current-admission-r1",
+            authorization_policy_revision="fixture-membership-permission-r1",
+            principal_authority_revision="fixture-principal-r1",
+            principal_id=principal.principal_id,
+            principal_kind=principal.kind,
+            principal_credential_generation=principal.credential_generation,
+            action=declaration.action,
+            scope=declaration.scope,
+            tenant_requirement=declaration.tenant_requirement,
+            resource_scope=declaration.resource_scope,
+            cross_tenant_target=cross_tenant_target,
+            authentication_strength_policy_id=declaration.authentication_strength_policy_id,
+            tenant_id=context.tenant_id,
+            cell_id=context.cell_id,
+            placement_authority_revision="fixture-placement-r1",
+            placement_version=context.placement_version,
+            runtime_generation=context.runtime_generation,
+            runtime_profile_id=context.runtime_profile_id,
+            runtime_isolation_class=context.runtime_isolation_class,
+            configuration_generation=context.configuration_generation,
+            workload_credential_generation=context.workload_credential_generation,
+            network_policy_generation=context.network_policy_generation,
+            environment_class=context.environment_class,
+            isolation_class=context.isolation_class,
+            fence_scope_id=context.fence_scope_id,
+            fence_epoch=context.fence_epoch,
+            authentication_strength_policy_revision=authentication_strength_evidence.policy_version,
+            executing_runtime_authority_revision="fixture-runtime-authority-r1",
+            executing_runtime_profile_id=API_AUTH_BOUNDARY.runtime_profile_id,
+            executing_runtime_generation="runtime-api-execution-g1",
+            executing_runtime_environment_class=EnvironmentClass.VALIDATION,
         )
 
 
@@ -188,8 +331,17 @@ class AppState:
         self.transactions = Transactions()
         self.sessions = Sessions()
         self.oidc = FixtureOidc() if fixture_enabled else DisabledOidc()
+        self.authority_state = FixtureAuthorityState() if fixture_enabled else None
         self.tenant_admission = (
-            FixtureTenantAdmission() if fixture_enabled else DisabledTenantAdmission()
+            CanonicalTenantAdmission(
+                principal_authority=FixturePrincipalAuthority(self.authority_state),
+                placement_authority=FixturePlacementAuthority(self.authority_state),
+                authorization_authority=FixtureAuthorizationAuthority(self.authority_state),
+                strength_policy=FixtureStrengthPolicy(),
+                final_admission_authority=FixtureFinalAdmissionAuthority(self.authority_state),
+            )
+            if fixture_enabled
+            else DisabledTenantAdmission()
         )
         self.csrf = CsrfKeyRing(
             current_version="csrf-v2",
@@ -410,7 +562,10 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(HTTPStatus.UNAUTHORIZED, {"state": "unauthenticated"})
             return
 
-        self.server.state.tenant_admission.set_mode(
+        if self.server.state.authority_state is None:
+            self._send_json(HTTPStatus.SERVICE_UNAVAILABLE, {"state": "unavailable"})
+            return
+        self.server.state.authority_state.set_mode(
             principal_id="principal-a",
             mode=query["mode"][0],
         )
@@ -453,11 +608,10 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 handle = BrowserSessionHandle(session)
                 record = self.server.state.sessions.resolve(handle.digest)
-                admission = self.server.state.tenant_admission
                 mode = (
-                    admission.mode_for(record.principal.principal_id)
+                    self.server.state.authority_state.mode_for(record.principal.principal_id)
                     if self.server.fixture_enabled
-                    and isinstance(admission, FixtureTenantAdmission)
+                    and self.server.state.authority_state is not None
                     and record is not None
                     else "forbidden"
                 )

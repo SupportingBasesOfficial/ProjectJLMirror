@@ -451,12 +451,10 @@ def _review_contains_secret(text: str, aliases: set[str]) -> bool:
 def _review_sink_aliases(decoded: str) -> set[str]:
     aliases: set[str] = set()
     code = _review_normalize_static_members(decoded)
-    sink = "|".join(sorted(SECRET_SINK_TERMS, key=len, reverse=True))
     assignment = re.compile(
         r"(?<![A-Za-z0-9_$])([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*([^;\n]+)",
         flags=re.IGNORECASE,
     )
-    arrays = _review_array_bindings(decoded)
     changed = True
     while changed:
         changed = False
@@ -475,10 +473,6 @@ def _review_sink_aliases(decoded: str) -> set[str]:
             if names and names[-1].casefold() in known and target not in aliases:
                 aliases.add(target)
                 changed = True
-        for array_name, values in arrays.items():
-            if any(re.search(rf"\b(?:{sink})\b", _review_normalize_static_members(value), flags=re.IGNORECASE) for value in values):
-                for target, expression in _review_array_destructuring(f"const [{','.join('v'+str(i) for i in range(len(values)))}]={array_name};"):
-                    _ = target, expression
     return aliases
 
 
@@ -510,7 +504,7 @@ def _review_sink_wrappers(decoded: str, sink_aliases: set[str]) -> set[str]:
 
 
 def _review_invocation_contains(text: str, secret_aliases: set[str], callable_aliases: set[str]) -> bool:
-    code = _review_normalize_static_members(text)
+    code = _review_code_view(text)
     names = set(SECRET_SINK_TERMS) | set(callable_aliases)
     target = "|".join(re.escape(name) for name in sorted(names, key=len, reverse=True))
     bind = r"(?:(?:\.|\?\.)\s*bind\s*(?:\?\.\s*)?\([^)]*\)\s*)?"

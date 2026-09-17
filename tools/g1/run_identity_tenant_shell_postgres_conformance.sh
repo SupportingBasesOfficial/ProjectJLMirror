@@ -68,6 +68,12 @@ if docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DA
   exit 1
 fi
 
+if docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c \
+  "INSERT INTO g1_identity.browser_session(handle_digest, principal_id, principal_kind, session_generation, auth_issuer, auth_authenticated_at, auth_evidence_expires_at, auth_amr, auth_policy_version, created_at, expires_at) VALUES ('ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff','principal-c','human_browser_session','session-generation-c','id.example','2026-09-17T11:50:00Z','2026-09-17T11:59:59Z',ARRAY['pwd'],'auth-strength-v1','2026-09-17T12:00:00Z','2026-09-17T13:00:00Z');" >/dev/null 2>&1; then
+  echo "expired authentication-strength evidence unexpectedly persisted" >&2
+  exit 1
+fi
+
 retire_first="$(docker exec "$PG_CONTAINER" psql -Atq -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c \
   "SELECT g1_identity.retire_browser_session('$handle_digest','session-generation-a','2026-09-17T12:02:00Z');")"
 test "$retire_first" = "t"

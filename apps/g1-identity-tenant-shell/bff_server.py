@@ -343,13 +343,15 @@ class AppState:
             if fixture_enabled
             else DisabledTenantAdmission()
         )
+        csrf_keys = (
+            {"csrf-v2": b"2" * 32, "csrf-v1": b"1" * 32}
+            if fixture_enabled
+            else {"csrf-v2": secrets.token_bytes(32), "csrf-v1": secrets.token_bytes(32)}
+        )
         self.csrf = CsrfKeyRing(
             current_version="csrf-v2",
             previous_version="csrf-v1",
-            keys={
-                "csrf-v2": b"2" * 32,
-                "csrf-v1": b"1" * 32,
-            },
+            keys=csrf_keys,
         )
         self.lineage_by_session_digest: dict[str, str] = {}
         self.lock = Lock()

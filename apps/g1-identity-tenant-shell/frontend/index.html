@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>JLMirror</title>
+</head>
+<body>
+  <main id="jlmirror-shell" aria-live="polite" data-state="loading">
+    <h1>JLMirror</h1>
+    <p id="shell-status">Checking current access…</p>
+    <section id="tenant-context" hidden>
+      <h2>Current tenant</h2>
+      <p id="tenant-id"></p>
+    </section>
+  </main>
+  <script>
+    (() => {
+      "use strict";
+      const root = document.getElementById("jlmirror-shell");
+      const status = document.getElementById("shell-status");
+      const tenant = document.getElementById("tenant-context");
+      const tenantId = document.getElementById("tenant-id");
+
+      const render = (view) => {
+        const state = typeof view?.state === "string" ? view.state : "unavailable";
+        root.dataset.state = state;
+        tenant.hidden = true;
+        tenantId.textContent = "";
+        if (state === "ready" && typeof view.tenant_id === "string") {
+          tenantId.textContent = view.tenant_id;
+          tenant.hidden = false;
+          status.textContent = "Access is current.";
+          return;
+        }
+        const messages = {
+          unauthenticated: "Sign in is required.",
+          forbidden: "Current access is not admitted.",
+          revoked: "Current access changed. Sign in again.",
+          unavailable: "Current access cannot be verified right now."
+        };
+        status.textContent = messages[state] || "Current access cannot be verified right now.";
+      };
+
+      window.JLMirrorProtectedShell = Object.freeze({ render });
+    })();
+  </script>
+</body>
+</html>

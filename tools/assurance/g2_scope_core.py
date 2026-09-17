@@ -476,11 +476,41 @@ def _review_sink_aliases(decoded: str) -> set[str]:
     return aliases
 
 
+def _review_balanced_block(text: str, open_index: int) -> tuple[str, int] | None:
+    depth = 0
+    quote: str | None = None
+    escaped = False
+    for index in range(open_index, len(text)):
+        char = text[index]
+        if quote is not None:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == quote:
+                quote = None
+            continue
+        if char in "'\"`":
+            quote = char
+            continue
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return text[open_index + 1:index], index + 1
+    return None
+
+
 def _review_function_definitions(decoded: str) -> list[tuple[str, list[str], str]]:
     definitions: list[tuple[str, list[str], str]] = []
-    for match in re.finditer(r"\bfunction\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*\(([^)]*)\)\s*\{([^}]*)\}", decoded, flags=re.DOTALL):
+    for match in re.finditer(r"\bfunction\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*\(([^)]*)\)\s*\{", decoded, flags=re.DOTALL):
+        block = _review_balanced_block(decoded, match.end() - 1)
+        if block is None:
+            continue
+        body, _end = block
         params = [p.strip() for p in match.group(2).split(",") if re.fullmatch(r"[A-Za-z_$][A-Za-z0-9_$]*", p.strip())]
-        definitions.append((match.group(1), params, match.group(3)))
+        definitions.append((match.group(1), params, body))
     for match in re.finditer(r"\b(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*(?:\(([^)]*)\)|([A-Za-z_$][A-Za-z0-9_$]*))\s*=>\s*(?:\{([^}]*)\}|([^;\n]+))", decoded, flags=re.DOTALL):
         params_text = match.group(2) or match.group(3) or ""
         params = [p.strip() for p in params_text.split(",") if re.fullmatch(r"[A-Za-z_$][A-Za-z0-9_$]*", p.strip())]

@@ -56,14 +56,14 @@ second_consume="$(docker exec "$PG_CONTAINER" psql -Atq -v ON_ERROR_STOP=1 -U po
 test "$second_consume" = "0"
 
 docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c \
-  "INSERT INTO g1_identity.browser_session(handle_digest, principal_id, principal_kind, session_generation, auth_authenticated_at, auth_time_source, auth_acr, auth_amr, auth_policy_version, created_at, expires_at) VALUES ('$handle_digest','principal-a','human_browser_session','session-generation-a','2026-09-17T11:59:30Z','oidc_auth_time','urn:example:loa:1',ARRAY['pwd'],'auth-strength-v1','2026-09-17T12:00:00Z','2026-09-17T13:00:00Z');" >/dev/null
+  "INSERT INTO g1_identity.browser_session(handle_digest, principal_id, principal_kind, session_generation, auth_issuer, auth_authenticated_at, auth_evidence_expires_at, auth_acr, auth_amr, auth_policy_version, created_at, expires_at) VALUES ('$handle_digest','principal-a','human_browser_session','session-generation-a','id.example','2026-09-17T11:59:30Z','2026-09-17T12:10:00Z','urn:example:loa:1',ARRAY['pwd'],'auth-strength-v1','2026-09-17T12:00:00Z','2026-09-17T13:00:00Z');" >/dev/null
 
 auth_round_trip="$(docker exec "$PG_CONTAINER" psql -Atq -F '|' -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c \
-  "SELECT principal_kind, auth_time_source, coalesce(auth_acr,''), array_to_string(auth_amr,','), auth_policy_version, auth_authenticated_at <= created_at FROM g1_identity.browser_session WHERE handle_digest='$handle_digest';")"
-test "$auth_round_trip" = "human_browser_session|oidc_auth_time|urn:example:loa:1|pwd|auth-strength-v1|t"
+  "SELECT principal_kind, auth_issuer, coalesce(auth_acr,''), array_to_string(auth_amr,','), auth_policy_version, auth_authenticated_at <= created_at, auth_evidence_expires_at > auth_authenticated_at FROM g1_identity.browser_session WHERE handle_digest='$handle_digest';")"
+test "$auth_round_trip" = "human_browser_session|id.example|urn:example:loa:1|pwd|auth-strength-v1|t|t"
 
 if docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c \
-  "INSERT INTO g1_identity.browser_session(handle_digest, principal_id, principal_kind, session_generation, auth_authenticated_at, auth_time_source, auth_amr, auth_policy_version, created_at, expires_at) VALUES ('eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee','principal-b','platform_admin_principal','session-generation-b','2026-09-17T11:59:30Z','oidc_auth_time',ARRAY['pwd'],'auth-strength-v1','2026-09-17T12:00:00Z','2026-09-17T13:00:00Z');" >/dev/null 2>&1; then
+  "INSERT INTO g1_identity.browser_session(handle_digest, principal_id, principal_kind, session_generation, auth_issuer, auth_authenticated_at, auth_evidence_expires_at, auth_amr, auth_policy_version, created_at, expires_at) VALUES ('eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee','principal-b','platform_admin_principal','session-generation-b','id.example','2026-09-17T11:59:30Z','2026-09-17T12:10:00Z',ARRAY['pwd'],'auth-strength-v1','2026-09-17T12:00:00Z','2026-09-17T13:00:00Z');" >/dev/null 2>&1; then
   echo "noncanonical principal_kind unexpectedly accepted" >&2
   exit 1
 fi
@@ -84,7 +84,7 @@ foreign_truth_columns="$(docker exec "$PG_CONTAINER" psql -Atq -v ON_ERROR_STOP=
 test "$foreign_truth_columns" = "0"
 
 auth_evidence_columns="$(docker exec "$PG_CONTAINER" psql -Atq -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c \
-  "SELECT count(*) FROM information_schema.columns WHERE table_schema='g1_identity' AND table_name='browser_session' AND column_name IN ('auth_authenticated_at','auth_time_source','auth_acr','auth_amr','auth_policy_version');")"
-test "$auth_evidence_columns" = "5"
+  "SELECT count(*) FROM information_schema.columns WHERE table_schema='g1_identity' AND table_name='browser_session' AND column_name IN ('auth_issuer','auth_authenticated_at','auth_evidence_expires_at','auth_acr','auth_amr','auth_policy_version');")"
+test "$auth_evidence_columns" = "6"
 
 printf '%s\n' "g1_postgres_conformance=PASS transaction=single_use session=opaque_digest+auth_strength+single_retirement foreign_authority=absent topology=unspecified"

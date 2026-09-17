@@ -105,8 +105,8 @@ class TenantAdmission:
         self.denied = False
         self.return_tenant = None
 
-    def require_current(self, *, principal, tenant_id: str, now: datetime) -> TenantShellAdmission:
-        self.calls.append((principal, tenant_id, now))
+    def require_current(self, *, principal, tenant_id: str, now: datetime, authentication_strength) -> TenantShellAdmission:
+        self.calls.append((principal, tenant_id, now, authentication_strength))
         if self.denied:
             raise AdmissionDenied("current tenant authority denied")
         return TenantShellAdmission(
@@ -195,9 +195,11 @@ class G1IdentityTenantShellTests(unittest.TestCase):
         self.assertEqual(view.principal_id, "principal-a")
         self.assertEqual(view.state, "ready")
         self.assertEqual(len(self.tenant_admission.calls), 1)
-        principal, tenant_id, _ = self.tenant_admission.calls[0]
+        principal, tenant_id, _, strength = self.tenant_admission.calls[0]
         self.assertEqual(principal.principal_id, "principal-a")
         self.assertEqual(tenant_id, "tenant-a")
+        self.assertIsNotNone(strength)
+        self.assertEqual(strength.principal_id, "principal-a")
 
     def test_revoked_or_forbidden_tenant_fails_closed_even_with_current_session(self):
         _start, handle = self.login()

@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import urllib.error
 import urllib.request
 
 
@@ -39,6 +40,50 @@ def _wait_ready(url: str) -> None:
         except Exception:
             time.sleep(0.1)
     raise RuntimeError("G1 BFF did not become ready")
+
+
+def _assert_fixture_disabled(*, port: int, cert: Path, key: Path, env: dict[str, str]) -> None:
+    server = subprocess.Popen(
+        [
+            sys.executable,
+            "apps/g1-identity-tenant-shell/bff_server.py",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            str(port),
+            "--certfile",
+            str(cert),
+            "--keyfile",
+            str(key),
+        ],
+        cwd=ROOT,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        base = f"https://127.0.0.1:{port}"
+        _wait_ready(base + "/healthz")
+        context = ssl._create_unverified_context()
+        try:
+            urllib.request.urlopen(
+                base + "/__fixture__/login/start?target_tenant=tenant-a",
+                context=context,
+                timeout=2,
+            )
+        except urllib.error.HTTPError as exc:
+            if exc.code != 404:
+                raise AssertionError(f"fixture-disabled BFF returned unexpected status {exc.code}") from exc
+        else:
+            raise AssertionError("fixture login endpoint was reachable without --fixture")
+    finally:
+        server.terminate()
+        try:
+            server.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            server.kill()
+            server.wait(timeout=5)
 
 
 def _run_browser(browser: str, *, profile: Path, url: str, marker: str) -> str:
@@ -118,6 +163,9 @@ def main() -> int:
             stderr=subprocess.DEVNULL,
             check=True,
         )
+        disabled_port = _port()
+        _assert_fixture_disabled(port=disabled_port, cert=cert, key=key, env=env)
+
         port = _port()
         server = subprocess.Popen(
             [
@@ -161,7 +209,8 @@ def main() -> int:
                     raise AssertionError("cross-tenant browser response disclosed requested tenant context")
             print(
                 "g1_browser_e2e=PASS "
-                "allowed=PASS cross_tenant=PASS revoked=PASS csrf=PASS logout=PASS"
+                "fixture_isolation=PASS allowed=PASS cross_tenant=PASS "
+                "revoked=PASS csrf=PASS logout=PASS"
             )
         finally:
             server.terminate()

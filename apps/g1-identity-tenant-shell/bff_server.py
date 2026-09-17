@@ -157,12 +157,26 @@ class FixtureTenantAdmission:
         )
 
 
+class DisabledOidc:
+    def exchange_and_verify(self, **kwargs):
+        del kwargs
+        raise AdmissionDenied("OIDC adapter is not configured")
+
+
+class DisabledTenantAdmission:
+    def require_current(self, **kwargs):
+        del kwargs
+        raise AdmissionDenied("current tenant authority adapter is not configured")
+
+
 class AppState:
-    def __init__(self) -> None:
+    def __init__(self, *, fixture_enabled: bool) -> None:
         self.transactions = Transactions()
-        self.oidc = FixtureOidc()
         self.sessions = Sessions()
-        self.tenant_admission = FixtureTenantAdmission()
+        self.oidc = FixtureOidc() if fixture_enabled else DisabledOidc()
+        self.tenant_admission = (
+            FixtureTenantAdmission() if fixture_enabled else DisabledTenantAdmission()
+        )
         self.csrf = CsrfKeyRing(
             current_version="csrf-v2",
             previous_version="csrf-v1",
@@ -189,8 +203,8 @@ class AppState:
 class G1Server(ThreadingHTTPServer):
     def __init__(self, server_address, handler, *, fixture_enabled: bool):
         super().__init__(server_address, handler)
-        self.state = AppState()
         self.fixture_enabled = fixture_enabled
+        self.state = AppState(fixture_enabled=fixture_enabled)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -424,9 +438,12 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 handle = BrowserSessionHandle(session)
                 record = self.server.state.sessions.resolve(handle.digest)
+                admission = self.server.state.tenant_admission
                 mode = (
-                    self.server.state.tenant_admission.mode_for(record.principal.principal_id)
-                    if record is not None
+                    admission.mode_for(record.principal.principal_id)
+                    if self.server.fixture_enabled
+                    and isinstance(admission, FixtureTenantAdmission)
+                    and record is not None
                     else "forbidden"
                 )
             except Exception:

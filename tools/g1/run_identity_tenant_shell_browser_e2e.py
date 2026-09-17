@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
 import os
 import shutil
 import socket
@@ -68,7 +69,7 @@ def _assert_fixture_disabled(*, port: int, cert: Path, key: Path, env: dict[str,
         context = ssl._create_unverified_context()
         try:
             urllib.request.urlopen(
-                base + "/__fixture__/login/start?target_tenant=tenant-a",
+                base + f"/__fixture__/login/start?target_tenant={tenant}",
                 context=context,
                 timeout=2,
             )
@@ -128,6 +129,16 @@ def _run_browser(browser: str, *, profile: Path, url: str, marker: str) -> str:
 
 
 def main() -> int:
+    fixture = json.loads(
+        (ROOT / "implementation/g1-identity-tenant-shell/fixture_bootstrap.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    if fixture.get("schema_version") != 1:
+        raise AssertionError("unsupported G1 fixture bootstrap schema")
+    tenant = fixture["tenant_id"]
+    forbidden_tenant = fixture["forbidden_tenant_id"]
+
     browser = _browser()
     env = dict(os.environ)
     pythonpath = [str(ROOT / "src")]
@@ -191,11 +202,11 @@ def main() -> int:
             base = f"https://127.0.0.1:{port}"
             _wait_ready(base + "/healthz")
             scenarios = (
-                ("allowed", "tenant-a", "allowed", "allowed-pass"),
-                ("cross-tenant", "tenant-b", "allowed", "cross-tenant-pass"),
-                ("revoked", "tenant-a", "revoked", "revoked-pass"),
-                ("csrf-reject", "tenant-a", "allowed", "csrf-reject-pass"),
-                ("logout", "tenant-a", "allowed", "logout-pass"),
+                ("allowed", tenant, "allowed", "allowed-pass"),
+                ("cross-tenant", forbidden_tenant, "allowed", "cross-tenant-pass"),
+                ("revoked", tenant, "revoked", "revoked-pass"),
+                ("csrf-reject", tenant, "allowed", "csrf-reject-pass"),
+                ("logout", tenant, "allowed", "logout-pass"),
             )
             for scenario, tenant, mode, marker in scenarios:
                 profile = temp / f"profile-{scenario}"
@@ -205,7 +216,7 @@ def main() -> int:
                     + f"target_tenant={tenant}&scenario={scenario}&mode={mode}"
                 )
                 html = _run_browser(browser, profile=profile, url=url, marker=marker)
-                if scenario == "cross-tenant" and ">tenant-b<" in html:
+                if scenario == "cross-tenant" and f">{forbidden_tenant}<" in html:
                     raise AssertionError("cross-tenant browser response disclosed requested tenant context")
             print(
                 "g1_browser_e2e=PASS "

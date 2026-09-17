@@ -107,6 +107,18 @@ def falsify_g2_semantic_scope_guard() -> None:
         ("apps/g2-monitoring-source-onboarding/source.ts", 'let out; ([out] = [payload.password]); reply.send({value: out});'),
         ("apps/g2-monitoring-source-onboarding/source.ts", 'const payload = "GRANT SELECT ON TABLE monitoring.sources TO app"; db.query(payload);'),
         ("apps/g2-monitoring-source-onboarding/source.ts", 'const payload = "DROP TABLE scratch_source"; db.query(payload);'),
+        ("apps/g2-monitoring-source-onboarding/source.ts", 'const values=[payload.password]; const [out]=values; reply.send({value:out});'),
+        ("apps/g2-monitoring-source-onboarding/source.ts", 'const values=[payload.password]; let out; ([out]=values); reply.send({value:out});'),
+        ("apps/g2-monitoring-source-onboarding/source.ts", 'let payload; payload="GRANT SELECT ON TABLE monitoring.sources TO app"; db.query(payload);'),
+        ("apps/g2-monitoring-source-onboarding/source.ts", 'db.query.call(db, "GRANT SELECT ON TABLE monitoring.sources TO app");'),
+        ("apps/g2-monitoring-source-onboarding/source.ts", 'db.query.apply(db, ["GRANT SELECT ON TABLE monitoring.sources TO app"]);'),
+        ("apps/g2-monitoring-source-onboarding/source.ts", 'Reflect.apply(db.query, db, ["GRANT SELECT ON TABLE monitoring.sources TO app"]);'),
+        ("apps/g2-monitoring-source-onboarding/source.ts", 'reply.send.bind?.(reply)({value: payload.password});'),
+        ("apps/g2-monitoring-source-onboarding/source.ts", 'const [emit]=[reply.send.bind(reply)]; emit({value:payload.password});'),
+        ("apps/g2-monitoring-source-onboarding/source.ts", 'function expose(x){ reply.send({value:x}); } expose?.(payload.password);'),
+        ("apps/g2-monitoring-source-onboarding/source.ts", 'function expose(x){ reply.send({value:x}); } expose.call(null,payload.password);'),
+        ("apps/g2-monitoring-source-onboarding/source.ts", 'function expose(x){ reply.send({value:x}); } expose.apply(null,[payload.password]);'),
+        ("apps/g2-monitoring-source-onboarding/source.ts", 'function expose(x){ reply.send({value:x}); } Reflect.apply(expose,null,[payload.password]);'),
     )
     for path, text in rejected:
         if not scope.validate_semantic_artifact(path, text, policy):
@@ -237,7 +249,7 @@ def main() -> int:
     falsify_g2_materialized_scope_package()
     falsify_g2_trusted_workflow_semantics()
     falsify_g2_same_second_status_ordering()
-    print("g2_review_guardrails=PASS semantic=current-review-regressions+array-taint+arbitrary-sql-binding+sql-display-literals authorization=ledger-fragments workflow=blob-exact status=total-order")
+    print("g2_review_guardrails=PASS semantic=current-review-regressions+array-variable-taint+later-sql-binding+sql-helper-equivalence+optional-bind+array-sink-alias+wrapper-equivalence authorization=ledger-fragments workflow=blob-exact status=total-order")
     return 0
 
 

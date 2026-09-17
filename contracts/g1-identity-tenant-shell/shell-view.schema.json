@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "jlmirror:g1-identity-tenant-shell:shell-view@1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["state"],
+  "properties": {
+    "state": {
+      "enum": ["ready", "unauthenticated", "forbidden", "revoked", "unavailable"]
+    },
+    "tenant_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "principal_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "admission_revision": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"state": {"const": "ready"}}},
+      "then": {"required": ["tenant_id", "principal_id", "admission_revision"]},
+      "else": {
+        "not": {
+          "anyOf": [
+            {"required": ["tenant_id"]},
+            {"required": ["principal_id"]},
+            {"required": ["admission_revision"]}
+          ]
+        }
+      }
+    }
+  ]
+}

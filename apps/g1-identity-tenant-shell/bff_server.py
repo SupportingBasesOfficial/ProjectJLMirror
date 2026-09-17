@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import argparse
+import base64
+import hashlib
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from http import HTTPStatus
@@ -49,12 +51,18 @@ class Transactions:
 
 class FixtureOidc:
     def __init__(self) -> None:
-        self._nonce_by_code: dict[str, str] = {}
+        self._evidence_by_code: dict[str, tuple[str, str]] = {}
         self._lock = Lock()
 
-    def register(self, *, authorization_code: str, nonce: str) -> None:
+    def register(
+        self,
+        *,
+        authorization_code: str,
+        nonce: str,
+        pkce_challenge: str,
+    ) -> None:
         with self._lock:
-            self._nonce_by_code[authorization_code] = nonce
+            self._evidence_by_code[authorization_code] = (nonce, pkce_challenge)
 
     def exchange_and_verify(
         self,
@@ -65,11 +73,17 @@ class FixtureOidc:
         expected_client_id: str,
         expected_redirect_uri: str,
     ) -> VerifiedOidcIdentity:
-        del pkce_verifier, expected_redirect_uri
+        del expected_redirect_uri
         with self._lock:
-            nonce = self._nonce_by_code.pop(authorization_code, None)
-        if nonce is None:
+            fixture_evidence = self._evidence_by_code.pop(authorization_code, None)
+        if fixture_evidence is None:
             raise AdmissionDenied("fixture authorization code is absent or already consumed")
+        nonce, expected_challenge = fixture_evidence
+        actual_challenge = base64.urlsafe_b64encode(
+            hashlib.sha256(pkce_verifier.encode("ascii")).digest()
+        ).rstrip(b"=").decode("ascii")
+        if not secrets.compare_digest(actual_challenge, expected_challenge):
+            raise AdmissionDenied("fixture PKCE S256 verification failed")
         now = utcnow()
         return VerifiedOidcIdentity(
             principal_id="principal-a",
@@ -359,6 +373,7 @@ class Handler(BaseHTTPRequestHandler):
         self.server.state.oidc.register(
             authorization_code=authorization_code,
             nonce=start.nonce,
+            pkce_challenge=start.pkce_challenge,
         )
         location = (
             "/__fixture__/idp/callback?"

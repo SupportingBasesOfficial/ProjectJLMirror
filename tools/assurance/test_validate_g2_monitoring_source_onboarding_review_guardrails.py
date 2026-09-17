@@ -131,6 +131,10 @@ def falsify_g2_semantic_scope_guard() -> None:
         ("apps/g2-monitoring-source-onboarding/source.ts", 'const q=db.query.bind(db); const q2=q; q2("GRANT SELECT ON t TO x");'),
         ("apps/g2-monitoring-source-onboarding/source.ts", 'const h={w:database.insert.bind(database)}; h.w({x:1});'),
         ("apps/g2-monitoring-source-onboarding/source.ts", 'const h={}; h.w=database.insert.bind(database); h.w({x:1});'),
+        ("apps/g2-monitoring-source-onboarding/source.ts", 'function expose({x}) { reply.send({v:x}); } expose({x:payload.password});'),
+        ("apps/g2-monitoring-source-onboarding/source.ts", 'function expose({value:x = ""}) { reply.send({v:x}); } expose({value:payload.password});'),
+        ("apps/g2-monitoring-source-onboarding/source.ts", 'function expose([x]) { reply.send({v:x}); } expose([payload.password]);'),
+        ("apps/g2-monitoring-source-onboarding/source.ts", 'function expose(...args) { reply.send({v:args[0]}); } expose(payload.password);'),
     )
     for path, text in rejected:
         if not scope.validate_semantic_artifact(path, text, policy):
@@ -159,6 +163,8 @@ def falsify_g2_semantic_scope_guard() -> None:
         'const h={emit:() => "ok"}; const out=h.emit; reply.send({value:out()});',
         'const q=search.query.bind(search); q("Grant camera access");',
         'const h={w:() => 1}; h.w({x:1});',
+        'function display({x}) { return x; } reply.send({value:display({x:"ok"})});',
+        'function display(...args) { return args[0]; } reply.send({value:display("ok")});',
     )
     for text in allowed:
         errors = scope.validate_semantic_artifact("apps/g2-monitoring-source-onboarding/source.ts", text, policy)
@@ -265,7 +271,7 @@ def main() -> int:
     falsify_g2_materialized_scope_package()
     falsify_g2_trusted_workflow_semantics()
     falsify_g2_same_second_status_ordering()
-    print("g2_review_guardrails=PASS semantic=current-review-regressions+callable-provenance+sql-callable-alias+persistence-member-alias authorization=ledger-fragments workflow=blob-exact status=total-order")
+    print("g2_review_guardrails=PASS semantic=current-review-regressions+callable-provenance+sql-callable-alias+persistence-member-alias+wrapper-parameter-provenance authorization=ledger-fragments workflow=blob-exact status=total-order")
     return 0
 
 

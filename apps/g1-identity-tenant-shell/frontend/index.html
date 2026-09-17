@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>JLMirror</title>
+</head>
+<body>
+  <main id="jlmirror-shell" aria-live="polite" data-state="loading">
+    <h1>JLMirror</h1>
+    <p id="shell-status">Checking current access…</p>
+    <section id="tenant-context" hidden>
+      <h2>Current tenant</h2>
+      <p id="tenant-id"></p>
+    </section>
+  </main>
+  <script type="module" src="./app.mjs"></script>
+</body>
+</html>

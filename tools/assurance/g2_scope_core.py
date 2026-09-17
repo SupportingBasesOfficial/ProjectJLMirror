@@ -215,9 +215,10 @@ def _has_persistence_write(decoded: str) -> bool:
     aliases = _persistence_aliases(decoded)
     receiver = "|".join(re.escape(name) for name in sorted(aliases, key=len, reverse=True))
     write = "|".join(re.escape(name) for name in sorted(PERSISTENCE_WRITES, key=len, reverse=True))
+    helper_invocation = r"(?:\.\s*(?:call|apply)\s*(?:\?\.\s*)?\(|(?:\?\.\s*)?\()"
     patterns = (
-        rf"\b(?:{receiver})\s*\.\s*(?:{write})\s*\(",
-        rf"\b(?:{receiver})\s*\[\s*['\"](?:{write})['\"]\s*\]\s*\(",
+        rf"\b(?:{receiver})\s*\.\s*(?:{write})\s*{helper_invocation}",
+        rf"\b(?:{receiver})\s*\[\s*['\"](?:{write})['\"]\s*\]\s*{helper_invocation}",
         rf"\b(?:const|let|var)\s*\{{[^}}]*\b(?:{write})\b[^}}]*\}}\s*=\s*(?:{receiver})\b",
     )
     return any(re.search(pattern, decoded, flags=re.IGNORECASE) for pattern in patterns)
@@ -234,16 +235,112 @@ def _has_secret_to_sink(decoded: str) -> bool:
     return any(re.search(pattern, decoded, flags=re.IGNORECASE | re.DOTALL) for pattern in patterns)
 
 
+def _review_mask_comments(text: str) -> str:
+    chars = list(text)
+    quote: str | None = None
+    escaped = False
+    index = 0
+    while index < len(text):
+        char = text[index]
+        if quote is not None:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == quote:
+                quote = None
+            index += 1
+            continue
+        if char in "'\"`":
+            quote = char
+            index += 1
+            continue
+        if char == "/" and index + 1 < len(text) and text[index + 1] == "*":
+            end = text.find("*/", index + 2)
+            end = len(text) - 2 if end < 0 else end
+            for position in range(index, min(len(text), end + 2)):
+                if chars[position] != "\n":
+                    chars[position] = " "
+            index = end + 2
+            continue
+        if char == "/" and index + 1 < len(text) and text[index + 1] == "/":
+            end = text.find("\n", index + 2)
+            end = len(text) if end < 0 else end
+            for position in range(index, end):
+                chars[position] = " "
+            index = end
+            continue
+        index += 1
+    return "".join(chars)
+
+
+def _review_static_string_aliases(decoded: str) -> dict[str, str]:
+    aliases: dict[str, str] = {}
+    code = _review_mask_comments(decoded)
+    pattern = re.compile(
+        r"\b(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*(['\"])([A-Za-z_$][A-Za-z0-9_$]*)\2\s*(?:[,;\n]|$)"
+    )
+    for match in pattern.finditer(code):
+        aliases[match.group(1)] = match.group(3)
+    return aliases
+
+
+def _review_normalize_static_members(decoded: str) -> str:
+    aliases = _review_static_string_aliases(decoded)
+    value = _review_mask_comments(decoded)
+    value = re.sub(
+        r"\[\s*(['\"])([A-Za-z_$][A-Za-z0-9_$]*)\1\s*\]",
+        lambda match: "." + match.group(2),
+        value,
+    )
+    for alias, member in aliases.items():
+        value = re.sub(rf"\[\s*{re.escape(alias)}\s*\]", "." + member, value)
+    return value
+
+
+def _review_mask_literals(text: str) -> str:
+    chars = list(text)
+    quote: str | None = None
+    escaped = False
+    start = -1
+    index = 0
+    while index < len(text):
+        char = text[index]
+        if quote is None:
+            if char in "'\"`":
+                quote = char
+                start = index
+            index += 1
+            continue
+        if escaped:
+            escaped = False
+        elif char == "\\":
+            escaped = True
+        elif char == quote:
+            for position in range(start, index + 1):
+                if chars[position] != "\n":
+                    chars[position] = " "
+            quote = None
+            start = -1
+        index += 1
+    return "".join(chars)
+
+
+def _review_code_view(decoded: str) -> str:
+    return _review_mask_literals(_review_normalize_static_members(decoded))
+
+
 def _live_secret_reference(text: str) -> bool:
     secret = "|".join(sorted(SECRET_TERMS, key=len, reverse=True))
     receiver = r"(?:payload|body|request|req|input|credentials?|provider)"
+    normalized = _review_code_view(text)
     dot = rf"\b{receiver}\s*(?:\?\.|\.)\s*(?:{secret})\b"
-    computed = rf"\b{receiver}\s*(?:\?\.)?\s*\[\s*['\"](?:{secret})['\"]\s*\]"
-    return bool(re.search(dot, text, flags=re.IGNORECASE) or re.search(computed, text, flags=re.IGNORECASE))
+    return bool(re.search(dot, normalized, flags=re.IGNORECASE))
 
 
 def _review_secret_aliases(decoded: str) -> set[str]:
     aliases: set[str] = set()
+    code = _review_code_view(decoded)
     assignment = re.compile(
         r"(?<![A-Za-z0-9_$])([A-Za-z_$][A-Za-z0-9_$]*)\s*(?:\?\?=|\|\|=|&&=|[+\-*/%&|^]=|=(?!=|>))\s*([^;\n]+)",
         flags=re.IGNORECASE,
@@ -251,7 +348,7 @@ def _review_secret_aliases(decoded: str) -> set[str]:
     changed = True
     while changed:
         changed = False
-        for match in assignment.finditer(decoded):
+        for match in assignment.finditer(code):
             target, expression = match.group(1), match.group(2)
             alias_hit = any(re.search(rf"\b{re.escape(alias)}\b", expression) for alias in aliases)
             if target not in aliases and (_live_secret_reference(expression) or alias_hit):
@@ -263,10 +360,12 @@ def _review_secret_aliases(decoded: str) -> set[str]:
 def _review_contains_secret(text: str, aliases: set[str]) -> bool:
     if _live_secret_reference(text):
         return True
-    return any(re.search(rf"\b{re.escape(alias)}\b", text) for alias in aliases)
+    code = _review_code_view(text)
+    return any(re.search(rf"\b{re.escape(alias)}\b", code) for alias in aliases)
 
 
 def _review_secret_sink_flow(decoded: str) -> bool:
+    code = _review_code_view(decoded)
     aliases = _review_secret_aliases(decoded)
     sink = "|".join(sorted(SECRET_SINK_TERMS, key=len, reverse=True))
     helper = r"(?:(?:\.|\?\.)\s*(?:call|apply)\s*(?:\?\.\s*)?)?"
@@ -275,19 +374,17 @@ def _review_secret_sink_flow(decoded: str) -> bool:
         rf"(?:\b[A-Za-z_$][A-Za-z0-9_$]*\s*(?:\?\.|\.)\s*)?\b(?:{sink})\b\s*{helper}\s*{invocation}(.*?)\)",
         flags=re.IGNORECASE | re.DOTALL,
     )
-    computed = re.compile(
-        rf"\b[A-Za-z_$][A-Za-z0-9_$]*\s*(?:\?\.\s*)?\[\s*['\"](?:{sink})['\"]\s*\]\s*{helper}\s*{invocation}(.*?)\)",
-        flags=re.IGNORECASE | re.DOTALL,
-    )
-    return any(_review_contains_secret(match.group(1), aliases) for match in direct.finditer(decoded)) or any(
-        _review_contains_secret(match.group(1), aliases) for match in computed.finditer(decoded)
-    )
+    return any(_review_contains_secret(match.group(1), aliases) for match in direct.finditer(code))
 
 
 def _review_sql_authority_call(decoded: str) -> bool:
-    execution = r"\b(?:query|execute|exec|run|sql)\s*\("
-    authority = r"\b(?:grant|revoke|reassign\s+owned)\b"
-    return bool(re.search(rf"{execution}[^;]*{authority}", decoded, flags=re.IGNORECASE | re.DOTALL))
+    execution = (
+        r"(?:\b[A-Za-z_$][A-Za-z0-9_$]*\s*(?:\.\s*(?:query|execute|exec|run|sql)|"
+        r"\[\s*['\"](?:query|execute|exec|run|sql)['\"]\s*\])|"
+        r"\(\s*[A-Za-z_$][A-Za-z0-9_$]*\s*\.\s*(?:query|execute|exec|run|sql)\s*\))\s*\("
+    )
+    privilege = r"\b(?:grant\b[^;()]{0,300}\b(?:on|to)\b|revoke\b[^;()]{0,300}\b(?:on|from)\b|reassign\s+owned\b)"
+    return bool(re.search(rf"{execution}[^;]{{0,600}}{privilege}", decoded, flags=re.IGNORECASE | re.DOTALL))
 
 
 def _structural_semantic_errors(path: str, decoded: str) -> list[str]:

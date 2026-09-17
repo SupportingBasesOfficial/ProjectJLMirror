@@ -22,7 +22,12 @@ WORKFLOW_SUFFIXES = {".yml", ".yaml"}
 TEXT_SUFFIXES = {".md", ".yml", ".yaml", ".py", ".json", ".toml", ".txt"}
 STATUS_PUBLISHER_WORKFLOW = ".github/workflows/adversarial-learning-reconciliation.yml"
 G1_STATUS_PUBLISHER_WORKFLOW = ".github/workflows/g1-identity-tenant-shell-implementation-scope.yml"
-STATUS_PUBLISHER_WORKFLOWS = {STATUS_PUBLISHER_WORKFLOW, G1_STATUS_PUBLISHER_WORKFLOW}
+G2_STATUS_PUBLISHER_WORKFLOW = ".github/workflows/g2-monitoring-source-onboarding-implementation-scope.yml"
+STATUS_PUBLISHER_WORKFLOWS = {
+    STATUS_PUBLISHER_WORKFLOW,
+    G1_STATUS_PUBLISHER_WORKFLOW,
+    G2_STATUS_PUBLISHER_WORKFLOW,
+}
 EXPECTED_STATUS_ENDPOINT = "repos/${GITHUB_REPOSITORY}/statuses/${PR_HEAD_SHA}"
 
 ACTION_USE_RE = re.compile(r"^\s*(?:-\s*)?uses:\s*([^\s#]+)\s*(?:#.*)?$", re.MULTILINE)
@@ -259,6 +264,51 @@ def _g1_status_publisher_policy_errors(text: str) -> list[str]:
     return errors
 
 
+def _g2_status_publisher_policy_errors(text: str) -> list[str]:
+    errors = _publisher_common_errors(
+        text,
+        group_marker="group: g2-monitoring-source-onboarding-scope-${{ github.event.issue.number }}",
+        head_output="needs.resolve.outputs.head_sha",
+    )
+    required_markers = (
+        "github.event.comment.body == '/jlmirror-g2-scope-attest'",
+        "github.event.comment.body == '/jlmirror-g2-scope-ready'",
+        'test "$PR_BASE_REF" = "$DEFAULT_BRANCH"',
+        'test "$PR_BASE_REPO" = "$GITHUB_REPOSITORY"',
+        'test "$PR_HEAD_REPO" = "$GITHUB_REPOSITORY"',
+        'test "$PR_BASE_SHA" = "$DEFAULT_BRANCH_SHA"',
+        "branches/${DEFAULT_BRANCH}",
+        "G2_REQUIRED_LABEL",
+        'git show "${PR_BASE_SHA}:${G2_SCOPE_VALIDATOR}" > "$trusted_validator"',
+        "contents/${G2_READINESS_VALIDATOR}?ref=${PR_BASE_SHA}",
+        'python3 "$TRUSTED_READINESS_VALIDATOR"',
+        'test "$(git rev-parse HEAD)" != "$PR_HEAD_SHA"',
+        "CURRENT_HEAD_SHA",
+        "CURRENT_BASE_SHA",
+        "CURRENT_BASE_REF",
+        "CURRENT_DEFAULT_SHA",
+        "CURRENT_LABELS_JSON",
+        "JLMIRROR / g2-monitoring-source-onboarding-implementation-scope",
+        "JLMIRROR / g2-monitoring-source-onboarding-merge-readiness",
+        "G2 scope PASS base=${PR_BASE_SHA} head=${PR_HEAD_SHA}",
+        "G2 ready PASS base=${PR_BASE_SHA} head=${PR_HEAD_SHA}",
+        'test "$state" = success',
+    )
+    for marker in required_markers:
+        if marker not in text:
+            errors.append(f"G2 status reconciliation missing trusted marker: {marker}")
+    if re.search(r"^\s+push:\s*$", text, re.MULTILINE):
+        errors.append("G2 status reconciliation must not depend on skippable push invalidation")
+    if text.count("uses: actions/checkout@") != 1:
+        errors.append("G2 status reconciliation must checkout code only once in read-only scope analysis")
+    ready = _job_block(text, "verify-ready")
+    if ready is None:
+        errors.append("G2 status reconciliation missing source-authenticated live readiness job")
+    elif "statuses: write" in ready:
+        errors.append("G2 live readiness verification must remain read-only")
+    return errors
+
+
 def _check_workflow_policy(root: Path) -> list[Finding]:
     findings: list[Finding] = []
     for path in _workflow_files(root):
@@ -270,6 +320,8 @@ def _check_workflow_policy(root: Path) -> list[Finding]:
             findings.extend(Finding(rel, message) for message in _status_publisher_policy_errors(text))
         elif rel == G1_STATUS_PUBLISHER_WORKFLOW:
             findings.extend(Finding(rel, message) for message in _g1_status_publisher_policy_errors(text))
+        elif rel == G2_STATUS_PUBLISHER_WORKFLOW:
+            findings.extend(Finding(rel, message) for message in _g2_status_publisher_policy_errors(text))
         else:
             for regex, message in (
                 (WRITE_ALL_RE, "workflow grants permissions: write-all; observer-only workflows must not have canonical mutation authority"),

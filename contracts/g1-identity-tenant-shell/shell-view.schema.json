@@ -6,7 +6,7 @@
   "required": ["state"],
   "properties": {
     "state": {
-      "enum": ["ready", "unauthenticated", "forbidden", "revoked", "unavailable"]
+      "enum": ["loading", "ready", "unauthenticated", "forbidden", "revoked", "unavailable"]
     },
     "tenant_id": {
       "type": "string",

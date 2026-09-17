@@ -14,7 +14,7 @@ The canonical runner performs three bounded proofs:
 
 1. Python unit/adversarial tests for OIDC transaction binding, opaque server-side session issuance, single-use callback, current tenant re-admission, cross-tenant denial, logout/revocation and stale-session denial;
 2. Node presentation tests for loading/ready/unauthenticated/forbidden/revoked/unavailable shell states and no tenant-context disclosure outside an admitted `ready` state;
-3. a pinned PostgreSQL container conformance proof for the logical BFF transaction/session authority schema.
+3. a pinned PostgreSQL container conformance proof for the logical BFF transaction/session authority schema;\n4. a real headless Chrome journey against the HTTPS BFF/frontend entrypoint covering admitted tenant, forbidden cross-tenant, revoked current authority, CSRF rejection and CSRF-protected logout.
 
 ## Browser/BFF security boundary
 
@@ -40,6 +40,25 @@ The canonical runner performs three bounded proofs:
 The conformance harness explicitly checks that the G1 schema does not create membership, permission, tenant-status or tenant-access-generation columns. Those truths remain owned by their existing authorities.
 
 This SQL selects no production topology, replication shape, cache product, RPO/RTO or production numeric. Those remain governed by their separately accepted/open decisions.
+
+## Executable G1 entrypoints
+
+The bounded local application entrypoints are:
+
+- `python apps/g1-identity-tenant-shell/bff_server.py --certfile <cert> --keyfile <key>` for the confidential HTTPS BFF/application boundary;
+- `python apps/g1-identity-tenant-shell/start_frontend.py --certfile <cert> --keyfile <key>` for the standalone static frontend proof.
+
+The canonical browser E2E enables the explicitly test-only `--fixture` bootstrap. That fixture still executes the accepted PKCE/OIDC composition, opaque server-side session issuance, current authentication-strength check and tenant denial semantics; it does not create production identity or tenant truth.
+
+## Browser E2E
+
+`tools/g1/run_identity_tenant_shell_browser_e2e.py` launches the HTTPS BFF and a real installed Chrome/Chromium headless browser. It proves:
+
+- admitted `tenant-a` renders only after current shell admission;
+- a browser-selected `tenant-b` fails closed and does not render requested tenant context;
+- revoked authority renders no tenant context;
+- a state-changing logout without the CSRF header is rejected while the session remains current;
+- the accepted versioned HMAC CSRF cookie/header binding permits logout, after which stale session reuse becomes unauthenticated.
 
 ## Runtime workflow
 

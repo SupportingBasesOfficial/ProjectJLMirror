@@ -4,7 +4,6 @@ import argparse
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from http import HTTPStatus
-from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
@@ -404,7 +403,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def _handle_shell(self, path: str) -> None:
         parts = path.split("/")
-        if len(parts) != 7:
+        if len(parts) != 6:
             self._send_json(HTTPStatus.NOT_FOUND, {"state": "unavailable"})
             return
         tenant_id = unquote(parts[4])

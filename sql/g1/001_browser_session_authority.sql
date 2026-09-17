@@ -21,13 +21,20 @@ CREATE TABLE IF NOT EXISTS g1_identity.browser_auth_transaction (
 CREATE TABLE IF NOT EXISTS g1_identity.browser_session (
     handle_digest TEXT PRIMARY KEY CHECK (handle_digest ~ '^[0-9a-f]{64}$'),
     principal_id TEXT NOT NULL CHECK (btrim(principal_id) = principal_id AND principal_id <> ''),
-    principal_kind TEXT NOT NULL CHECK (principal_kind IN ('human_browser_session', 'platform_admin_principal')),
+    principal_kind TEXT NOT NULL CHECK (principal_kind = 'human_browser_session'),
     session_generation TEXT NOT NULL UNIQUE CHECK (btrim(session_generation) = session_generation AND session_generation <> ''),
+    auth_authenticated_at TIMESTAMPTZ NOT NULL,
+    auth_time_source TEXT NOT NULL CHECK (btrim(auth_time_source) = auth_time_source AND auth_time_source <> ''),
+    auth_acr TEXT CHECK (auth_acr IS NULL OR (btrim(auth_acr) = auth_acr AND auth_acr <> '')),
+    auth_amr TEXT[] NOT NULL DEFAULT '{}',
+    auth_policy_version TEXT NOT NULL CHECK (btrim(auth_policy_version) = auth_policy_version AND auth_policy_version <> ''),
     created_at TIMESTAMPTZ NOT NULL,
     expires_at TIMESTAMPTZ NOT NULL,
     retired_at TIMESTAMPTZ,
+    CHECK (auth_authenticated_at <= created_at),
     CHECK (expires_at > created_at),
-    CHECK (retired_at IS NULL OR retired_at >= created_at)
+    CHECK (retired_at IS NULL OR retired_at >= created_at),
+    CHECK (array_position(auth_amr, NULL) IS NULL)
 );
 
 CREATE OR REPLACE FUNCTION g1_identity.consume_browser_auth_transaction(

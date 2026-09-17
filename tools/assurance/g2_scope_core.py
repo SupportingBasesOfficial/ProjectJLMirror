@@ -419,6 +419,7 @@ def _review_array_destructuring(decoded: str) -> list[tuple[str, str]]:
 
 def _review_secret_aliases(decoded: str) -> set[str]:
     aliases: set[str] = set()
+    secret_returners: set[str] = set()
     code = _review_code_view(decoded)
     assignment = re.compile(
         r"(?<![A-Za-z0-9_$])([A-Za-z_$][A-Za-z0-9_$]*)\s*(?:\?\?=|\|\|=|&&=|[+\-*/%&|^]=|=(?!=|>))\s*([^;\n]+)",
@@ -427,15 +428,28 @@ def _review_secret_aliases(decoded: str) -> set[str]:
     changed = True
     while changed:
         changed = False
+        for function_name, _params, body in _review_function_definitions(decoded):
+            if function_name in secret_returners:
+                continue
+            for return_match in re.finditer(r"\breturn\s+([^;\n]+)", body, flags=re.IGNORECASE | re.DOTALL):
+                expression = return_match.group(1)
+                alias_hit = any(re.search(rf"\b{re.escape(alias)}\b", _review_code_view(expression)) for alias in aliases)
+                returner_hit = any(re.search(rf"\b{re.escape(name)}\s*(?:\?\.\s*)?\(", expression) for name in secret_returners)
+                if _live_secret_reference(expression) or alias_hit or returner_hit:
+                    secret_returners.add(function_name)
+                    changed = True
+                    break
         for match in assignment.finditer(code):
             target, expression = match.group(1), match.group(2)
             alias_hit = any(re.search(rf"\b{re.escape(alias)}\b", expression) for alias in aliases)
-            if target not in aliases and (_live_secret_reference(expression) or alias_hit):
+            returner_hit = any(re.search(rf"\b{re.escape(name)}\s*(?:\?\.\s*)?\(", expression) for name in secret_returners)
+            if target not in aliases and (_live_secret_reference(expression) or alias_hit or returner_hit):
                 aliases.add(target)
                 changed = True
         for target, expression in _review_array_destructuring(decoded):
             alias_hit = any(re.search(rf"\b{re.escape(alias)}\b", expression) for alias in aliases)
-            if target not in aliases and (_live_secret_reference(expression) or alias_hit):
+            returner_hit = any(re.search(rf"\b{re.escape(name)}\s*(?:\?\.\s*)?\(", expression) for name in secret_returners)
+            if target not in aliases and (_live_secret_reference(expression) or alias_hit or returner_hit):
                 aliases.add(target)
                 changed = True
     return aliases
@@ -455,6 +469,18 @@ def _review_sink_aliases(decoded: str) -> set[str]:
         r"(?<![A-Za-z0-9_$])([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*([^;\n]+)",
         flags=re.IGNORECASE,
     )
+    object_literal = re.compile(
+        r"\b(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*\{([^{}]*)\}",
+        flags=re.DOTALL,
+    )
+    object_property = re.compile(
+        r"(?:([A-Za-z_$][A-Za-z0-9_$]*)|['\"]([A-Za-z_$][A-Za-z0-9_$]*)['\"])\s*:\s*([^,}]+)",
+        flags=re.DOTALL,
+    )
+    member_assignment = re.compile(
+        r"\b([A-Za-z_$][A-Za-z0-9_$]*)\s*\.\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*([^;\n]+)",
+        flags=re.DOTALL,
+    )
     changed = True
     while changed:
         changed = False
@@ -465,6 +491,25 @@ def _review_sink_aliases(decoded: str) -> set[str]:
             names = re.findall(r"[A-Za-z_$][A-Za-z0-9_$]*", expression)
             if names and names[-1].casefold() in known and target not in aliases:
                 aliases.add(target)
+                changed = True
+        for object_match in object_literal.finditer(code):
+            receiver = object_match.group(1)
+            for property_match in object_property.finditer(object_match.group(2)):
+                property_name = property_match.group(1) or property_match.group(2)
+                expression = _review_normalize_static_members(property_match.group(3).strip())
+                expression = re.sub(r"(?:\.|\?\.)\s*bind\s*(?:\?\.\s*)?\([^)]*\)\s*$", "", expression, flags=re.DOTALL)
+                names = re.findall(r"[A-Za-z_$][A-Za-z0-9_$]*", expression)
+                qualified = f"{receiver}.{property_name}"
+                if names and names[-1].casefold() in known and qualified not in aliases:
+                    aliases.add(qualified)
+                    changed = True
+        for member_match in member_assignment.finditer(code):
+            receiver, property_name, expression = member_match.group(1), member_match.group(2), member_match.group(3).strip()
+            expression = re.sub(r"(?:\.|\?\.)\s*bind\s*(?:\?\.\s*)?\([^)]*\)\s*$", "", expression, flags=re.DOTALL)
+            names = re.findall(r"[A-Za-z_$][A-Za-z0-9_$]*", expression)
+            qualified = f"{receiver}.{property_name}"
+            if names and names[-1].casefold() in known and qualified not in aliases:
+                aliases.add(qualified)
                 changed = True
         for target, expression in _review_array_destructuring(decoded):
             normalized = _review_normalize_static_members(expression)

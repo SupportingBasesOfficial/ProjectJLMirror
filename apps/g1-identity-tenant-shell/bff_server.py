@@ -143,8 +143,9 @@ class FixtureTenantAdmission:
         with self._lock:
             return self._mode_by_principal.get(principal_id, "allowed")
 
-    def require_current(self, *, principal, tenant_id: str, now: datetime) -> TenantShellAdmission:
-        del now
+    def require_current(self, *, principal, tenant_id: str, now: datetime, authentication_strength) -> TenantShellAdmission:
+        if authentication_strength is None or authentication_strength.is_current(now) is not True:
+            raise AdmissionDenied("current authentication strength is unavailable")
         mode = self.mode_for(principal.principal_id)
         if mode == "revoked":
             raise AdmissionDenied("current authority is revoked")

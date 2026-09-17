@@ -123,6 +123,14 @@ def falsify_g2_semantic_scope_guard() -> None:
         ("apps/g2-monitoring-source-onboarding/source.ts", 'const handlers={}; handlers.emit=reply.send.bind(reply); handlers.emit({value:payload.password});'),
         ("apps/g2-monitoring-source-onboarding/source.ts", 'function get(){ return payload.password; } const out=get(); reply.send({value:out});'),
         ("apps/g2-monitoring-source-onboarding/source.ts", 'function get(){ return payload.password; } function get2(){ return get(); } const out=get2(); reply.send({value:out});'),
+        ("apps/g2-monitoring-source-onboarding/source.ts", 'function get(){ return payload.password; } reply.send({value:get()});'),
+        ("apps/g2-monitoring-source-onboarding/source.ts", 'const h={emit:reply.send.bind(reply)}; const out=h.emit; out({value:payload.password});'),
+        ("apps/g2-monitoring-source-onboarding/source.ts", 'function expose(x){ reply.send({v:x}); } const e=expose; e(payload.password);'),
+        ("apps/g2-monitoring-source-onboarding/source.ts", 'const q=db.query.bind(db); q("GRANT SELECT ON t TO x");'),
+        ("apps/g2-monitoring-source-onboarding/source.ts", 'const {query:q}=db; q("GRANT SELECT ON t TO x");'),
+        ("apps/g2-monitoring-source-onboarding/source.ts", 'const q=db.query.bind(db); const q2=q; q2("GRANT SELECT ON t TO x");'),
+        ("apps/g2-monitoring-source-onboarding/source.ts", 'const h={w:database.insert.bind(database)}; h.w({x:1});'),
+        ("apps/g2-monitoring-source-onboarding/source.ts", 'const h={}; h.w=database.insert.bind(database); h.w({x:1});'),
     )
     for path, text in rejected:
         if not scope.validate_semantic_artifact(path, text, policy):
@@ -147,6 +155,10 @@ def falsify_g2_semantic_scope_guard() -> None:
         'const payload = "Grant camera access"; search.query(payload);',
         'const help = "Create table monitoring sources";',
         'const help = "Drop table instructions";',
+        'function get(){ return "password help"; } reply.send({value:get()});',
+        'const h={emit:() => "ok"}; const out=h.emit; reply.send({value:out()});',
+        'const q=search.query.bind(search); q("Grant camera access");',
+        'const h={w:() => 1}; h.w({x:1});',
     )
     for text in allowed:
         errors = scope.validate_semantic_artifact("apps/g2-monitoring-source-onboarding/source.ts", text, policy)
@@ -253,7 +265,7 @@ def main() -> int:
     falsify_g2_materialized_scope_package()
     falsify_g2_trusted_workflow_semantics()
     falsify_g2_same_second_status_ordering()
-    print("g2_review_guardrails=PASS semantic=current-review-regressions+array-variable-taint+later-sql-binding+sql-helper-equivalence+optional-bind+array-sink-alias+wrapper-equivalence+object-sink-members+named-return-taint authorization=ledger-fragments workflow=blob-exact status=total-order")
+    print("g2_review_guardrails=PASS semantic=current-review-regressions+callable-provenance+sql-callable-alias+persistence-member-alias authorization=ledger-fragments workflow=blob-exact status=total-order")
     return 0
 
 

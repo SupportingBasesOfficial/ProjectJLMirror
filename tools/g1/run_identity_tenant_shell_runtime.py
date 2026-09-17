@@ -12,7 +12,8 @@ ROOT = Path(__file__).resolve().parents[2]
 def _assert_frontend_boundary() -> None:
     index = (ROOT / "apps/g1-identity-tenant-shell/frontend/index.html").read_text(encoding="utf-8")
     module = (ROOT / "apps/g1-identity-tenant-shell/frontend/shell-state.mjs").read_text(encoding="utf-8")
-    text = index + "\n" + module
+    app = (ROOT / "apps/g1-identity-tenant-shell/frontend/app.mjs").read_text(encoding="utf-8")
+    text = index + "\n" + module + "\n" + app
     forbidden = (
         "localStorage",
         "sessionStorage",
@@ -59,7 +60,8 @@ def main() -> int:
     )
     _run(["node", "--test", "tests/g1/protected_shell_presentation.test.mjs"])
     _run(["bash", "tools/g1/run_identity_tenant_shell_postgres_conformance.sh"])
-    print("g1_identity_tenant_shell_runtime=PASS unit=PASS presentation=PASS postgres=PASS")
+    _run([sys.executable, "tools/g1/run_identity_tenant_shell_browser_e2e.py"], env=env)
+    print("g1_identity_tenant_shell_runtime=PASS unit=PASS presentation=PASS postgres=PASS browser_e2e=PASS")
     return 0
 
 

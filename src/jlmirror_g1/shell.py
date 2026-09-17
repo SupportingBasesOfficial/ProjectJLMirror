@@ -11,7 +11,7 @@ from jlmirror_authority.browser import (
     begin_browser_auth,
     complete_browser_auth,
 )
-from jlmirror_authority.model import AdmissionDenied, Principal
+from jlmirror_authority.model import AdmissionDenied, AuthenticationStrengthEvidence, Principal
 from jlmirror_authority.session import (
     BrowserSessionHandle,
     SessionAuthorityPort,
@@ -69,6 +69,7 @@ class CurrentTenantAdmissionPort(Protocol):
         principal: Principal,
         tenant_id: str,
         now: datetime,
+        authentication_strength: AuthenticationStrengthEvidence | None,
     ) -> TenantShellAdmission: ...
 
 
@@ -156,6 +157,7 @@ class IdentityTenantShell:
             principal=record.principal,
             tenant_id=tenant_id,
             now=now,
+            authentication_strength=record.authentication_strength,
         )
         if not isinstance(admission, TenantShellAdmission):
             raise AdmissionDenied("tenant admission authority returned malformed evidence")

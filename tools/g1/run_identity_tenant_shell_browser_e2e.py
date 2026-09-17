@@ -43,7 +43,7 @@ def _wait_ready(url: str) -> None:
     raise RuntimeError("G1 BFF did not become ready")
 
 
-def _assert_fixture_disabled(*, port: int, cert: Path, key: Path, env: dict[str, str]) -> None:
+def _assert_fixture_disabled(*, port: int, cert: Path, key: Path, env: dict[str, str], tenant: str) -> None:
     server = subprocess.Popen(
         [
             sys.executable,
@@ -175,7 +175,7 @@ def main() -> int:
             check=True,
         )
         disabled_port = _port()
-        _assert_fixture_disabled(port=disabled_port, cert=cert, key=key, env=env)
+        _assert_fixture_disabled(port=disabled_port, cert=cert, key=key, env=env, tenant=tenant)
 
         port = _port()
         server = subprocess.Popen(

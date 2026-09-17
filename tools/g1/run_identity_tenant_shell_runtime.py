@@ -29,6 +29,18 @@ def _assert_frontend_boundary() -> None:
             raise AssertionError(f"protected shell frontend missing state: {state}")
 
 
+def _assert_fixture_isolation() -> None:
+    source = (ROOT / "apps/g1-identity-tenant-shell/bff_server.py").read_text(encoding="utf-8")
+    required = (
+        "FixtureOidc() if fixture_enabled else DisabledOidc()",
+        "FixtureTenantAdmission() if fixture_enabled else DisabledTenantAdmission()",
+        "if not self.server.fixture_enabled:",
+    )
+    for marker in required:
+        if marker not in source:
+            raise AssertionError(f"G1 BFF fixture isolation missing: {marker}")
+
+
 def _run(command: list[str], *, env: dict[str, str] | None = None) -> None:
     completed = subprocess.run(command, cwd=ROOT, env=env, check=False)
     if completed.returncode != 0:
@@ -37,6 +49,7 @@ def _run(command: list[str], *, env: dict[str, str] | None = None) -> None:
 
 def main() -> int:
     _assert_frontend_boundary()
+    _assert_fixture_isolation()
     env = dict(os.environ)
     pythonpath = [str(ROOT / "src")]
     existing = env.get("PYTHONPATH")

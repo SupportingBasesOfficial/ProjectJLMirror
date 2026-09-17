@@ -235,13 +235,37 @@ def _has_secret_to_sink(decoded: str) -> bool:
     return any(re.search(pattern, decoded, flags=re.IGNORECASE | re.DOTALL) for pattern in patterns)
 
 
+def _review_regex_eligible(text: str, index: int, previous_significant: str) -> bool:
+    if not previous_significant or previous_significant in "(=:[,!&|?{};+*-~%^<>":
+        return True
+    prefix = text[max(0, index - 48):index]
+    return bool(re.search(r"\b(?:await|case|delete|do|else|in|instanceof|new|return|throw|typeof|void|yield)\s*$", prefix))
+
+
 def _review_mask_comments(text: str) -> str:
     chars = list(text)
     quote: str | None = None
+    regex_literal = False
+    regex_char_class = False
     escaped = False
+    previous_significant = ""
     index = 0
     while index < len(text):
         char = text[index]
+        if regex_literal:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == "[":
+                regex_char_class = True
+            elif char == "]":
+                regex_char_class = False
+            elif char == "/" and not regex_char_class:
+                regex_literal = False
+                previous_significant = "/"
+            index += 1
+            continue
         if quote is not None:
             if escaped:
                 escaped = False
@@ -249,6 +273,7 @@ def _review_mask_comments(text: str) -> str:
                 escaped = True
             elif char == quote:
                 quote = None
+                previous_significant = char
             index += 1
             continue
         if char in "'\"`":
@@ -270,6 +295,14 @@ def _review_mask_comments(text: str) -> str:
                 chars[position] = " "
             index = end
             continue
+        if char == "/" and _review_regex_eligible(text, index, previous_significant):
+            regex_literal = True
+            regex_char_class = False
+            escaped = False
+            index += 1
+            continue
+        if not char.isspace():
+            previous_significant = char
         index += 1
     return "".join(chars)
 
@@ -289,12 +322,16 @@ def _review_normalize_static_members(decoded: str) -> str:
     aliases = _review_static_string_aliases(decoded)
     value = _review_mask_comments(decoded)
     value = re.sub(
-        r"\[\s*(['\"])([A-Za-z_$][A-Za-z0-9_$]*)\1\s*\]",
-        lambda match: "." + match.group(2),
+        r"(\?\.\s*)?\[\s*(['\"])([A-Za-z_$][A-Za-z0-9_$]*)\2\s*\]",
+        lambda match: ("?." if match.group(1) else ".") + match.group(3),
         value,
     )
     for alias, member in aliases.items():
-        value = re.sub(rf"\[\s*{re.escape(alias)}\s*\]", "." + member, value)
+        value = re.sub(
+            rf"(\?\.\s*)?\[\s*{re.escape(alias)}\s*\]",
+            lambda match, member=member: ("?." if match.group(1) else ".") + member,
+            value,
+        )
     return value
 
 

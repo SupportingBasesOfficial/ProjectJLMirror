@@ -119,6 +119,10 @@ def falsify_g2_semantic_scope_guard() -> None:
         ("apps/g2-monitoring-source-onboarding/source.ts", 'function expose(x){ reply.send({value:x}); } expose.call(null,payload.password);'),
         ("apps/g2-monitoring-source-onboarding/source.ts", 'function expose(x){ reply.send({value:x}); } expose.apply(null,[payload.password]);'),
         ("apps/g2-monitoring-source-onboarding/source.ts", 'function expose(x){ reply.send({value:x}); } Reflect.apply(expose,null,[payload.password]);'),
+        ("apps/g2-monitoring-source-onboarding/source.ts", 'const handlers={emit:reply.send.bind(reply)}; handlers.emit({value:payload.password});'),
+        ("apps/g2-monitoring-source-onboarding/source.ts", 'const handlers={}; handlers.emit=reply.send.bind(reply); handlers.emit({value:payload.password});'),
+        ("apps/g2-monitoring-source-onboarding/source.ts", 'function get(){ return payload.password; } const out=get(); reply.send({value:out});'),
+        ("apps/g2-monitoring-source-onboarding/source.ts", 'function get(){ return payload.password; } function get2(){ return get(); } const out=get2(); reply.send({value:out});'),
     )
     for path, text in rejected:
         if not scope.validate_semantic_artifact(path, text, policy):
@@ -249,7 +253,7 @@ def main() -> int:
     falsify_g2_materialized_scope_package()
     falsify_g2_trusted_workflow_semantics()
     falsify_g2_same_second_status_ordering()
-    print("g2_review_guardrails=PASS semantic=current-review-regressions+array-variable-taint+later-sql-binding+sql-helper-equivalence+optional-bind+array-sink-alias+wrapper-equivalence authorization=ledger-fragments workflow=blob-exact status=total-order")
+    print("g2_review_guardrails=PASS semantic=current-review-regressions+array-variable-taint+later-sql-binding+sql-helper-equivalence+optional-bind+array-sink-alias+wrapper-equivalence+object-sink-members+named-return-taint authorization=ledger-fragments workflow=blob-exact status=total-order")
     return 0
 
 

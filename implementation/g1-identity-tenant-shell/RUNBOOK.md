@@ -10,7 +10,7 @@ From repository root:
 python tools/g1/run_identity_tenant_shell_runtime.py
 ```
 
-The canonical runner performs three bounded proofs:
+The canonical runner performs four bounded proofs:
 
 1. Python unit/adversarial tests for OIDC transaction binding, opaque server-side session issuance, single-use callback, current tenant re-admission, cross-tenant denial, logout/revocation and stale-session denial;
 2. Node presentation tests for loading/ready/unauthenticated/forbidden/revoked/unavailable shell states and no tenant-context disclosure outside an admitted `ready` state;
@@ -75,3 +75,57 @@ The frontend is deliberately minimal. It renders current tenant context only aft
 ## Merge boundary
 
 Green runtime/scope/readiness evidence is not merge authorization. A separate owner authorization remains required immediately before merge.
+
+
+## Executable product entrypoints
+
+The slice now exposes bounded executable entrypoints rather than test-only functions:
+
+```bash
+PYTHONPATH=src python apps/g1-identity-tenant-shell/bff_server.py \
+  --host 127.0.0.1 --port 8444 \
+  --certfile <cert.pem> --keyfile <key.pem>
+```
+
+Without `--fixture`, the fixture IdP and fixture current-authority adapters are unreachable and the BFF fails closed until real deployment adapters are configured. Deterministic fixture CSRF keys are isolated to `--fixture`; the non-fixture process does not reuse them.
+
+The standalone frontend entrypoint is:
+
+```bash
+python apps/g1-identity-tenant-shell/start_frontend.py \
+  --host 127.0.0.1 --port 8443 \
+  --certfile <cert.pem> --keyfile <key.pem>
+```
+
+The browser proof uses the same-origin BFF-hosted frontend so protected browser cookies never need a cross-origin relaxation.
+
+## Fixture bootstrap
+
+`implementation/g1-identity-tenant-shell/fixture_bootstrap.json` is the explicit E2E-16 identity/tenant bootstrap. The browser harness consumes it directly; it is not an ornamental sample.
+
+Fixture endpoints exist only when the BFF is started with `--fixture`. The E2E proof separately starts a non-fixture BFF and verifies those endpoints return 404.
+
+## Current-authority composition
+
+`src/jlmirror_g1/authority.py` is an adapter, not a new authority owner. For every admitted shell read it:
+
+1. resolves current placement server-side from the requested logical tenant;
+2. constructs canonical `TenantContext` through the accepted Wave 1 owner;
+3. requires `organization.memberships.read`;
+4. requires current policy-driven authentication-strength evidence from the server-side browser session;
+5. invokes `authorize_protected_operation()`;
+6. accepts the shell only after one revision-bound `FinalAdmissionEvidence`.
+
+The browser-selected tenant remains request scope only.
+
+## CSRF proof
+
+State-changing BFF logout requires all of the following simultaneously:
+
+- exact trusted same-origin `Origin`;
+- one opaque HttpOnly server-side session cookie;
+- one CSRF cookie;
+- exactly one matching `X-JLMirror-CSRF` header;
+- a token valid under the current/previous two-key HMAC ring and bound to the session lineage.
+
+Missing/duplicate/mismatched evidence fails closed before session retirement.

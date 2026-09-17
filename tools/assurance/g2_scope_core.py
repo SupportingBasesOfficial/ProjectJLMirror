@@ -482,7 +482,10 @@ def _review_sql_execution_surfaces(decoded: str) -> list[str]:
 
 def _strip_comments(text: str) -> str:
     code = _review_mask_literals(_review_mask_comments(text))
-    surfaces = _review_sql_execution_surfaces(text)
+    surfaces = [
+        re.sub(r"--[^\n]*", " ", re.sub(r"/\*.*?\*/", " ", surface, flags=re.DOTALL))
+        for surface in _review_sql_execution_surfaces(text)
+    ]
     if not surfaces:
         return code
     return code + "\n" + ";\n".join(surfaces) + ";\n"

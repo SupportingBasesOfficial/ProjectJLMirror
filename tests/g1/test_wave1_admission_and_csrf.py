@@ -166,7 +166,8 @@ class Wave1TenantAdmissionTests(unittest.TestCase):
             authentication_strength=strength(),
         )
         self.assertEqual(admission.tenant_id, "tenant-a")
-        self.assertEqual(admission.admission_revision, "final-authz-r1")
+        self.assertEqual(admission.admission_revision, "admission-r1")
+        self.assertNotEqual(admission.admission_revision, "final-authz-r1")
 
     def test_unknown_cross_tenant_request_fails_before_authorization(self):
         with self.assertRaises(AdmissionDenied):

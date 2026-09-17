@@ -96,6 +96,13 @@ def falsify_g2_semantic_scope_guard() -> None:
         ("apps/g2-monitoring-source-onboarding/source.ts", "const ddl = `CREATE SERVER g2 FOREIGN DATA WRAPPER postgres_fdw`;"),
         ("apps/g2-monitoring-source-onboarding/source.ts", 'const p = provider; if (p.role === "admin") allow();'),
         ("apps/g2-monitoring-source-onboarding/source.ts", r'fetch("/api/\x6detric")'),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "db.insert.call?.(db, record);"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", "db.insert.apply?.(db, [record]);"),
+        ("apps/g2-monitoring-source-onboarding/source.ts", 'const key="password"; const out=payload[key]; reply.send.call?.(reply,{value:out});'),
+        ("apps/g2-monitoring-source-onboarding/source.ts", 'const key="password"; const out=payload[key]; reply.send.apply?.(reply,[{value:out}]);'),
+        ("apps/g2-monitoring-source-onboarding/source.ts", 'const key="password"; const out=payload[key]; reply?.["send"]?.({value:out});'),
+        ("apps/g2-monitoring-source-onboarding/source.ts", 'db["query"](Prisma["sql"]`GRANT SELECT ON TABLE monitoring.sources TO app`);'),
+        ("apps/g2-monitoring-source-onboarding/source.ts", '(db.query)((Prisma.sql)`GRANT SELECT ON TABLE monitoring.sources TO app`);'),
     )
     for path, text in rejected:
         if not scope.validate_semantic_artifact(path, text, policy):
@@ -112,6 +119,11 @@ def falsify_g2_semantic_scope_guard() -> None:
         "export async function submitOnboarding(payload) { return fetch('/api/v1/tenants/current/monitoring-sources', {method: 'POST'}); }",
         'export function SourceForm({provider}) { return <div role="status">{provider.name}</div>; }',
         'return reply.send({error: "password is required"});',
+        '// reply.send({value: payload.password});',
+        'const help = "reply.send({value: payload.password})";',
+        'const out = "payload.password"; reply.send({value: out});',
+        'search.query("Grant camera access");',
+        'ui.run("Revoke camera access");',
     )
     for text in allowed:
         errors = scope.validate_semantic_artifact("apps/g2-monitoring-source-onboarding/source.ts", text, policy)
@@ -217,7 +229,7 @@ def main() -> int:
     falsify_g2_materialized_scope_package()
     falsify_g2_trusted_workflow_semantics()
     falsify_g2_same_second_status_ordering()
-    print("g2_review_guardrails=PASS semantic=optional-call+late-taint+arrow-wrapper+ddl-server+provider-alias+hex-escape authorization=ledger-fragments workflow=blob-exact status=total-order")
+    print("g2_review_guardrails=PASS semantic=current-review-regressions+optional-call+late-taint+arrow-wrapper+ddl-server+provider-alias+hex-escape authorization=ledger-fragments workflow=blob-exact status=total-order")
     return 0
 
 

@@ -22,7 +22,7 @@ from jlmirror_authority.model import (  # noqa: E402
     PrincipalKind,
 )
 from jlmirror_g1.csrf import CsrfKeyRing  # noqa: E402
-from jlmirror_g1.wave1_admission import Wave1TenantAdmission  # noqa: E402
+from jlmirror_g1.authority import CanonicalTenantAdmission  # noqa: E402
 
 
 NOW = datetime(2026, 9, 17, 12, 0, tzinfo=timezone.utc)
@@ -150,7 +150,7 @@ class Wave1TenantAdmissionTests(unittest.TestCase):
         self.placement = PlacementAuthority()
         self.strength_policy = StrengthPolicy()
         self.finalizer = FinalAdmissionAuthority()
-        self.adapter = Wave1TenantAdmission(
+        self.adapter = CanonicalTenantAdmission(
             principal_authority=PrincipalAuthority(),
             placement_authority=self.placement,
             authorization_authority=AuthorizationAuthority(),

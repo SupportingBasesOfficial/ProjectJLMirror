@@ -103,6 +103,10 @@ def falsify_g2_semantic_scope_guard() -> None:
         ("apps/g2-monitoring-source-onboarding/source.ts", 'const key="password"; const out=payload[key]; reply?.["send"]?.({value:out});'),
         ("apps/g2-monitoring-source-onboarding/source.ts", 'db["query"](Prisma["sql"]`GRANT SELECT ON TABLE monitoring.sources TO app`);'),
         ("apps/g2-monitoring-source-onboarding/source.ts", '(db.query)((Prisma.sql)`GRANT SELECT ON TABLE monitoring.sources TO app`);'),
+        ("apps/g2-monitoring-source-onboarding/source.ts", 'const [out] = [payload.password]; reply.send({value: out});'),
+        ("apps/g2-monitoring-source-onboarding/source.ts", 'let out; ([out] = [payload.password]); reply.send({value: out});'),
+        ("apps/g2-monitoring-source-onboarding/source.ts", 'const payload = "GRANT SELECT ON TABLE monitoring.sources TO app"; db.query(payload);'),
+        ("apps/g2-monitoring-source-onboarding/source.ts", 'const payload = "DROP TABLE scratch_source"; db.query(payload);'),
     )
     for path, text in rejected:
         if not scope.validate_semantic_artifact(path, text, policy):
@@ -124,6 +128,9 @@ def falsify_g2_semantic_scope_guard() -> None:
         'const out = "payload.password"; reply.send({value: out});',
         'search.query("Grant camera access");',
         'ui.run("Revoke camera access");',
+        'const payload = "Grant camera access"; search.query(payload);',
+        'const help = "Create table monitoring sources";',
+        'const help = "Drop table instructions";',
     )
     for text in allowed:
         errors = scope.validate_semantic_artifact("apps/g2-monitoring-source-onboarding/source.ts", text, policy)
@@ -135,6 +142,7 @@ def falsify_g2_authorization_ledger_admission() -> None:
     required = {
         "governance/adversarial/learning-ledger.d/pr-154-g2-authorization-review-findings.zz-026-031.json",
         "governance/adversarial/learning-ledger.d/z-pr-154-g2-authorization-review-findings-047-054.json",
+        "governance/adversarial/learning-ledger.d/zzzz-pr-154-g2-authorization-review-findings-137-142.json",
     }
     missing = required - authorization.AUTH_PR_ALLOWED_PATHS
     if missing:
@@ -229,7 +237,7 @@ def main() -> int:
     falsify_g2_materialized_scope_package()
     falsify_g2_trusted_workflow_semantics()
     falsify_g2_same_second_status_ordering()
-    print("g2_review_guardrails=PASS semantic=current-review-regressions+optional-call+late-taint+arrow-wrapper+ddl-server+provider-alias+hex-escape authorization=ledger-fragments workflow=blob-exact status=total-order")
+    print("g2_review_guardrails=PASS semantic=current-review-regressions+array-taint+arbitrary-sql-binding+sql-display-literals authorization=ledger-fragments workflow=blob-exact status=total-order")
     return 0
 
 

@@ -375,6 +375,23 @@ def _live_secret_reference(text: str) -> bool:
     return bool(re.search(dot, normalized, flags=re.IGNORECASE))
 
 
+def _review_array_destructuring(decoded: str) -> list[tuple[str, str]]:
+    pairs: list[tuple[str, str]] = []
+    patterns = (
+        r"\b(?:const|let|var)\s*\[([^\]]*)\]\s*=\s*\[([^\]]*)\]",
+        r"(?<![A-Za-z0-9_$])\(\s*\[([^\]]*)\]\s*=\s*\[([^\]]*)\]\s*\)",
+    )
+    for pattern in patterns:
+        for match in re.finditer(pattern, decoded, flags=re.DOTALL):
+            targets = [item.strip() for item in match.group(1).split(",")]
+            values = [item.strip() for item in match.group(2).split(",")]
+            for target, expression in zip(targets, values):
+                target = target.removeprefix("...").split("=", 1)[0].strip()
+                if re.fullmatch(r"[A-Za-z_$][A-Za-z0-9_$]*", target) and expression:
+                    pairs.append((target, expression))
+    return pairs
+
+
 def _review_secret_aliases(decoded: str) -> set[str]:
     aliases: set[str] = set()
     code = _review_code_view(decoded)
@@ -387,6 +404,11 @@ def _review_secret_aliases(decoded: str) -> set[str]:
         changed = False
         for match in assignment.finditer(code):
             target, expression = match.group(1), match.group(2)
+            alias_hit = any(re.search(rf"\b{re.escape(alias)}\b", expression) for alias in aliases)
+            if target not in aliases and (_live_secret_reference(expression) or alias_hit):
+                aliases.add(target)
+                changed = True
+        for target, expression in _review_array_destructuring(decoded):
             alias_hit = any(re.search(rf"\b{re.escape(alias)}\b", expression) for alias in aliases)
             if target not in aliases and (_live_secret_reference(expression) or alias_hit):
                 aliases.add(target)
@@ -414,14 +436,61 @@ def _review_secret_sink_flow(decoded: str) -> bool:
     return any(_review_contains_secret(match.group(1), aliases) for match in direct.finditer(code))
 
 
-def _review_sql_authority_call(decoded: str) -> bool:
-    execution = (
+def _review_static_string_bindings(decoded: str) -> dict[str, str]:
+    bindings: dict[str, str] = {}
+    code = _review_mask_comments(decoded)
+    pattern = re.compile(
+        r"\b(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*(['\"`])(.*?)\2",
+        flags=re.DOTALL,
+    )
+    for match in pattern.finditer(code):
+        if match.group(2) == "`" and "${" in match.group(3):
+            continue
+        bindings[match.group(1)] = match.group(3)
+    return bindings
+
+
+def _review_sql_execution_surfaces(decoded: str) -> list[str]:
+    code = _review_mask_comments(decoded)
+    bindings = _review_static_string_bindings(decoded)
+    surfaces: list[str] = []
+    for name, value in bindings.items():
+        if re.search(r"(?:ddl|sql|query|statement|migration)", name, flags=re.IGNORECASE):
+            surfaces.append(value)
+    callee = (
         r"(?:\b[A-Za-z_$][A-Za-z0-9_$]*\s*(?:\.\s*(?:query|execute|exec|run|sql)|"
         r"\[\s*['\"](?:query|execute|exec|run|sql)['\"]\s*\])|"
-        r"\(\s*[A-Za-z_$][A-Za-z0-9_$]*\s*\.\s*(?:query|execute|exec|run|sql)\s*\))\s*\("
+        r"\(\s*[A-Za-z_$][A-Za-z0-9_$]*\s*\.\s*(?:query|execute|exec|run|sql)\s*\))"
     )
+    literal_call = re.compile(rf"{callee}\s*\(\s*(['\"`])(.*?)\1", flags=re.IGNORECASE | re.DOTALL)
+    surfaces.extend(match.group(2) for match in literal_call.finditer(code))
+    identifier_call = re.compile(
+        rf"{callee}\s*\(\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*(?=[,)])",
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    for match in identifier_call.finditer(code):
+        value = bindings.get(match.group(1))
+        if value is not None:
+            surfaces.append(value)
+    tagged_call = re.compile(
+        rf"{callee}\s*\(\s*(?:\(?[A-Za-z_$][A-Za-z0-9_$]*(?:(?:\s*\.\s*[A-Za-z_$][A-Za-z0-9_$]*)|(?:\s*\[[^\]]+\]))*\)?\s*)?`(.*?)`",
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    surfaces.extend(match.group(1) for match in tagged_call.finditer(code))
+    return surfaces
+
+
+def _strip_comments(text: str) -> str:
+    code = _review_mask_literals(_review_mask_comments(text))
+    surfaces = _review_sql_execution_surfaces(text)
+    if not surfaces:
+        return code
+    return code + "\n" + ";\n".join(surfaces) + ";\n"
+
+
+def _review_sql_authority_call(decoded: str) -> bool:
     privilege = r"\b(?:grant\b[^;()]{0,300}\b(?:on|to)\b|revoke\b[^;()]{0,300}\b(?:on|from)\b|reassign\s+owned\b)"
-    return bool(re.search(rf"{execution}[^;]{{0,600}}{privilege}", decoded, flags=re.IGNORECASE | re.DOTALL))
+    return any(re.search(privilege, surface, flags=re.IGNORECASE | re.DOTALL) for surface in _review_sql_execution_surfaces(decoded))
 
 
 def _structural_semantic_errors(path: str, decoded: str) -> list[str]:

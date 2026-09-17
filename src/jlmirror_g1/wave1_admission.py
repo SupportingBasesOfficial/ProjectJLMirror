@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from jlmirror_authority.control_plane import (
+    FinalAdmissionEvidence,
     PlacementEvidence,
     authorize_protected_operation,
     construct_tenant_context,
@@ -80,7 +81,18 @@ class Wave1TenantAdmission:
             now=now,
             runtime_binding=API_AUTH_BOUNDARY,
         )
-        decision = authorize_protected_operation(
+        class _CapturingFinalAdmission:
+            def __init__(self, owner) -> None:
+                self._owner = owner
+                self.evidence: FinalAdmissionEvidence | None = None
+
+            def finalize_current_admission(self, **kwargs):
+                evidence = self._owner.finalize_current_admission(**kwargs)
+                self.evidence = evidence
+                return evidence
+
+        final_admission = _CapturingFinalAdmission(self._final_admission_authority)
+        authorize_protected_operation(
             principal=principal,
             principal_authority=self._principal_authority,
             declaration=self._declaration,
@@ -91,9 +103,12 @@ class Wave1TenantAdmission:
             strength_policy=self._strength_policy,
             strength_evidence=authentication_strength,
             runtime_binding=API_AUTH_BOUNDARY,
-            final_admission_authority=self._final_admission_authority,
+            final_admission_authority=final_admission,
         )
+        evidence = final_admission.evidence
+        if not isinstance(evidence, FinalAdmissionEvidence):
+            raise AdmissionDenied("final admission evidence is unavailable after canonical admission")
         return TenantShellAdmission(
             tenant_id=context.tenant_id,
-            admission_revision=decision.policy_revision,
+            admission_revision=evidence.admission_revision,
         )

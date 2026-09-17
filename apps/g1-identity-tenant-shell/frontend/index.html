@@ -15,23 +15,6 @@
       <p id="tenant-id"></p>
     </section>
   </main>
-  <script type="module">
-    import {presentShell} from "./shell-state.mjs";
-
-    const root = document.getElementById("jlmirror-shell");
-    const status = document.getElementById("shell-status");
-    const tenant = document.getElementById("tenant-context");
-    const tenantId = document.getElementById("tenant-id");
-
-    const render = (view) => {
-      const presentation = presentShell(view);
-      root.dataset.state = presentation.state;
-      status.textContent = presentation.message;
-      tenant.hidden = presentation.tenantId === null;
-      tenantId.textContent = presentation.tenantId ?? "";
-    };
-
-    window.JLMirrorProtectedShell = Object.freeze({render});
-  </script>
+  <script type="module" src="./app.mjs"></script>
 </body>
 </html>

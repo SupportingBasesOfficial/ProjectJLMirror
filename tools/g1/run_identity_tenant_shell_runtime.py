@@ -33,7 +33,12 @@ def _assert_fixture_isolation() -> None:
     source = (ROOT / "apps/g1-identity-tenant-shell/bff_server.py").read_text(encoding="utf-8")
     required = (
         "FixtureOidc() if fixture_enabled else DisabledOidc()",
-        "FixtureTenantAdmission() if fixture_enabled else DisabledTenantAdmission()",
+        "CanonicalTenantAdmission(",
+        "FixturePrincipalAuthority(self.authority_state)",
+        "FixturePlacementAuthority(self.authority_state)",
+        "FixtureAuthorizationAuthority(self.authority_state)",
+        "FixtureStrengthPolicy()",
+        "FixtureFinalAdmissionAuthority(self.authority_state)",
         "if not self.server.fixture_enabled:",
     )
     for marker in required:

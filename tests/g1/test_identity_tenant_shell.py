@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import replace
+import base64
+import hashlib
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import sys
@@ -52,6 +54,7 @@ class Oidc:
         self.calls.append(
             (
                 authorization_code,
+                pkce_verifier,
                 expected_issuer,
                 expected_client_id,
                 expected_redirect_uri,
@@ -154,7 +157,12 @@ class G1IdentityTenantShellTests(unittest.TestCase):
         record = self.sessions.resolve(handle.digest)
         self.assertIsNotNone(record)
         self.assertEqual(record.principal.principal_id, "principal-a")
-        self.assertEqual(self.oidc.calls[0][1:], (
+        verifier = self.oidc.calls[0][1]
+        derived_challenge = base64.urlsafe_b64encode(
+            hashlib.sha256(verifier.encode("ascii")).digest()
+        ).rstrip(b"=").decode("ascii")
+        self.assertEqual(derived_challenge, start.pkce_challenge)
+        self.assertEqual(self.oidc.calls[0][2:], (
             "https://identity.example.test/realms/jlmirror",
             "jlmirror-bff",
             "https://app.example.test/auth/callback",

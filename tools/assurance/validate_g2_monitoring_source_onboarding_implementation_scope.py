@@ -34,7 +34,6 @@ def _reflect_apply_prefix() -> str:
 
 
 def _decode_executable_escapes(text: str) -> str:
-    # JavaScript removes escaped physical line terminators before evaluating string contents.
     continued = re.sub(r"\\(?:\r\n|[\n\r\u2028\u2029])", "", text)
     decoded = _core._decode_identifier_escapes(continued)
 
@@ -923,6 +922,40 @@ def _function_definitions(decoded: str) -> list[tuple[str, str, str]]:
     return definitions
 
 
+def _parameter_bound_identifiers(params_text: str) -> set[str]:
+    bound: set[str] = set()
+
+    def collect(pattern: str) -> None:
+        value = pattern.strip()
+        if not value:
+            return
+        if value.startswith("..."):
+            collect(value[3:])
+            return
+        value = value.split("=", 1)[0].strip()
+        if re.fullmatch(r"[A-Za-z_$][A-Za-z0-9_$]*", value):
+            bound.add(value)
+            return
+        if value.startswith("{") and value.endswith("}"):
+            for item in _split_top_level_commas(value[1:-1]):
+                item = item.strip()
+                if not item:
+                    continue
+                if item.startswith("..."):
+                    collect(item[3:])
+                    continue
+                pieces = item.split(":", 1)
+                collect(pieces[-1] if len(pieces) == 2 else pieces[0])
+            return
+        if value.startswith("[") and value.endswith("]"):
+            for item in _split_top_level_commas(value[1:-1]):
+                collect(item)
+
+    for parameter in _split_top_level_commas(params_text):
+        collect(parameter)
+    return bound
+
+
 def _sink_wrappers(decoded: str) -> set[str]:
     wrappers: set[str] = set()
     definitions = _function_definitions(decoded)
@@ -930,7 +963,7 @@ def _sink_wrappers(decoded: str) -> set[str]:
     while changed:
         changed = False
         for name, params_text, body in definitions:
-            params = {p.strip() for p in params_text.split(",") if re.fullmatch(r"[A-Za-z_$][A-Za-z0-9_$]*", p.strip())}
+            params = _parameter_bound_identifiers(params_text)
             if not params or name in wrappers:
                 continue
             direct = _sink_call_contains(body, params)

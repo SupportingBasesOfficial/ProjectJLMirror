@@ -15,36 +15,23 @@
       <p id="tenant-id"></p>
     </section>
   </main>
-  <script>
-    (() => {
-      "use strict";
-      const root = document.getElementById("jlmirror-shell");
-      const status = document.getElementById("shell-status");
-      const tenant = document.getElementById("tenant-context");
-      const tenantId = document.getElementById("tenant-id");
+  <script type="module">
+    import {presentShell} from "./shell-state.mjs";
 
-      const render = (view) => {
-        const state = typeof view?.state === "string" ? view.state : "unavailable";
-        root.dataset.state = state;
-        tenant.hidden = true;
-        tenantId.textContent = "";
-        if (state === "ready" && typeof view.tenant_id === "string") {
-          tenantId.textContent = view.tenant_id;
-          tenant.hidden = false;
-          status.textContent = "Access is current.";
-          return;
-        }
-        const messages = {
-          unauthenticated: "Sign in is required.",
-          forbidden: "Current access is not admitted.",
-          revoked: "Current access changed. Sign in again.",
-          unavailable: "Current access cannot be verified right now."
-        };
-        status.textContent = messages[state] || "Current access cannot be verified right now.";
-      };
+    const root = document.getElementById("jlmirror-shell");
+    const status = document.getElementById("shell-status");
+    const tenant = document.getElementById("tenant-context");
+    const tenantId = document.getElementById("tenant-id");
 
-      window.JLMirrorProtectedShell = Object.freeze({ render });
-    })();
+    const render = (view) => {
+      const presentation = presentShell(view);
+      root.dataset.state = presentation.state;
+      status.textContent = presentation.message;
+      tenant.hidden = presentation.tenantId === null;
+      tenantId.textContent = presentation.tenantId ?? "";
+    };
+
+    window.JLMirrorProtectedShell = Object.freeze({render});
   </script>
 </body>
 </html>

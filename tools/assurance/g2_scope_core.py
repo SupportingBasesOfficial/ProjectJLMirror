@@ -52,6 +52,7 @@ PROVIDER_AUTHORITY_TERMS = {"role", "roles", "permission", "permissions", "admin
 SECRET_TERMS = {"password", "passwd", "secret", "token", "apikey", "credential", "credentials"}
 SECRET_SINK_TERMS = {"insert", "update", "save", "upsert", "persist", "log", "logger", "print", "response", "serialize", "write", "send", "json", "end"}
 DDL_OBJECTS = "table|schema|view|materialized\\s+view|index|sequence|type|function|procedure|trigger|extension|policy"
+SQL_EXECUTION_METHODS = {"query", "execute", "exec", "run", "sql"}
 
 
 def git(root: Path, *args: str) -> str:
@@ -211,17 +212,93 @@ def _persistence_aliases(decoded: str) -> set[str]:
     return aliases
 
 
+def _strip_bound_callable(expression: str) -> str:
+    value = expression.strip()
+    value = re.sub(r"(?:\.|\?\.)\s*bind\s*(?:\?\.\s*)?\([^)]*\)\s*$", "", value, flags=re.DOTALL)
+    while value.startswith("(") and value.endswith(")"):
+        inner = value[1:-1].strip()
+        if not inner:
+            break
+        value = inner
+    return re.sub(r"\s+", "", value)
+
+
 def _has_persistence_write(decoded: str) -> bool:
-    aliases = _persistence_aliases(decoded)
-    receiver = "|".join(re.escape(name) for name in sorted(aliases, key=len, reverse=True))
+    code = _review_normalize_static_members(decoded)
+    receivers = _persistence_aliases(code)
+    writes = {name.casefold() for name in PERSISTENCE_WRITES}
+    callable_aliases: set[str] = set()
+    assignment = re.compile(
+        r"(?<![A-Za-z0-9_$])([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*([^;\n]+)",
+        flags=re.IGNORECASE,
+    )
+    object_literal = re.compile(
+        r"\b(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*\{([^{}]*)\}",
+        flags=re.DOTALL,
+    )
+    object_property = re.compile(
+        r"(?:([A-Za-z_$][A-Za-z0-9_$]*)|['\"]([A-Za-z_$][A-Za-z0-9_$]*)['\"])\s*:\s*([^,}]+)",
+        flags=re.DOTALL,
+    )
+    member_assignment = re.compile(
+        r"\b([A-Za-z_$][A-Za-z0-9_$]*)\s*\.\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*([^;\n]+)",
+        flags=re.DOTALL,
+    )
+
+    def known_callable(expression: str) -> bool:
+        source = _strip_bound_callable(expression)
+        if source.casefold() in {alias.casefold() for alias in callable_aliases}:
+            return True
+        match = re.fullmatch(r"([A-Za-z_$][A-Za-z0-9_$]*)\.([A-Za-z_$][A-Za-z0-9_$]*)", source)
+        return bool(match and match.group(1).casefold() in {name.casefold() for name in receivers} and match.group(2).casefold() in writes)
+
+    changed = True
+    while changed:
+        changed = False
+        for match in assignment.finditer(code):
+            target, expression = match.group(1), match.group(2)
+            if target not in callable_aliases and known_callable(expression):
+                callable_aliases.add(target)
+                changed = True
+        for object_match in object_literal.finditer(code):
+            receiver = object_match.group(1)
+            for property_match in object_property.finditer(object_match.group(2)):
+                property_name = property_match.group(1) or property_match.group(2)
+                qualified = f"{receiver}.{property_name}"
+                if qualified not in callable_aliases and known_callable(property_match.group(3)):
+                    callable_aliases.add(qualified)
+                    changed = True
+        for member_match in member_assignment.finditer(code):
+            qualified = f"{member_match.group(1)}.{member_match.group(2)}"
+            if qualified not in callable_aliases and known_callable(member_match.group(3)):
+                callable_aliases.add(qualified)
+                changed = True
+        receiver_pattern = "|".join(re.escape(name) for name in sorted(receivers, key=len, reverse=True))
+        write_pattern = "|".join(re.escape(name) for name in sorted(PERSISTENCE_WRITES, key=len, reverse=True))
+        destructuring = re.compile(
+            rf"\b(?:const|let|var)\s*\{{([^}}]+)\}}\s*=\s*(?:{receiver_pattern})\b",
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+        for destructured in destructuring.finditer(code):
+            for source_name, target in re.findall(rf"\b({write_pattern})\b\s*(?::\s*([A-Za-z_$][A-Za-z0-9_$]*))?", destructured.group(1), flags=re.IGNORECASE):
+                alias = target or source_name
+                if alias not in callable_aliases:
+                    callable_aliases.add(alias)
+                    changed = True
+
+    receiver = "|".join(re.escape(name) for name in sorted(receivers, key=len, reverse=True))
     write = "|".join(re.escape(name) for name in sorted(PERSISTENCE_WRITES, key=len, reverse=True))
-    helper_invocation = r"(?:\.\s*(?:call|apply)\s*(?:\?\.\s*)?\(|(?:\?\.\s*)?\()"
+    helper_invocation = r"(?:(?:\.|\?\.)\s*(?:call|apply)\s*(?:\?\.\s*)?\(|(?:\?\.\s*)?\()"
     patterns = (
         rf"\b(?:{receiver})\s*\.\s*(?:{write})\s*{helper_invocation}",
         rf"\b(?:{receiver})\s*\[\s*['\"](?:{write})['\"]\s*\]\s*{helper_invocation}",
-        rf"\b(?:const|let|var)\s*\{{[^}}]*\b(?:{write})\b[^}}]*\}}\s*=\s*(?:{receiver})\b",
     )
-    return any(re.search(pattern, decoded, flags=re.IGNORECASE) for pattern in patterns)
+    if any(re.search(pattern, code, flags=re.IGNORECASE) for pattern in patterns):
+        return True
+    for alias in sorted(callable_aliases, key=len, reverse=True):
+        if re.search(rf"(?<![A-Za-z0-9_$]){re.escape(alias)}\s*{helper_invocation}", code, flags=re.IGNORECASE):
+            return True
+    return False
 
 
 def _has_secret_to_sink(decoded: str) -> bool:
@@ -455,11 +532,33 @@ def _review_secret_aliases(decoded: str) -> set[str]:
     return aliases
 
 
-def _review_contains_secret(text: str, aliases: set[str]) -> bool:
+def _review_secret_returners(decoded: str, aliases: set[str]) -> set[str]:
+    returners: set[str] = set()
+    changed = True
+    while changed:
+        changed = False
+        for function_name, _params, body in _review_function_definitions(decoded):
+            if function_name in returners:
+                continue
+            for return_match in re.finditer(r"\breturn\s+([^;\n]+)", body, flags=re.IGNORECASE | re.DOTALL):
+                expression = return_match.group(1)
+                code = _review_code_view(expression)
+                alias_hit = any(re.search(rf"\b{re.escape(alias)}\b", code) for alias in aliases)
+                returner_hit = any(re.search(rf"\b{re.escape(name)}\s*(?:\?\.\s*)?\(", code) for name in returners)
+                if _live_secret_reference(expression) or alias_hit or returner_hit:
+                    returners.add(function_name)
+                    changed = True
+                    break
+    return returners
+
+
+def _review_contains_secret(text: str, aliases: set[str], returners: set[str] | None = None) -> bool:
     if _live_secret_reference(text):
         return True
     code = _review_code_view(text)
-    return any(re.search(rf"\b{re.escape(alias)}\b", code) for alias in aliases)
+    if any(re.search(rf"\b{re.escape(alias)}\b", code) for alias in aliases):
+        return True
+    return bool(returners and any(re.search(rf"\b{re.escape(name)}\s*(?:\?\.\s*)?\(", code) for name in returners))
 
 
 def _review_sink_aliases(decoded: str) -> set[str]:
@@ -485,11 +584,14 @@ def _review_sink_aliases(decoded: str) -> set[str]:
     while changed:
         changed = False
         known = set(SECRET_SINK_TERMS) | aliases
+        known_folded = {item.casefold() for item in known}
         for match in assignment.finditer(code):
             target, expression = match.group(1), match.group(2).strip()
             expression = re.sub(r"(?:\.|\?\.)\s*bind\s*(?:\?\.\s*)?\([^)]*\)\s*$", "", expression, flags=re.DOTALL)
             names = re.findall(r"[A-Za-z_$][A-Za-z0-9_$]*", expression)
-            if names and names[-1].casefold() in known and target not in aliases:
+            source = re.sub(r"\s+", "", expression).strip("()")
+            candidates = ({names[-1].casefold()} if names else set()) | {source.casefold()}
+            if candidates & known_folded and target not in aliases:
                 aliases.add(target)
                 changed = True
         for object_match in object_literal.finditer(code):
@@ -499,23 +601,29 @@ def _review_sink_aliases(decoded: str) -> set[str]:
                 expression = _review_normalize_static_members(property_match.group(3).strip())
                 expression = re.sub(r"(?:\.|\?\.)\s*bind\s*(?:\?\.\s*)?\([^)]*\)\s*$", "", expression, flags=re.DOTALL)
                 names = re.findall(r"[A-Za-z_$][A-Za-z0-9_$]*", expression)
+                source = re.sub(r"\s+", "", expression).strip("()")
                 qualified = f"{receiver}.{property_name}"
-                if names and names[-1].casefold() in known and qualified not in aliases:
+                candidates = ({names[-1].casefold()} if names else set()) | {source.casefold()}
+                if candidates & known_folded and qualified not in aliases:
                     aliases.add(qualified)
                     changed = True
         for member_match in member_assignment.finditer(code):
             receiver, property_name, expression = member_match.group(1), member_match.group(2), member_match.group(3).strip()
             expression = re.sub(r"(?:\.|\?\.)\s*bind\s*(?:\?\.\s*)?\([^)]*\)\s*$", "", expression, flags=re.DOTALL)
             names = re.findall(r"[A-Za-z_$][A-Za-z0-9_$]*", expression)
+            source = re.sub(r"\s+", "", expression).strip("()")
             qualified = f"{receiver}.{property_name}"
-            if names and names[-1].casefold() in known and qualified not in aliases:
+            candidates = ({names[-1].casefold()} if names else set()) | {source.casefold()}
+            if candidates & known_folded and qualified not in aliases:
                 aliases.add(qualified)
                 changed = True
         for target, expression in _review_array_destructuring(decoded):
             normalized = _review_normalize_static_members(expression)
             normalized = re.sub(r"(?:\.|\?\.)\s*bind\s*(?:\?\.\s*)?\([^)]*\)\s*$", "", normalized, flags=re.DOTALL)
             names = re.findall(r"[A-Za-z_$][A-Za-z0-9_$]*", normalized)
-            if names and names[-1].casefold() in known and target not in aliases:
+            source = re.sub(r"\s+", "", normalized).strip("()")
+            candidates = ({names[-1].casefold()} if names else set()) | {source.casefold()}
+            if candidates & known_folded and target not in aliases:
                 aliases.add(target)
                 changed = True
     return aliases
@@ -566,6 +674,10 @@ def _review_function_definitions(decoded: str) -> list[tuple[str, list[str], str
 def _review_sink_wrappers(decoded: str, sink_aliases: set[str]) -> set[str]:
     wrappers: set[str] = set()
     definitions = _review_function_definitions(decoded)
+    alias_assignment = re.compile(
+        r"(?<![A-Za-z0-9_$])(?:const|let|var\s+)?\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*(?:[;\n]|$)"
+    )
+    code = _review_code_view(decoded)
     changed = True
     while changed:
         changed = False
@@ -575,28 +687,39 @@ def _review_sink_wrappers(decoded: str, sink_aliases: set[str]) -> set[str]:
             if _review_invocation_contains(body, set(params), sink_aliases | wrappers):
                 wrappers.add(name)
                 changed = True
+        for match in alias_assignment.finditer(code):
+            target, source = match.group(1), match.group(2)
+            if source in wrappers and target not in wrappers:
+                wrappers.add(target)
+                changed = True
     return wrappers
 
 
-def _review_invocation_contains(text: str, secret_aliases: set[str], callable_aliases: set[str]) -> bool:
+def _review_invocation_contains(
+    text: str,
+    secret_aliases: set[str],
+    callable_aliases: set[str],
+    secret_returners: set[str] | None = None,
+) -> bool:
     code = _review_code_view(text)
     names = set(SECRET_SINK_TERMS) | set(callable_aliases)
     target = "|".join(re.escape(name) for name in sorted(names, key=len, reverse=True))
     bind = r"(?:(?:\.|\?\.)\s*bind\s*(?:\?\.\s*)?\([^)]*\)\s*)?"
     helper = r"(?:(?:\.|\?\.)\s*(?:call|apply)\s*(?:\?\.\s*)?)?"
     invocation = r"(?:\?\.\s*)?\("
-    direct = re.compile(rf"\b(?:{target})\b\s*{bind}\s*{helper}\s*{invocation}(.*?)\)", flags=re.IGNORECASE | re.DOTALL)
-    if any(_review_contains_secret(match.group(1), secret_aliases) for match in direct.finditer(code)):
+    direct = re.compile(rf"(?<![A-Za-z0-9_$])(?:{target})\s*{bind}\s*{helper}\s*{invocation}(.*?)\)", flags=re.IGNORECASE | re.DOTALL)
+    if any(_review_contains_secret(match.group(1), secret_aliases, secret_returners) for match in direct.finditer(code)):
         return True
-    reflect = re.compile(rf"\bReflect\s*(?:\.\s*apply|\[\s*['\"]apply['\"]\s*\])\s*\(\s*(?:\b(?:{target})\b)[^,]*,(.*?)(?:;|$)", flags=re.IGNORECASE | re.DOTALL)
-    return any(_review_contains_secret(match.group(1), secret_aliases) for match in reflect.finditer(code))
+    reflect = re.compile(rf"\bReflect\s*(?:\.\s*apply|\[\s*['\"]apply['\"]\s*\])\s*\(\s*(?:(?:{target}))[^,]*,(.*?)(?:;|$)", flags=re.IGNORECASE | re.DOTALL)
+    return any(_review_contains_secret(match.group(1), secret_aliases, secret_returners) for match in reflect.finditer(code))
 
 
 def _review_secret_sink_flow(decoded: str) -> bool:
     aliases = _review_secret_aliases(decoded)
+    secret_returners = _review_secret_returners(decoded, aliases)
     sink_aliases = _review_sink_aliases(decoded)
     wrappers = _review_sink_wrappers(decoded, sink_aliases)
-    return _review_invocation_contains(decoded, aliases, sink_aliases | wrappers)
+    return _review_invocation_contains(decoded, aliases, sink_aliases | wrappers, secret_returners)
 
 
 def _review_static_string_bindings(decoded: str) -> dict[str, str]:
@@ -624,15 +747,52 @@ def _review_static_string_bindings(decoded: str) -> dict[str, str]:
     return bindings
 
 
+def _review_sql_callable_aliases(decoded: str) -> set[str]:
+    code = _review_normalize_static_members(decoded)
+    aliases: set[str] = set()
+    assignment = re.compile(
+        r"(?<![A-Za-z0-9_$])(?:const|let|var\s+)?\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*([^;\n]+)",
+        flags=re.IGNORECASE,
+    )
+    changed = True
+    while changed:
+        changed = False
+        known = {alias.casefold() for alias in aliases}
+        for match in assignment.finditer(code):
+            target, expression = match.group(1), _strip_bound_callable(match.group(2))
+            member = re.fullmatch(r"[A-Za-z_$][A-Za-z0-9_$]*\.([A-Za-z_$][A-Za-z0-9_$]*)", expression)
+            if ((member and member.group(1).casefold() in SQL_EXECUTION_METHODS) or expression.casefold() in known) and target not in aliases:
+                aliases.add(target)
+                changed = True
+        for match in re.finditer(
+            r"\b(?:const|let|var)\s*\{([^}]+)\}\s*=\s*[A-Za-z_$][A-Za-z0-9_$]*\b",
+            code,
+            flags=re.IGNORECASE | re.DOTALL,
+        ):
+            for source, target in re.findall(
+                r"\b(query|execute|exec|run|sql)\b\s*(?::\s*([A-Za-z_$][A-Za-z0-9_$]*))?",
+                match.group(1),
+                flags=re.IGNORECASE,
+            ):
+                alias = target or source
+                if alias not in aliases:
+                    aliases.add(alias)
+                    changed = True
+    return aliases
+
+
 def _review_sql_execution_surfaces(decoded: str) -> list[str]:
     code = _review_mask_comments(decoded)
     bindings = _review_static_string_bindings(decoded)
+    aliases = _review_sql_callable_aliases(decoded)
     surfaces: list[str] = []
-    callee = (
+    alias_part = "|".join(re.escape(name) for name in sorted(aliases, key=len, reverse=True))
+    member_callee = (
         r"(?:\b[A-Za-z_$][A-Za-z0-9_$]*\s*(?:\.\s*(?:query|execute|exec|run|sql)|"
         r"\[\s*['\"](?:query|execute|exec|run|sql)['\"]\s*\])|"
         r"\(\s*[A-Za-z_$][A-Za-z0-9_$]*\s*\.\s*(?:query|execute|exec|run|sql)\s*\))"
     )
+    callee = rf"(?:{member_callee}|\b(?:{alias_part})\b)" if alias_part else member_callee
     for name, value in bindings.items():
         if re.search(r"(?:ddl|sql|query|statement|migration)", name, flags=re.IGNORECASE):
             surfaces.append(value)

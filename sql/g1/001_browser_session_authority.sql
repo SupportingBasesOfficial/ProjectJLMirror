@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS g1_identity.browser_session (
     retired_at TIMESTAMPTZ,
     CHECK (auth_evidence_expires_at > auth_authenticated_at),
     CHECK (auth_authenticated_at <= created_at),
+    CHECK (auth_evidence_expires_at > created_at),
     CHECK (expires_at > created_at),
     CHECK (retired_at IS NULL OR retired_at >= created_at),
     CHECK (array_position(auth_amr, NULL) IS NULL)

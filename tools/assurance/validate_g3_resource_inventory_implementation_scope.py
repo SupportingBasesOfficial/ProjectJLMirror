@@ -87,9 +87,13 @@ def runtime_workflow_errors(text: str, policy: dict) -> list[str]:
         if use is not None:
             if use not in allowed_actions:
                 errors.append(f"G3 runtime workflow uses unauthorized action: {use}")
+            if set(step) != {"uses"}:
+                errors.append("G3 runtime action steps may not override repository, ref, path, credentials, env, shell, or other inputs")
             if run is not None:
                 errors.append("G3 runtime workflow step cannot combine uses and run")
         elif run is not None:
+            if set(step) != {"run"}:
+                errors.append("G3 runtime run step may contain only the canonical run command")
             if not isinstance(run, str):
                 errors.append("G3 runtime workflow run step must be a string")
             else:

@@ -87,7 +87,17 @@
     "trusted_status_creator_id": 41898282,
     "trusted_scope_merge_preflight_rule": "live_revalidate_ready_evidence_current_coordinates_label_and_workflow_run_immediately_before_merge",
     "implementation_pr_requires_trusted_scope_attestation_on_exact_head": true,
-    "implementation_pr_requires_trusted_scope_readiness_on_exact_head_base": true
+    "implementation_pr_requires_trusted_scope_readiness_on_exact_head_base": true,
+    "runtime_workflow": ".github/workflows/g3-resource-inventory-runtime.yml",
+    "runtime_workflow_name": "JLMIRROR G3 Resource Inventory Runtime",
+    "runtime_entrypoint": "python tools/g3/run_resource_inventory_runtime.py",
+    "runtime_allowed_actions": [
+      "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+      "actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1",
+      "actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38"
+    ],
+    "direct_persistence_writes": "forbidden",
+    "direct_schema_authority": "forbidden"
   },
   "authorized_capability_scope": [
     "canonical_monitoring_resource_list_through_current_tenant_authority",

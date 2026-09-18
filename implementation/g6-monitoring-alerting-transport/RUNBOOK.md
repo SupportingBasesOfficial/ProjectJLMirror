@@ -53,4 +53,4 @@ The invoker has EXECUTE only. Direct table writes remain unavailable.
 
 ## Production authority
 
-This proof does not activate a production worker, broker consumer topology, Alert lifecycle behavior or G7 policy evaluation.
+This proof does not activate a production worker, broker consumer topology, G7 Alert business behavior.

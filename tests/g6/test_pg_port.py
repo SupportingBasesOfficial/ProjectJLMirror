@@ -107,7 +107,7 @@ class PgPortTests(unittest.TestCase):
         self.assertEqual(identity.tenant_id,"tenant-a")
         sql,variables=pg.calls[0]
         self.assertIn("SELECT system.g6_admit_monitoring_alerting_message(",sql)
-        self.assertNotIn("INSERT INTO system.async_consumer_inbox",sql)
+        self.assertNotIn("async_consumer_inbox",sql)
         self.assertEqual(variables["payload_hex"],b"{}".hex())
 
     def test_claim_passes_revision_bound_current_execution_evidence(self):
@@ -136,7 +136,7 @@ class PgPortTests(unittest.TestCase):
         self.assertEqual(value["receipt_state"],"completed")
         sql,_=pg.calls[0]
         self.assertIn("SELECT system.g6_complete_monitoring_alerting_resync(",sql)
-        self.assertNotIn("UPDATE system.async_consumer_inbox",sql)
+        self.assertNotIn("async_consumer_inbox",sql)
 
 
 if __name__=="__main__":

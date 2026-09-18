@@ -18,6 +18,20 @@ class ContractTests(unittest.TestCase):
         self.assertFalse(item["additionalProperties"])
         self.assertNotIn("provider_metadata",item["properties"])
 
+    def test_problem_detail_contract_is_closed_and_bounded(self):
+        schema=self.schema("problem-detail.schema.json")
+        self.assertFalse(schema["additionalProperties"])
+        self.assertIn("external_references",schema["properties"])
+        self.assertNotIn("provider_metadata",schema["properties"])
+
+    def test_health_detail_contract_is_closed(self):
+        schema=self.schema("health-detail.schema.json")
+        self.assertFalse(schema["additionalProperties"])
+        self.assertEqual(
+            schema["properties"]["health_class"]["enum"],
+            ["unknown","healthy","degraded","unhealthy"],
+        )
+
     def test_health_contract_has_only_canonical_classes(self):
         schema=self.schema("health.schema.json")
         classes=schema["$defs"]["item"]["properties"]["health_class"]["enum"]

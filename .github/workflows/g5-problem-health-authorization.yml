@@ -4,12 +4,12 @@ on:
   pull_request:
     paths:
       - 'implementation/g5-problem-health-authorization/**'
-      - 'tools/assurance/validate_g5_metrics_authorization.py'
-      - 'tools/assurance/validate_g5_metrics_implementation_scope.py'
-      - 'tools/assurance/test_validate_g5_metrics_authorization.py'
-      - 'tools/assurance/test_validate_g5_metrics_implementation_scope.py'
-      - 'tools/assurance/validate_g5_metrics_scope_readiness.py'
-      - 'tools/assurance/test_validate_g5_metrics_scope_readiness.py'
+      - 'tools/assurance/validate_g5_problem_health_authorization.py'
+      - 'tools/assurance/validate_g5_problem_health_implementation_scope.py'
+      - 'tools/assurance/test_validate_g5_problem_health_authorization.py'
+      - 'tools/assurance/test_validate_g5_problem_health_implementation_scope.py'
+      - 'tools/assurance/validate_g5_problem_health_scope_readiness.py'
+      - 'tools/assurance/test_validate_g5_problem_health_scope_readiness.py'
       - '.github/workflows/g5-problem-health-authorization.yml'
       - '.github/workflows/g5-problem-health-implementation-scope.yml'
       - 'tools/assurance/validate_repository.py'
@@ -25,12 +25,12 @@ on:
       - governance/g5-problem-health-authorization
     paths:
       - 'implementation/g5-problem-health-authorization/**'
-      - 'tools/assurance/validate_g5_metrics_authorization.py'
-      - 'tools/assurance/validate_g5_metrics_implementation_scope.py'
-      - 'tools/assurance/test_validate_g5_metrics_authorization.py'
-      - 'tools/assurance/test_validate_g5_metrics_implementation_scope.py'
-      - 'tools/assurance/validate_g5_metrics_scope_readiness.py'
-      - 'tools/assurance/test_validate_g5_metrics_scope_readiness.py'
+      - 'tools/assurance/validate_g5_problem_health_authorization.py'
+      - 'tools/assurance/validate_g5_problem_health_implementation_scope.py'
+      - 'tools/assurance/test_validate_g5_problem_health_authorization.py'
+      - 'tools/assurance/test_validate_g5_problem_health_implementation_scope.py'
+      - 'tools/assurance/validate_g5_problem_health_scope_readiness.py'
+      - 'tools/assurance/test_validate_g5_problem_health_scope_readiness.py'
       - '.github/workflows/g5-problem-health-authorization.yml'
       - '.github/workflows/g5-problem-health-implementation-scope.yml'
       - 'tools/assurance/validate_repository.py'
@@ -45,7 +45,7 @@ permissions:
   contents: read
 
 jobs:
-  g4-authorization:
+  g5-authorization:
     runs-on: ubuntu-24.04
     env:
       EVENT_NAME: ${{ github.event_name }}
@@ -82,16 +82,16 @@ jobs:
           test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
 
       - name: Validate G5 authorization
-        run: python3 tools/assurance/validate_g5_metrics_authorization.py
+        run: python3 tools/assurance/validate_g5_problem_health_authorization.py
 
       - name: Falsify G5 authorization boundaries
-        run: python3 tools/assurance/test_validate_g5_metrics_authorization.py
+        run: python3 tools/assurance/test_validate_g5_problem_health_authorization.py
 
       - name: Falsify future G5 implementation scope
-        run: python3 tools/assurance/test_validate_g5_metrics_implementation_scope.py
+        run: python3 tools/assurance/test_validate_g5_problem_health_implementation_scope.py
 
       - name: Falsify trusted G5 readiness evidence
-        run: python3 tools/assurance/test_validate_g5_metrics_scope_readiness.py
+        run: python3 tools/assurance/test_validate_g5_problem_health_scope_readiness.py
 
       - name: Validate repository structure and workflow safety
         run: python3 tools/assurance/validate_repository.py

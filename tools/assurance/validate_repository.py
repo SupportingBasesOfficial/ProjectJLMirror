@@ -25,12 +25,14 @@ G1_STATUS_PUBLISHER_WORKFLOW = ".github/workflows/g1-identity-tenant-shell-imple
 G2_STATUS_PUBLISHER_WORKFLOW = ".github/workflows/g2-monitoring-source-onboarding-implementation-scope.yml"
 G3_STATUS_PUBLISHER_WORKFLOW = ".github/workflows/g3-resource-inventory-implementation-scope.yml"
 G4_STATUS_PUBLISHER_WORKFLOW = ".github/workflows/g4-metrics-implementation-scope.yml"
+G5_STATUS_PUBLISHER_WORKFLOW = ".github/workflows/g5-problem-health-implementation-scope.yml"
 STATUS_PUBLISHER_WORKFLOWS = {
     STATUS_PUBLISHER_WORKFLOW,
     G1_STATUS_PUBLISHER_WORKFLOW,
     G2_STATUS_PUBLISHER_WORKFLOW,
     G3_STATUS_PUBLISHER_WORKFLOW,
     G4_STATUS_PUBLISHER_WORKFLOW,
+    G5_STATUS_PUBLISHER_WORKFLOW,
 }
 EXPECTED_STATUS_ENDPOINT = "repos/${GITHUB_REPOSITORY}/statuses/${PR_HEAD_SHA}"
 
@@ -401,6 +403,50 @@ def _g4_status_publisher_policy_errors(text: str) -> list[str]:
         errors.append("G4 live readiness verification must remain read-only")
     return errors
 
+def _g5_status_publisher_policy_errors(text: str) -> list[str]:
+    errors = _publisher_common_errors(
+        text,
+        group_marker="group: g5-problem-health-scope-${{ github.event.issue.number }}",
+        head_output="needs.resolve.outputs.head_sha",
+    )
+    required_markers = (
+        "github.event.comment.body == '/jlmirror-g5-scope-attest'",
+        "github.event.comment.body == '/jlmirror-g5-scope-ready'",
+        'test "$PR_BASE_REF" = "$DEFAULT_BRANCH"',
+        'test "$PR_BASE_REPO" = "$GITHUB_REPOSITORY"',
+        'test "$PR_HEAD_REPO" = "$GITHUB_REPOSITORY"',
+        'test "$PR_BASE_SHA" = "$DEFAULT_BRANCH_SHA"',
+        "branches/${DEFAULT_BRANCH}",
+        "G5_REQUIRED_LABEL",
+        'git show "${PR_BASE_SHA}:${G5_SCOPE_VALIDATOR}" > "$trusted_validator"',
+        "contents/${G5_READINESS_VALIDATOR}?ref=${PR_BASE_SHA}",
+        'python3 "$TRUSTED_READINESS_VALIDATOR"',
+        'test "$(git rev-parse HEAD)" != "$PR_HEAD_SHA"',
+        "CURRENT_HEAD_SHA",
+        "CURRENT_BASE_SHA",
+        "CURRENT_BASE_REF",
+        "CURRENT_DEFAULT_SHA",
+        "CURRENT_LABELS_JSON",
+        "JLMIRROR / g5-problem-health-implementation-scope",
+        "JLMIRROR / g5-problem-health-merge-readiness",
+        "G5 scope PASS base=${PR_BASE_SHA} head=${PR_HEAD_SHA}",
+        "G5 ready PASS base=${PR_BASE_SHA} head=${PR_HEAD_SHA}",
+        'test "$state" = success',
+    )
+    for marker in required_markers:
+        if marker not in text:
+            errors.append(f"G5 status reconciliation missing trusted marker: {marker}")
+    if re.search(r"^\s+push:\s*$", text, re.MULTILINE):
+        errors.append("G5 status reconciliation must not depend on skippable push invalidation")
+    if text.count("uses: actions/checkout@") != 1:
+        errors.append("G5 status reconciliation must checkout code only once in read-only scope analysis")
+    ready = _job_block(text, "verify-ready")
+    if ready is None:
+        errors.append("G5 status reconciliation missing source-authenticated live readiness job")
+    elif "statuses: write" in ready:
+        errors.append("G5 live readiness verification must remain read-only")
+    return errors
+
 
 def _check_workflow_policy(root: Path) -> list[Finding]:
     findings: list[Finding] = []
@@ -419,6 +465,8 @@ def _check_workflow_policy(root: Path) -> list[Finding]:
             findings.extend(Finding(rel, message) for message in _g3_status_publisher_policy_errors(text))
         elif rel == G4_STATUS_PUBLISHER_WORKFLOW:
             findings.extend(Finding(rel, message) for message in _g4_status_publisher_policy_errors(text))
+        elif rel == G5_STATUS_PUBLISHER_WORKFLOW:
+            findings.extend(Finding(rel, message) for message in _g5_status_publisher_policy_errors(text))
         else:
             for regex, message in (
                 (WRITE_ALL_RE, "workflow grants permissions: write-all; observer-only workflows must not have canonical mutation authority"),

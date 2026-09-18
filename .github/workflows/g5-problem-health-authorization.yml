@@ -1,0 +1,97 @@
+name: JLMIRROR G5 Problem Health Authorization
+
+on:
+  pull_request:
+    paths:
+      - 'implementation/g5-problem-health-authorization/**'
+      - 'tools/assurance/validate_g5_problem_health_authorization.py'
+      - 'tools/assurance/validate_g5_problem_health_implementation_scope.py'
+      - 'tools/assurance/test_validate_g5_problem_health_authorization.py'
+      - 'tools/assurance/test_validate_g5_problem_health_implementation_scope.py'
+      - 'tools/assurance/validate_g5_problem_health_scope_readiness.py'
+      - 'tools/assurance/test_validate_g5_problem_health_scope_readiness.py'
+      - '.github/workflows/g5-problem-health-authorization.yml'
+      - '.github/workflows/g5-problem-health-implementation-scope.yml'
+      - 'tools/assurance/validate_repository.py'
+      - 'implementation/wave-4-problem-state-authorization/**'
+      - 'implementation/wave-4-health-projection-authorization/**'
+      - 'docs/03-domains/monitoring-domain-contract.md'
+      - 'docs/09-api-contracts/monitoring-domain-api-contract.md'
+      - 'docs/09-api-contracts/zabbix-monitoring-normalization-profile.md'
+      - 'docs/00-foundation/ai-e2e-delivery/**'
+  push:
+    branches:
+      - main
+      - governance/g5-problem-health-authorization
+    paths:
+      - 'implementation/g5-problem-health-authorization/**'
+      - 'tools/assurance/validate_g5_problem_health_authorization.py'
+      - 'tools/assurance/validate_g5_problem_health_implementation_scope.py'
+      - 'tools/assurance/test_validate_g5_problem_health_authorization.py'
+      - 'tools/assurance/test_validate_g5_problem_health_implementation_scope.py'
+      - 'tools/assurance/validate_g5_problem_health_scope_readiness.py'
+      - 'tools/assurance/test_validate_g5_problem_health_scope_readiness.py'
+      - '.github/workflows/g5-problem-health-authorization.yml'
+      - '.github/workflows/g5-problem-health-implementation-scope.yml'
+      - 'tools/assurance/validate_repository.py'
+      - 'implementation/wave-4-problem-state-authorization/**'
+      - 'implementation/wave-4-health-projection-authorization/**'
+      - 'docs/03-domains/monitoring-domain-contract.md'
+      - 'docs/09-api-contracts/monitoring-domain-api-contract.md'
+      - 'docs/09-api-contracts/zabbix-monitoring-normalization-profile.md'
+      - 'docs/00-foundation/ai-e2e-delivery/**'
+
+permissions:
+  contents: read
+
+jobs:
+  g5-authorization:
+    runs-on: ubuntu-24.04
+    env:
+      EVENT_NAME: ${{ github.event_name }}
+      PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      EVENT_SHA: ${{ github.sha }}
+    steps:
+      - name: Resolve exact analyzed HEAD
+        id: target
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            resolved_sha="$PR_HEAD_SHA"
+          else
+            resolved_sha="$EVENT_SHA"
+          fi
+          test -n "$resolved_sha"
+          printf 'sha=%s\n' "$resolved_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout exact analyzed HEAD
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ steps.target.outputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+          allow-unsafe-pr-checkout: false
+
+      - name: Verify exact commit identity
+        env:
+          EXPECTED_SHA: ${{ steps.target.outputs.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+
+      - name: Validate G5 authorization
+        run: python3 tools/assurance/validate_g5_problem_health_authorization.py
+
+      - name: Falsify G5 authorization boundaries
+        run: python3 tools/assurance/test_validate_g5_problem_health_authorization.py
+
+      - name: Falsify future G5 implementation scope
+        run: python3 tools/assurance/test_validate_g5_problem_health_implementation_scope.py
+
+      - name: Falsify trusted G5 readiness evidence
+        run: python3 tools/assurance/test_validate_g5_problem_health_scope_readiness.py
+
+      - name: Validate repository structure and workflow safety
+        run: python3 tools/assurance/validate_repository.py

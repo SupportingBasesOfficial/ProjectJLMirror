@@ -138,7 +138,8 @@
   "authority_source_paths": [
     "implementation/wave-4-alerting-core-model-authorization/AUTHORIZATION.md",
     "implementation/wave-4-alerting-core-model-authorization/AUTHORIZATION_MANIFEST.json",
-    "implementation/g6-monitoring-alerting-transport/AUTHORIZATION_DOES_NOT_EXIST",
+    "implementation/g6-monitoring-alerting-transport/RUNBOOK.md",
+    "sql/integration/002_monitoring_alerting_consumer.sql",
     "implementation/g6-monitoring-alerting-transport/IMPLEMENTATION_CLAIM.json",
     "docs/00-foundation/ai-e2e-delivery/PRODUCT-EXECUTION-ROADMAP.md"
   ],

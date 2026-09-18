@@ -13,8 +13,8 @@ on:
       - '.github/workflows/g7-alert-policy-lifecycle-authorization.yml'
       - '.github/workflows/g7-alert-policy-lifecycle-implementation-scope.yml'
       - 'tools/assurance/validate_repository.py'
-      - 'implementation/wave-4-alert-policy-publication-authorization/**'
-      - 'implementation/wave-4-alert-policy-publication-runtime/**'
+      - 'implementation/g6-monitoring-alerting-transport/**'
+      - 'sql/integration/002_monitoring_alerting_consumer.sql'
       - 'implementation/wave-4-alerting-core-model-authorization/**'
       - 'docs/00-foundation/ai-e2e-delivery/**'
       - 'implementation/wave-4-alerting-core-model-authorization/**'
@@ -34,8 +34,8 @@ on:
       - '.github/workflows/g7-alert-policy-lifecycle-authorization.yml'
       - '.github/workflows/g7-alert-policy-lifecycle-implementation-scope.yml'
       - 'tools/assurance/validate_repository.py'
-      - 'implementation/wave-4-alert-policy-publication-authorization/**'
-      - 'implementation/wave-4-alert-policy-publication-runtime/**'
+      - 'implementation/g6-monitoring-alerting-transport/**'
+      - 'sql/integration/002_monitoring_alerting_consumer.sql'
       - 'implementation/wave-4-alerting-core-model-authorization/**'
       - 'docs/00-foundation/ai-e2e-delivery/**'
       - 'implementation/wave-4-alerting-core-model-authorization/**'
@@ -45,7 +45,7 @@ permissions:
   contents: read
 
 jobs:
-  g6-authorization:
+  g7-authorization:
     runs-on: ubuntu-24.04
     env:
       EVENT_NAME: ${{ github.event_name }}

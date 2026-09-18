@@ -16,7 +16,7 @@ on:
       - 'implementation/wave-4-monitoring-alerting-publication-authorization/**'
       - 'implementation/wave-4-monitoring-alerting-publication-runtime/**'
       - 'docs/10-event-contracts/monitoring-domain-event-contracts.md'
-      - 'sql/wave2/001_async_correctness.sql'
+      - 'sql/wave2/**'
       - 'implementation/wave-4-alerting-core-model-authorization/**'
       - 'docs/00-foundation/ai-e2e-delivery/**'
   push:
@@ -37,7 +37,7 @@ on:
       - 'implementation/wave-4-monitoring-alerting-publication-authorization/**'
       - 'implementation/wave-4-monitoring-alerting-publication-runtime/**'
       - 'docs/10-event-contracts/monitoring-domain-event-contracts.md'
-      - 'sql/wave2/001_async_correctness.sql'
+      - 'sql/wave2/**'
       - 'implementation/wave-4-alerting-core-model-authorization/**'
       - 'docs/00-foundation/ai-e2e-delivery/**'
 

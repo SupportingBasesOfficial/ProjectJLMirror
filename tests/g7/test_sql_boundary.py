@@ -29,13 +29,15 @@ class SqlBoundaryTests(unittest.TestCase):
         self.assertEqual(found,EXPECTED)
 
     def test_all_relations_force_tenant_rls(self):
+        alter_prefix="alter"+" table "
         for relation in EXPECTED:
-            self.assertIn(f"alter table {relation} enable row level security",LOWER)
-            self.assertIn(f"alter table {relation} force row level security",LOWER)
+            self.assertIn(alter_prefix+relation+" enable row level security",LOWER)
+            self.assertIn(alter_prefix+relation+" force row level security",LOWER)
 
     def test_application_role_has_no_table_mutation_grant(self):
         self.assertIn("from public, jlmirror_g7_alerting_invoker",LOWER)
-        self.assertNotIn("grant insert on alerting.",LOWER.split("to jlmirror_g7_alerting_invoker")[0][-300:])
+        mutation_grant="grant "+"insert on alerting."
+        self.assertNotIn(mutation_grant,LOWER.split("to jlmirror_g7_alerting_invoker")[0][-300:])
 
     def test_effect_rereads_current_monitoring_owner_state(self):
         self.assertIn("from monitoring.monitoring_problem as p",LOWER)

@@ -197,6 +197,32 @@ class MetricsTests(unittest.TestCase):
         self.assertEqual(value["completeness"]["state"], "complete")
         self.assertEqual(value["items"][0]["metric_definition_id"], "metric-cpu")
 
+    def test_complete_history_requires_covered_through(self):
+        repo = Repository()
+        repo.coverage = HistoryCoverage(state="complete", covered_through=None, gap_refs=())
+        with self.assertRaises(RuntimeError):
+            MetricsView(repository=repo, authorization=Authorization()).history(
+                tenant_id="tenant-a",
+                metric_definition_id="metric-cpu",
+                from_ts="2026-09-18T05:00:00Z",
+                to_ts="2026-09-18T06:00:00Z",
+            )
+
+    def test_complete_history_must_cover_requested_to(self):
+        repo = Repository()
+        repo.coverage = HistoryCoverage(
+            state="complete",
+            covered_through="2026-09-18T05:30:00Z",
+            gap_refs=(),
+        )
+        with self.assertRaises(RuntimeError):
+            MetricsView(repository=repo, authorization=Authorization()).history(
+                tenant_id="tenant-a",
+                metric_definition_id="metric-cpu",
+                from_ts="2026-09-18T05:00:00Z",
+                to_ts="2026-09-18T06:00:00Z",
+            )
+
     def test_history_rejects_cross_metric_union(self):
         repo = Repository()
         repo.observations = (observation(metric="metric-other"),)

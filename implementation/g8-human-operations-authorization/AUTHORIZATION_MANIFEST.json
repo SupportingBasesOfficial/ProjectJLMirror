@@ -121,5 +121,40 @@
     "automation_or_aiops_mutation",
     "provider_write_back",
     "production_activation"
-  ]
+  ],
+  "human_operations_v1": {
+    "responsibility_roles": [
+      "technical_responsible",
+      "service_owner",
+      "operator",
+      "customer_responsible"
+    ],
+    "responsibility_assignment_sources": [
+      "manual",
+      "configured"
+    ],
+    "alert_action_assignment_kinds": [
+      "investigate_alert",
+      "acknowledge_alert",
+      "review_alert",
+      "customer_review_required"
+    ],
+    "projection_only_action_kinds": [
+      "no_human_action_required"
+    ],
+    "acknowledgement_scope": [
+      "alert"
+    ],
+    "unacknowledge_authorized": false,
+    "visibility_viewer_sides": [
+      "internal",
+      "customer"
+    ],
+    "visibility_capability_classes": [
+      "platform_native_authenticated_view@1"
+    ],
+    "new_alert_visibility_requirement_requires_active_alert": true,
+    "existing_visibility_requirement_receipt_after_alert_resolution": "allowed_as_late_evidence_only",
+    "visibility_receipt_may_mutate_alert_lifecycle": false
+  }
 }

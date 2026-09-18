@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "G6TransportResult",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "receipt_state"
+  ],
+  "properties": {
+    "receipt_state": {
+      "enum": [
+        "admitted",
+        "processing",
+        "completed",
+        "reconciliation_required",
+        "quarantined",
+        "failed_terminal"
+      ]
+    },
+    "duplicate": {
+      "type": "boolean"
+    },
+    "effect_result_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "effect_result_kind": {
+      "enum": [
+        "monitoring_problem_owner_reread_current",
+        "monitoring_health_owner_reread_current",
+        "monitoring_owner_reread_noncurrent_generation"
+      ]
+    }
+  }
+}

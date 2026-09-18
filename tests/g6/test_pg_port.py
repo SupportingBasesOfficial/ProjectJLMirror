@@ -69,7 +69,7 @@ def admission():
     context=TenantContext(
         tenant_id="tenant-a",
         principal_id="service-worker-a",
-        principal_kind=PrincipalKind.SERVICE_WORKLOAD,
+        principal_kind=PrincipalKind.INTERNAL_SERVICE_PRINCIPAL,
         principal_credential_generation="cred-7",
         cell_id="cell-a",
         placement_version="placement-11",

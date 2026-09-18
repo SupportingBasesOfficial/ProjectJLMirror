@@ -618,6 +618,8 @@ BEGIN
 END;
 $$;
 
+ALTER FUNCTION human_operations.g8_validate_authority(TEXT,TEXT,JSONB)
+OWNER TO jlmirror_g8_human_operations_executor;
 ALTER FUNCTION human_operations.g8_assign_resource_responsibility(TEXT,TEXT,TEXT,TEXT,TEXT,TEXT,TEXT,JSONB)
 OWNER TO jlmirror_g8_human_operations_executor;
 ALTER FUNCTION human_operations.g8_end_resource_responsibility(TEXT,TEXT,TEXT,TEXT,JSONB)

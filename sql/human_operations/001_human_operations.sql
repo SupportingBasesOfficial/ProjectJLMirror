@@ -18,6 +18,64 @@ BEGIN
 END;
 $$;
 
+DO $
+DECLARE
+    v_executor_oid OID;
+    v_unexpected TEXT;
+BEGIN
+    SELECT oid INTO v_executor_oid
+      FROM pg_roles
+     WHERE rolname='jlmirror_g8_human_operations_executor';
+
+    IF EXISTS (
+        SELECT 1 FROM pg_roles
+        WHERE oid=v_executor_oid
+          AND (rolcanlogin OR rolsuper OR rolcreatedb OR rolcreaterole
+               OR rolinherit OR rolreplication OR rolbypassrls)
+    ) THEN
+        RAISE EXCEPTION 'g8.executor_unsafe_attributes';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1 FROM pg_auth_members
+        WHERE roleid=v_executor_oid OR member=v_executor_oid
+    ) THEN
+        RAISE EXCEPTION 'g8.executor_unsafe_membership';
+    END IF;
+
+    WITH allowed_proc_oids AS (
+        SELECT to_regprocedure(signature) AS proc_oid
+        FROM (VALUES
+          ('human_operations.g8_validate_authority(text,text,jsonb)'),
+          ('human_operations.g8_assign_resource_responsibility(text,text,text,text,text,text,text,jsonb)'),
+          ('human_operations.g8_end_resource_responsibility(text,text,text,text,jsonb)'),
+          ('human_operations.g8_assign_alert_action(text,text,text,text,text,text,jsonb)'),
+          ('human_operations.g8_acknowledge_alert(text,text,text,text,text,jsonb)'),
+          ('human_operations.g8_create_visibility_requirement(text,text,text,text,text,text,text,text,jsonb)'),
+          ('human_operations.g8_record_visibility_receipt(text,text,text,text,jsonb,jsonb)'),
+          ('human_operations.g8_alert_human_operations(text,text)'),
+          ('human_operations.g8_resource_responsibilities(text,text)')
+        ) AS allowed(signature)
+    )
+    SELECT format('class=%s,objid=%s,dbid=%s',d.classid::regclass::TEXT,d.objid,d.dbid)
+      INTO v_unexpected
+      FROM pg_shdepend d
+     WHERE d.refclassid='pg_authid'::regclass
+       AND d.refobjid=v_executor_oid
+       AND d.deptype='o'
+       AND NOT (
+         d.classid='pg_proc'::regclass
+         AND d.objid IN (SELECT proc_oid FROM allowed_proc_oids WHERE proc_oid IS NOT NULL)
+       )
+     ORDER BY d.dbid,d.classid,d.objid
+     LIMIT 1;
+
+    IF v_unexpected IS NOT NULL THEN
+        RAISE EXCEPTION 'g8.executor_unexpected_owned_object:%',v_unexpected;
+    END IF;
+END;
+$;
+
 GRANT USAGE ON SCHEMA human_operations, monitoring, alerting TO jlmirror_g8_human_operations_executor;
 GRANT USAGE ON SCHEMA human_operations TO jlmirror_g8_human_operations_invoker;
 REVOKE CREATE ON SCHEMA human_operations, monitoring, alerting
@@ -225,6 +283,144 @@ GRANT SELECT,INSERT ON
 TO jlmirror_g8_human_operations_executor;
 GRANT SELECT ON monitoring.monitoring_resource,alerting.alert
 TO jlmirror_g8_human_operations_executor;
+
+CREATE OR REPLACE FUNCTION human_operations.g8_reject_immutable_mutation()
+RETURNS trigger
+LANGUAGE plpgsql SECURITY INVOKER
+SET search_path=pg_catalog,human_operations
+AS $
+BEGIN
+    RAISE EXCEPTION 'g8.immutable_fact';
+END;
+$;
+
+CREATE OR REPLACE FUNCTION human_operations.g8_guard_responsibility_closure()
+RETURNS trigger
+LANGUAGE plpgsql SECURITY INVOKER
+SET search_path=pg_catalog,human_operations
+AS $
+BEGIN
+    IF TG_OP='DELETE' THEN
+        RAISE EXCEPTION 'g8.responsibility_delete_forbidden';
+    END IF;
+    IF OLD.effective_until IS NOT NULL THEN
+        RAISE EXCEPTION 'g8.responsibility_closed_terminal';
+    END IF;
+    IF NEW.tenant_id IS DISTINCT FROM OLD.tenant_id
+       OR NEW.responsibility_assignment_id IS DISTINCT FROM OLD.responsibility_assignment_id
+       OR NEW.monitoring_resource_id IS DISTINCT FROM OLD.monitoring_resource_id
+       OR NEW.principal_id IS DISTINCT FROM OLD.principal_id
+       OR NEW.responsibility_role IS DISTINCT FROM OLD.responsibility_role
+       OR NEW.assignment_source IS DISTINCT FROM OLD.assignment_source
+       OR NEW.logical_action_id IS DISTINCT FROM OLD.logical_action_id
+       OR NEW.content_hash IS DISTINCT FROM OLD.content_hash
+       OR NEW.assigned_by_principal_id IS DISTINCT FROM OLD.assigned_by_principal_id
+       OR NEW.authority_snapshot IS DISTINCT FROM OLD.authority_snapshot
+       OR NEW.effective_from IS DISTINCT FROM OLD.effective_from
+       OR NEW.created_at IS DISTINCT FROM OLD.created_at
+       OR NEW.effective_until IS NULL
+       OR NEW.ended_by_principal_id IS NULL
+       OR NEW.end_reason IS NULL THEN
+        RAISE EXCEPTION 'g8.responsibility_closure_invalid';
+    END IF;
+    RETURN NEW;
+END;
+$;
+
+CREATE OR REPLACE FUNCTION human_operations.g8_guard_action_closure()
+RETURNS trigger
+LANGUAGE plpgsql SECURITY INVOKER
+SET search_path=pg_catalog,human_operations
+AS $
+BEGIN
+    IF TG_OP='DELETE' THEN
+        RAISE EXCEPTION 'g8.action_delete_forbidden';
+    END IF;
+    IF OLD.effective_until IS NOT NULL THEN
+        RAISE EXCEPTION 'g8.action_closed_terminal';
+    END IF;
+    IF NEW.tenant_id IS DISTINCT FROM OLD.tenant_id
+       OR NEW.action_assignment_id IS DISTINCT FROM OLD.action_assignment_id
+       OR NEW.alert_id IS DISTINCT FROM OLD.alert_id
+       OR NEW.owner_principal_id IS DISTINCT FROM OLD.owner_principal_id
+       OR NEW.action_kind IS DISTINCT FROM OLD.action_kind
+       OR NEW.logical_action_id IS DISTINCT FROM OLD.logical_action_id
+       OR NEW.content_hash IS DISTINCT FROM OLD.content_hash
+       OR NEW.assigned_by_principal_id IS DISTINCT FROM OLD.assigned_by_principal_id
+       OR NEW.authority_snapshot IS DISTINCT FROM OLD.authority_snapshot
+       OR NEW.effective_from IS DISTINCT FROM OLD.effective_from
+       OR NEW.created_at IS DISTINCT FROM OLD.created_at
+       OR NEW.effective_until IS NULL
+       OR NEW.ended_by_principal_id IS NULL
+       OR NEW.end_reason IS NULL THEN
+        RAISE EXCEPTION 'g8.action_closure_invalid';
+    END IF;
+    RETURN NEW;
+END;
+$;
+
+CREATE TRIGGER g8_resource_responsibility_guard
+BEFORE UPDATE OR DELETE ON human_operations.resource_responsibility_assignment
+FOR EACH ROW EXECUTE FUNCTION human_operations.g8_guard_responsibility_closure();
+
+CREATE TRIGGER g8_action_assignment_guard
+BEFORE UPDATE OR DELETE ON human_operations.alert_action_assignment
+FOR EACH ROW EXECUTE FUNCTION human_operations.g8_guard_action_closure();
+
+CREATE TRIGGER g8_ack_immutable
+BEFORE UPDATE OR DELETE ON human_operations.alert_acknowledgement
+FOR EACH ROW EXECUTE FUNCTION human_operations.g8_reject_immutable_mutation();
+
+CREATE TRIGGER g8_visibility_requirement_immutable
+BEFORE UPDATE OR DELETE ON human_operations.visibility_requirement
+FOR EACH ROW EXECUTE FUNCTION human_operations.g8_reject_immutable_mutation();
+
+CREATE TRIGGER g8_visibility_receipt_immutable
+BEFORE UPDATE OR DELETE ON human_operations.visibility_receipt
+FOR EACH ROW EXECUTE FUNCTION human_operations.g8_reject_immutable_mutation();
+
+DO $$
+DECLARE
+    v_executor_oid OID;
+    v_invoker_oid OID;
+    v_row RECORD;
+    v_proc_oid OID;
+BEGIN
+    SELECT oid INTO v_executor_oid FROM pg_roles WHERE rolname='jlmirror_g8_human_operations_executor';
+    SELECT oid INTO v_invoker_oid FROM pg_roles WHERE rolname='jlmirror_g8_human_operations_invoker';
+
+    FOR v_row IN
+        SELECT signature FROM (VALUES
+          ('human_operations.g8_validate_authority(text,text,jsonb)'),
+          ('human_operations.g8_assign_resource_responsibility(text,text,text,text,text,text,text,jsonb)'),
+          ('human_operations.g8_end_resource_responsibility(text,text,text,text,jsonb)'),
+          ('human_operations.g8_assign_alert_action(text,text,text,text,text,text,jsonb)'),
+          ('human_operations.g8_acknowledge_alert(text,text,text,text,text,jsonb)'),
+          ('human_operations.g8_create_visibility_requirement(text,text,text,text,text,text,text,text,jsonb)'),
+          ('human_operations.g8_record_visibility_receipt(text,text,text,text,jsonb,jsonb)'),
+          ('human_operations.g8_alert_human_operations(text,text)'),
+          ('human_operations.g8_resource_responsibilities(text,text)')
+        ) AS guarded(signature)
+    LOOP
+        v_proc_oid:=to_regprocedure(v_row.signature);
+        IF v_proc_oid IS NULL THEN CONTINUE; END IF;
+
+        IF EXISTS (
+          SELECT 1
+          FROM pg_proc p,
+               LATERAL aclexplode(COALESCE(p.proacl,acldefault('f',p.proowner))) a
+          WHERE p.oid=v_proc_oid
+            AND a.privilege_type='EXECUTE'
+            AND (
+              a.grantee=0
+              OR (a.grantee<>p.proowner AND (a.grantee<>v_invoker_oid OR a.is_grantable))
+            )
+        ) THEN
+          RAISE EXCEPTION 'g8.existing_function_acl_unsafe:%',v_row.signature;
+        END IF;
+    END LOOP;
+END;
+$$;
 
 CREATE OR REPLACE FUNCTION human_operations.g8_validate_authority(
     p_tenant_id TEXT,p_actor_principal_id TEXT,p_authority_snapshot JSONB
@@ -618,6 +814,12 @@ BEGIN
 END;
 $$;
 
+ALTER FUNCTION human_operations.g8_reject_immutable_mutation()
+OWNER TO jlmirror_g8_human_operations_executor;
+ALTER FUNCTION human_operations.g8_guard_responsibility_closure()
+OWNER TO jlmirror_g8_human_operations_executor;
+ALTER FUNCTION human_operations.g8_guard_action_closure()
+OWNER TO jlmirror_g8_human_operations_executor;
 ALTER FUNCTION human_operations.g8_validate_authority(TEXT,TEXT,JSONB)
 OWNER TO jlmirror_g8_human_operations_executor;
 ALTER FUNCTION human_operations.g8_assign_resource_responsibility(TEXT,TEXT,TEXT,TEXT,TEXT,TEXT,TEXT,JSONB)
@@ -646,5 +848,70 @@ GRANT EXECUTE ON FUNCTION human_operations.g8_create_visibility_requirement(TEXT
 GRANT EXECUTE ON FUNCTION human_operations.g8_record_visibility_receipt(TEXT,TEXT,TEXT,TEXT,JSONB,JSONB) TO jlmirror_g8_human_operations_invoker;
 GRANT EXECUTE ON FUNCTION human_operations.g8_alert_human_operations(TEXT,TEXT) TO jlmirror_g8_human_operations_invoker;
 GRANT EXECUTE ON FUNCTION human_operations.g8_resource_responsibilities(TEXT,TEXT) TO jlmirror_g8_human_operations_invoker;
+
+DO $
+DECLARE
+    v_executor_oid OID;
+    v_invoker_oid OID;
+    v_row RECORD;
+    v_proc_oid OID;
+BEGIN
+    SELECT oid INTO v_executor_oid FROM pg_roles WHERE rolname='jlmirror_g8_human_operations_executor';
+    SELECT oid INTO v_invoker_oid FROM pg_roles WHERE rolname='jlmirror_g8_human_operations_invoker';
+
+    FOR v_row IN
+        SELECT signature,exposed FROM (VALUES
+          ('human_operations.g8_validate_authority(text,text,jsonb)',false),
+          ('human_operations.g8_assign_resource_responsibility(text,text,text,text,text,text,text,jsonb)',true),
+          ('human_operations.g8_end_resource_responsibility(text,text,text,text,jsonb)',true),
+          ('human_operations.g8_assign_alert_action(text,text,text,text,text,text,jsonb)',true),
+          ('human_operations.g8_acknowledge_alert(text,text,text,text,text,jsonb)',true),
+          ('human_operations.g8_create_visibility_requirement(text,text,text,text,text,text,text,text,jsonb)',true),
+          ('human_operations.g8_record_visibility_receipt(text,text,text,text,jsonb,jsonb)',true),
+          ('human_operations.g8_alert_human_operations(text,text)',true),
+          ('human_operations.g8_resource_responsibilities(text,text)',true)
+        ) AS guarded(signature,exposed)
+    LOOP
+        v_proc_oid:=to_regprocedure(v_row.signature);
+        IF v_proc_oid IS NULL THEN
+          RAISE EXCEPTION 'g8.installed_function_missing:%',v_row.signature;
+        END IF;
+        IF EXISTS (
+          SELECT 1 FROM pg_proc p
+          WHERE p.oid=v_proc_oid
+            AND (p.proowner<>v_executor_oid OR (v_row.exposed AND NOT p.prosecdef))
+        ) THEN
+          RAISE EXCEPTION 'g8.installed_function_definition_unsafe:%',v_row.signature;
+        END IF;
+        IF EXISTS (
+          SELECT 1
+          FROM pg_proc p,
+               LATERAL aclexplode(COALESCE(p.proacl,acldefault('f',p.proowner))) a
+          WHERE p.oid=v_proc_oid AND a.privilege_type='EXECUTE'
+            AND (
+              a.grantee=0
+              OR (a.grantee<>p.proowner AND (
+                  (NOT v_row.exposed)
+                  OR a.grantee<>v_invoker_oid
+                  OR a.is_grantable
+              ))
+            )
+        ) THEN
+          RAISE EXCEPTION 'g8.installed_function_acl_unsafe:%',v_row.signature;
+        END IF;
+        IF v_row.exposed AND NOT EXISTS (
+          SELECT 1
+          FROM pg_proc p,
+               LATERAL aclexplode(COALESCE(p.proacl,acldefault('f',p.proowner))) a
+          WHERE p.oid=v_proc_oid
+            AND a.privilege_type='EXECUTE'
+            AND a.grantee=v_invoker_oid
+            AND NOT a.is_grantable
+        ) THEN
+          RAISE EXCEPTION 'g8.installed_invoker_execute_missing:%',v_row.signature;
+        END IF;
+    END LOOP;
+END;
+$;
 
 COMMIT;

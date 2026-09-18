@@ -9,6 +9,7 @@ RESOURCE_READ_ACTION = "monitoring.resource.read"
 METRIC_READ_ACTION = "monitoring.metric.read"
 MAX_HISTORY_WINDOW_SECONDS = 86400
 MAX_CANONICAL_VALUE_BYTES = 131072
+MAX_RESPONSE_BYTES = 1048576
 
 
 @dataclass(frozen=True)
@@ -81,6 +82,7 @@ class HistoryRead:
     definition: MetricDefinitionRecord
     coverage: HistoryCoverage
     observations: tuple[MetricObservationRecord, ...]
+    next_cursor: str | None
 
 
 class CurrentAuthorizationPort(Protocol):
@@ -97,9 +99,23 @@ class CurrentAuthorizationPort(Protocol):
 
 
 class MetricsReadPort(Protocol):
-    def list_definitions(self, *, tenant_id: str, monitoring_resource_id: str) -> Sequence[MetricDefinitionRecord]: ...
+    def list_definitions(
+        self,
+        *,
+        tenant_id: str,
+        monitoring_resource_id: str,
+        cursor: str | None,
+        limit: int,
+    ) -> tuple[Sequence[MetricDefinitionRecord], str | None]: ...
     def get_definition(self, *, tenant_id: str, metric_definition_id: str) -> MetricDefinitionRecord | None: ...
-    def list_current(self, *, tenant_id: str, monitoring_resource_id: str) -> Sequence[MetricCurrentRecord]: ...
+    def list_current(
+        self,
+        *,
+        tenant_id: str,
+        monitoring_resource_id: str,
+        cursor: str | None,
+        limit: int,
+    ) -> tuple[Sequence[MetricCurrentRecord], str | None]: ...
     def get_current(self, *, tenant_id: str, metric_definition_id: str) -> MetricCurrentRecord | None: ...
     def history(
         self,
@@ -108,6 +124,7 @@ class MetricsReadPort(Protocol):
         metric_definition_id: str,
         from_ts: str,
         to_ts: str,
+        cursor: str | None,
         limit: int,
     ) -> HistoryRead | None: ...
 
@@ -128,6 +145,23 @@ def _bounded_value(value: object | None) -> object | None:
     if len(encoded) > MAX_CANONICAL_VALUE_BYTES:
         raise RuntimeError("metric value exceeds accepted canonical bound")
     return value
+
+
+def _bounded_response(value: dict) -> dict:
+    encoded = json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    if len(encoded) > MAX_RESPONSE_BYTES:
+        raise RuntimeError("metrics response exceeds bounded G4 proof profile")
+    return value
+
+
+def _validate_cursor(cursor: str | None) -> None:
+    if cursor is not None and (not cursor or len(cursor) > 512):
+        raise ValueError("cursor must be a bounded non-empty anchor")
+
+
+def _validate_limit(limit: int) -> None:
+    if limit < 1 or limit > 500:
+        raise ValueError("limit is outside accepted G4 bound")
 
 
 def _require_kind(value_kind: str) -> None:
@@ -156,18 +190,33 @@ class MetricsView:
         self._admit(tenant_id, RESOURCE_READ_ACTION)
         self._admit(tenant_id, METRIC_READ_ACTION)
 
-    def list_definitions(self, *, tenant_id: str, monitoring_resource_id: str) -> dict:
+    def list_definitions(
+        self,
+        *,
+        tenant_id: str,
+        monitoring_resource_id: str,
+        cursor: str | None = None,
+        limit: int = 200,
+    ) -> dict:
         if not monitoring_resource_id or len(monitoring_resource_id) > 512:
             raise ValueError("monitoring_resource_id must be bounded non-empty text")
+        _validate_cursor(cursor)
+        _validate_limit(limit)
         self._admit_resource_and_metric(tenant_id)
-        rows = tuple(self._repository.list_definitions(
+        rows, next_cursor = self._repository.list_definitions(
             tenant_id=tenant_id,
             monitoring_resource_id=monitoring_resource_id,
-        ))
+            cursor=cursor,
+            limit=limit,
+        )
+        rows = tuple(rows)
         self._admit_resource_and_metric(tenant_id)
-        if len(rows) > 500:
-            raise RuntimeError("metric definition list exceeds G4 response bound")
-        return {"items": [self._definition(row, detail=False) for row in rows], "next_cursor": None}
+        if len(rows) > limit:
+            raise RuntimeError("metric definition repository exceeded requested limit")
+        return _bounded_response({
+            "items": [self._definition(row, detail=False) for row in rows],
+            "next_cursor": next_cursor,
+        })
 
     def get_definition(self, *, tenant_id: str, metric_definition_id: str) -> dict | None:
         if not metric_definition_id or len(metric_definition_id) > 512:
@@ -183,18 +232,33 @@ class MetricsView:
         self._admit_resource_and_metric(tenant_id)
         return self._definition(row, detail=True)
 
-    def list_current(self, *, tenant_id: str, monitoring_resource_id: str) -> dict:
+    def list_current(
+        self,
+        *,
+        tenant_id: str,
+        monitoring_resource_id: str,
+        cursor: str | None = None,
+        limit: int = 200,
+    ) -> dict:
         if not monitoring_resource_id or len(monitoring_resource_id) > 512:
             raise ValueError("monitoring_resource_id must be bounded non-empty text")
+        _validate_cursor(cursor)
+        _validate_limit(limit)
         self._admit_resource_and_metric(tenant_id)
-        rows = tuple(self._repository.list_current(
+        rows, next_cursor = self._repository.list_current(
             tenant_id=tenant_id,
             monitoring_resource_id=monitoring_resource_id,
-        ))
+            cursor=cursor,
+            limit=limit,
+        )
+        rows = tuple(rows)
         self._admit_resource_and_metric(tenant_id)
-        if len(rows) > 500:
-            raise RuntimeError("metric current-state list exceeds G4 response bound")
-        return {"items": [self._current(row) for row in rows], "next_cursor": None}
+        if len(rows) > limit:
+            raise RuntimeError("metric current-state repository exceeded requested limit")
+        return _bounded_response({
+            "items": [self._current(row) for row in rows],
+            "next_cursor": next_cursor,
+        })
 
     def get_current(self, *, tenant_id: str, metric_definition_id: str) -> dict | None:
         if not metric_definition_id or len(metric_definition_id) > 512:
@@ -217,12 +281,13 @@ class MetricsView:
         metric_definition_id: str,
         from_ts: str,
         to_ts: str,
+        cursor: str | None = None,
         limit: int = 200,
     ) -> dict | None:
         if not metric_definition_id or len(metric_definition_id) > 512:
             raise ValueError("metric_definition_id must be bounded non-empty text")
-        if limit < 1 or limit > 500:
-            raise ValueError("history limit is outside accepted G4 bound")
+        _validate_cursor(cursor)
+        _validate_limit(limit)
         start = _parse_utc(from_ts)
         end = _parse_utc(to_ts)
         if start >= end:
@@ -236,6 +301,7 @@ class MetricsView:
             metric_definition_id=metric_definition_id,
             from_ts=from_ts,
             to_ts=to_ts,
+            cursor=cursor,
             limit=limit,
         )
         if result is None:
@@ -261,7 +327,7 @@ class MetricsView:
             if row.source_instance_generation != result.definition.source_instance_generation:
                 raise RuntimeError("cross-generation history union is forbidden")
 
-        return {
+        return _bounded_response({
             "metric_definition_id": metric_definition_id,
             "source_instance_generation": result.definition.source_instance_generation,
             "generation_state": result.definition.generation_state,
@@ -272,8 +338,8 @@ class MetricsView:
                 "gap_refs": list(result.coverage.gap_refs),
             },
             "items": [self._observation(row) for row in result.observations],
-            "next_cursor": None,
-        }
+            "next_cursor": result.next_cursor,
+        })
 
     @staticmethod
     def _definition(row: MetricDefinitionRecord, *, detail: bool) -> dict:

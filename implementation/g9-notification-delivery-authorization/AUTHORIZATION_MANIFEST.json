@@ -45,7 +45,19 @@
     "max_attempts_required": true,
     "second_transport_channel_authorized": false,
     "external_read_is_authoritative_native_view": false,
-    "authoritative_awareness_requires_g8_native_visibility_when_required": true
+    "authoritative_awareness_requires_g8_native_visibility_when_required": true,
+    "channel_capabilities": {
+      "whatsapp_business@1": {
+        "dispatch_evidence": true,
+        "provider_acceptance_evidence": true,
+        "delivery_evidence": true,
+        "external_read_evidence": "supplementary_when_provider_supplies_it",
+        "authenticated_human_identity": false,
+        "response_action_evidence": false,
+        "authoritative_awareness_terminal": false,
+        "authoritative_awareness_fallback": "g8.platform_native_authenticated_view@1"
+      }
+    }
   },
   "implementation_path_policy": {
     "implementation_pr_head_prefix": "impl/g9-notification-delivery",

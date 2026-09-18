@@ -13,7 +13,7 @@ MANIFEST_PATH = "implementation/g3-resource-inventory-authorization/AUTHORIZATIO
 EXECUTABLE_SUFFIXES = {".py", ".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".sh", ".bash", ".sql", ".go", ".rs", ".java", ".kt", ".cs", ".rb", ".php"}
 PERSISTENCE_RECEIVERS = ("database", "db", "repository", "repo", "prisma", "postgres", "postgresql", "pg", "sqlalchemy", "psycopg", "cursor")
 PERSISTENCE_WRITES = ("insert", "update", "delete", "save", "upsert", "commit", "persist", "executemany")
-SQL_MUTATION_RE = re.compile(r"\b(?:insert\s+into|update|delete\s+from|merge\s+into|truncate(?:\s+table)?|alter\s+(?:table|schema)|drop\s+(?:table|schema|view|function|procedure)|create\s+(?:table|schema|view|function|procedure))\b", re.IGNORECASE)
+SQL_MUTATION_RE = re.compile(r"\b(?:insert\s+into\s+[^\s;()]+|update\s+[^\s;()]+\s+set\b|delete\s+from\s+[^\s;()]+|merge\s+into\s+[^\s;()]+|truncate(?:\s+table)?\s+[^\s;()]+|alter\s+(?:table|schema)\s+[^\s;()]+|drop\s+(?:table|schema|view|function|procedure)\s+[^\s;()]+|create\s+(?:table|schema|view|function|procedure)\s+[^\s;()]+)", re.IGNORECASE)
 
 def git(root: Path, *args: str) -> str:
     return subprocess.check_output(["git", "-C", str(root), *args], text=True).strip()

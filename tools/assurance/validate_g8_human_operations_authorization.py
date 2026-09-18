@@ -82,6 +82,27 @@ def main()->int:
     ):
         req(item in forbidden,f"critical non-authority missing: {item}",errors)
 
+    model=data.get("human_operations_v1") or {}
+    req(set(model.get("responsibility_roles") or [])=={
+        "technical_responsible","service_owner","operator","customer_responsible"
+    },"responsibility role set drift",errors)
+    req(set(model.get("responsibility_assignment_sources") or [])=={
+        "manual","configured"
+    },"responsibility assignment source drift",errors)
+    req(set(model.get("alert_action_assignment_kinds") or [])=={
+        "investigate_alert","acknowledge_alert","review_alert","customer_review_required"
+    },"action-assignment kind set drift",errors)
+    req(set(model.get("projection_only_action_kinds") or [])=={
+        "no_human_action_required"
+    },"projection-only action kind drift",errors)
+    req(model.get("acknowledgement_scope")==["alert"],"ACK scope drift",errors)
+    req(model.get("unacknowledge_authorized") is False,"unacknowledge must remain blocked",errors)
+    req(set(model.get("visibility_viewer_sides") or [])=={"internal","customer"},"visibility side drift",errors)
+    req(model.get("visibility_capability_classes")==["platform_native_authenticated_view@1"],"visibility capability drift",errors)
+    req(model.get("new_alert_visibility_requirement_requires_active_alert") is True,"new visibility requirement currentness drift",errors)
+    req(model.get("existing_visibility_requirement_receipt_after_alert_resolution")=="allowed_as_late_evidence_only","late visibility evidence semantics drift",errors)
+    req(model.get("visibility_receipt_may_mutate_alert_lifecycle") is False,"visibility receipt lifecycle authority widened",errors)
+
     laws=set(data.get("identity_laws") or [])
     for law in (
         "RESPONSIBILITY != CURRENT_ACTION_OWNER",

@@ -1,0 +1,304 @@
+name: JLMIRROR G9 Notification Delivery Implementation Scope
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions: {}
+
+concurrency:
+  group: g9-notification-delivery-scope-${{ github.event.issue.number }}
+  cancel-in-progress: true
+
+env:
+  G9_SCOPE_COMMAND: /jlmirror-g9-scope-attest
+  G9_READY_COMMAND: /jlmirror-g9-scope-ready
+  G9_SCOPE_VALIDATOR: tools/assurance/validate_g9_notification_delivery_implementation_scope.py
+  G9_READINESS_VALIDATOR: tools/assurance/validate_g9_notification_delivery_scope_readiness.py
+  G9_SCOPE_STATUS_CONTEXT: JLMIRROR / g9-notification-delivery-implementation-scope
+  G9_READY_STATUS_CONTEXT: JLMIRROR / g9-notification-delivery-merge-readiness
+  G9_REQUIRED_LABEL: jlmirror-slice:g9-notification-delivery
+  G9_REQUIRED_HEAD_PREFIX: impl/g9-notification-delivery
+
+jobs:
+  resolve:
+    if: >-
+      github.event.issue.pull_request != null &&
+      (github.event.comment.body == '/jlmirror-g9-scope-attest' ||
+       github.event.comment.body == '/jlmirror-g9-scope-ready') &&
+      (github.event.comment.author_association == 'OWNER' ||
+       github.event.comment.author_association == 'MEMBER' ||
+       github.event.comment.author_association == 'COLLABORATOR')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+    outputs:
+      mode: ${{ steps.pr.outputs.mode }}
+      pr_number: ${{ steps.pr.outputs.pr_number }}
+      base_sha: ${{ steps.pr.outputs.base_sha }}
+      head_sha: ${{ steps.pr.outputs.head_sha }}
+      base_ref: ${{ steps.pr.outputs.base_ref }}
+      head_ref: ${{ steps.pr.outputs.head_ref }}
+      base_repo: ${{ steps.pr.outputs.base_repo }}
+      head_repo: ${{ steps.pr.outputs.head_repo }}
+      labels_b64: ${{ steps.pr.outputs.labels_b64 }}
+      default_branch: ${{ steps.pr.outputs.default_branch }}
+    steps:
+      - name: Resolve exact current PR and live default-branch coordinates from trusted GitHub API
+        id: pr
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.issue.number }}
+          COMMAND: ${{ github.event.comment.body }}
+        run: |
+          set -euo pipefail
+          test -n "$PR_NUMBER"
+          MODE=''
+          if [[ "$COMMAND" == "$G9_SCOPE_COMMAND" ]]; then
+            MODE='attest'
+          elif [[ "$COMMAND" == "$G9_READY_COMMAND" ]]; then
+            MODE='ready'
+          fi
+          test -n "$MODE"
+
+          repo_json="$(gh api "repos/${GITHUB_REPOSITORY}")"
+          DEFAULT_BRANCH="$(jq -r '.default_branch' <<<"$repo_json")"
+          test -n "$DEFAULT_BRANCH"
+          pr_json="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}")"
+          branch_json="$(gh api "repos/${GITHUB_REPOSITORY}/branches/${DEFAULT_BRANCH}")"
+          PR_STATE="$(jq -r '.state' <<<"$pr_json")"
+          PR_BASE_SHA="$(jq -r '.base.sha' <<<"$pr_json")"
+          PR_HEAD_SHA="$(jq -r '.head.sha' <<<"$pr_json")"
+          PR_BASE_REF="$(jq -r '.base.ref' <<<"$pr_json")"
+          PR_HEAD_REF="$(jq -r '.head.ref' <<<"$pr_json")"
+          PR_BASE_REPO="$(jq -r '.base.repo.full_name' <<<"$pr_json")"
+          PR_HEAD_REPO="$(jq -r '.head.repo.full_name' <<<"$pr_json")"
+          PR_LABELS_JSON="$(jq -c '[.labels[].name]' <<<"$pr_json")"
+          DEFAULT_BRANCH_SHA="$(jq -r '.commit.sha' <<<"$branch_json")"
+
+          test "$PR_STATE" = "open"
+          test "$PR_BASE_REF" = "$DEFAULT_BRANCH"
+          test "$PR_BASE_REPO" = "$GITHUB_REPOSITORY"
+          test "$PR_HEAD_REPO" = "$GITHUB_REPOSITORY"
+          test "$PR_BASE_SHA" = "$DEFAULT_BRANCH_SHA"
+          test -n "$PR_HEAD_SHA"
+          [[ "$PR_HEAD_REF" == "$G9_REQUIRED_HEAD_PREFIX"* ]]
+          jq -e --arg required "$G9_REQUIRED_LABEL" 'index($required) != null' <<<"$PR_LABELS_JSON" >/dev/null
+
+          LABELS_B64="$(printf '%s' "$PR_LABELS_JSON" | base64 -w0)"
+          {
+            printf 'mode=%s\n' "$MODE"
+            printf 'pr_number=%s\n' "$PR_NUMBER"
+            printf 'base_sha=%s\n' "$PR_BASE_SHA"
+            printf 'head_sha=%s\n' "$PR_HEAD_SHA"
+            printf 'base_ref=%s\n' "$PR_BASE_REF"
+            printf 'head_ref=%s\n' "$PR_HEAD_REF"
+            printf 'base_repo=%s\n' "$PR_BASE_REPO"
+            printf 'head_repo=%s\n' "$PR_HEAD_REPO"
+            printf 'labels_b64=%s\n' "$LABELS_B64"
+            printf 'default_branch=%s\n' "$DEFAULT_BRANCH"
+          } >> "$GITHUB_OUTPUT"
+          echo "g9_trusted_command=${MODE} pr=${PR_NUMBER} base=${PR_BASE_SHA} head=${PR_HEAD_SHA} ref=${PR_HEAD_REF} default_branch=${DEFAULT_BRANCH}"
+
+  publish-pending:
+    needs: resolve
+    runs-on: ubuntu-24.04
+    permissions:
+      statuses: write
+    steps:
+      - name: Publish pending evidence on exact resolved PR head
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MODE: ${{ needs.resolve.outputs.mode }}
+          PR_HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
+        run: |
+          set -euo pipefail
+          test -n "$PR_HEAD_SHA"
+          context="$G9_SCOPE_STATUS_CONTEXT"
+          description='G9 trusted scope attestation in progress'
+          if [[ "$MODE" == 'ready' ]]; then
+            context="$G9_READY_STATUS_CONTEXT"
+            description='G9 trusted merge-readiness verification in progress'
+          else
+            test "$MODE" = 'attest'
+          fi
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${PR_HEAD_SHA}" \
+            -f state=pending \
+            -f context="$context" \
+            -f description="$description" \
+            -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+
+  analyze:
+    if: needs.resolve.outputs.mode == 'attest'
+    needs: [resolve, publish-pending]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout trusted default branch only
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ needs.resolve.outputs.default_branch }}
+          fetch-depth: 0
+          persist-credentials: false
+          allow-unsafe-pr-checkout: false
+
+      - name: Fetch exact base and candidate objects as data only
+        shell: bash
+        env:
+          PR_BASE_SHA: ${{ needs.resolve.outputs.base_sha }}
+          PR_HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "$PR_BASE_SHA" "$PR_HEAD_SHA"
+          git cat-file -e "${PR_BASE_SHA}^{commit}"
+          git cat-file -e "${PR_HEAD_SHA}^{commit}"
+          test "$(git rev-parse HEAD)" != "$PR_HEAD_SHA"
+
+      - name: Materialize trusted scope evaluator package from exact default-branch base object
+        shell: bash
+        env:
+          PR_BASE_SHA: ${{ needs.resolve.outputs.base_sha }}
+        run: |
+          set -euo pipefail
+          trusted_dir="$RUNNER_TEMP/g9-scope-evaluator"
+          mkdir -p "$trusted_dir"
+          trusted_validator="$trusted_dir/validate_g9_notification_delivery_implementation_scope.py"
+          git show "${PR_BASE_SHA}:${G9_SCOPE_VALIDATOR}" > "$trusted_validator"
+          test -s "$trusted_validator"
+          printf 'TRUSTED_VALIDATOR=%s\n' "$trusted_validator" >> "$GITHUB_ENV"
+
+      - name: Enforce exact G9 implementation scope
+        shell: bash
+        env:
+          PR_BASE_SHA: ${{ needs.resolve.outputs.base_sha }}
+          PR_HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
+          PR_HEAD_REF: ${{ needs.resolve.outputs.head_ref }}
+          PR_BASE_REPO: ${{ needs.resolve.outputs.base_repo }}
+          PR_HEAD_REPO: ${{ needs.resolve.outputs.head_repo }}
+          PR_LABELS_B64: ${{ needs.resolve.outputs.labels_b64 }}
+        run: |
+          set -euo pipefail
+          PR_LABELS_JSON="$(printf '%s' "$PR_LABELS_B64" | base64 -d)"
+          python3 "$TRUSTED_VALIDATOR" \
+            --repo-root "$GITHUB_WORKSPACE" \
+            --base "$PR_BASE_SHA" \
+            --head "$PR_HEAD_SHA" \
+            --head-ref "$PR_HEAD_REF" \
+            --labels-json "$PR_LABELS_JSON" \
+            --head-repo "$PR_HEAD_REPO" \
+            --base-repo "$PR_BASE_REPO"
+
+  verify-ready:
+    if: needs.resolve.outputs.mode == 'ready'
+    needs: [resolve, publish-pending]
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: read
+      statuses: read
+    steps:
+      - name: Materialize trusted readiness verifier from exact current base object
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_BASE_SHA: ${{ needs.resolve.outputs.base_sha }}
+        run: |
+          set -euo pipefail
+          trusted_readiness="$RUNNER_TEMP/g9-scope-readiness-validator.py"
+          gh api "repos/${GITHUB_REPOSITORY}/contents/${G9_READINESS_VALIDATOR}?ref=${PR_BASE_SHA}" --jq .content | base64 -d > "$trusted_readiness"
+          test -s "$trusted_readiness"
+          printf 'TRUSTED_READINESS_VALIDATOR=%s\n' "$trusted_readiness" >> "$GITHUB_ENV"
+
+      - name: Verify live coordinates and exact trusted scope publisher provenance
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ needs.resolve.outputs.pr_number }}
+        run: |
+          set -euo pipefail
+          python3 "$TRUSTED_READINESS_VALIDATOR" \
+            --repo "$GITHUB_REPOSITORY" \
+            --pr-number "$PR_NUMBER" \
+            --server-url "$GITHUB_SERVER_URL"
+
+  publish-final:
+    name: g9-publish-final pr=${{ needs.resolve.outputs.pr_number }} mode=${{ needs.resolve.outputs.mode }} base=${{ needs.resolve.outputs.base_sha }} head=${{ needs.resolve.outputs.head_sha }} ref=${{ needs.resolve.outputs.head_ref }}
+    if: always() && needs.resolve.result == 'success' && needs.publish-pending.result == 'success'
+    needs: [resolve, publish-pending, analyze, verify-ready]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: read
+      statuses: write
+    steps:
+      - name: Publish live-coordinate final evidence on resolved PR head
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MODE: ${{ needs.resolve.outputs.mode }}
+          PR_NUMBER: ${{ needs.resolve.outputs.pr_number }}
+          PR_HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
+          PR_HEAD_REF: ${{ needs.resolve.outputs.head_ref }}
+          PR_BASE_SHA: ${{ needs.resolve.outputs.base_sha }}
+          PR_BASE_REF: ${{ needs.resolve.outputs.base_ref }}
+          RESOLVED_DEFAULT_BRANCH: ${{ needs.resolve.outputs.default_branch }}
+          ANALYZE_RESULT: ${{ needs.analyze.result }}
+          READY_RESULT: ${{ needs.verify-ready.result }}
+        run: |
+          set -euo pipefail
+          repo_json="$(gh api "repos/${GITHUB_REPOSITORY}")"
+          CURRENT_DEFAULT_BRANCH="$(jq -r '.default_branch' <<<"$repo_json")"
+          current_json="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}")"
+          branch_json="$(gh api "repos/${GITHUB_REPOSITORY}/branches/${CURRENT_DEFAULT_BRANCH}")"
+          CURRENT_HEAD_SHA="$(jq -r '.head.sha' <<<"$current_json")"
+          CURRENT_HEAD_REF="$(jq -r '.head.ref' <<<"$current_json")"
+          CURRENT_BASE_SHA="$(jq -r '.base.sha' <<<"$current_json")"
+          CURRENT_BASE_REF="$(jq -r '.base.ref' <<<"$current_json")"
+          CURRENT_DEFAULT_SHA="$(jq -r '.commit.sha' <<<"$branch_json")"
+          CURRENT_LABELS_JSON="$(jq -c '[.labels[].name]' <<<"$current_json")"
+
+          context="$G9_SCOPE_STATUS_CONTEXT"
+          result="$ANALYZE_RESULT"
+          description='G9 scope attestation failed'
+          if [[ "$MODE" == 'ready' ]]; then
+            context="$G9_READY_STATUS_CONTEXT"
+            result="$READY_RESULT"
+            description='G9 merge-readiness verification failed'
+          else
+            test "$MODE" = 'attest'
+          fi
+
+          state=failure
+          if [[ "$result" == 'success' && \
+                "$CURRENT_DEFAULT_BRANCH" == "$RESOLVED_DEFAULT_BRANCH" && \
+                "$CURRENT_HEAD_SHA" == "$PR_HEAD_SHA" && \
+                "$CURRENT_HEAD_REF" == "$PR_HEAD_REF" && \
+                "$CURRENT_HEAD_REF" == "$G9_REQUIRED_HEAD_PREFIX"* && \
+                "$CURRENT_BASE_SHA" == "$PR_BASE_SHA" && \
+                "$CURRENT_BASE_REF" == "$PR_BASE_REF" && \
+                "$CURRENT_BASE_REF" == "$CURRENT_DEFAULT_BRANCH" && \
+                "$CURRENT_BASE_SHA" == "$CURRENT_DEFAULT_SHA" ]] && \
+             jq -e --arg required "$G9_REQUIRED_LABEL" 'index($required) != null' <<<"$CURRENT_LABELS_JSON" >/dev/null; then
+            state=success
+            if [[ "$MODE" == 'ready' ]]; then
+              description="G9 ready PASS base=${PR_BASE_SHA} head=${PR_HEAD_SHA}"
+            else
+              description="G9 scope PASS base=${PR_BASE_SHA} head=${PR_HEAD_SHA}"
+            fi
+          else
+            description='G9 evidence stale or live authority metadata changed; rerun required'
+          fi
+
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${PR_HEAD_SHA}" \
+            -f state="$state" \
+            -f context="$context" \
+            -f description="$description" \
+            -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+
+          test "$state" = success

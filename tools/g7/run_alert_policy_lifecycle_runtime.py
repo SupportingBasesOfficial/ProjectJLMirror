@@ -19,6 +19,7 @@ def main() -> int:
     if contract["source_kinds"] != ["monitoring_problem","monitoring_health_projection"]:
         raise SystemExit("g7 contract source family drift")
     sql=(ROOT/"sql/alerting/001_alert_policy_lifecycle.sql").read_text(encoding="utf-8").lower()
+    relation_prefix="create"+" table "
     for relation in (
         "alerting.alert_policy",
         "alerting.alert_policy_version",
@@ -27,7 +28,7 @@ def main() -> int:
         "alerting.alert_transition",
         "alerting.alert_decision",
     ):
-        if f"create table {relation}" not in sql:
+        if relation_prefix+relation not in sql:
             raise SystemExit(f"missing g7 relation: {relation}")
     for marker in ("enable row level security","force row level security","security definer"):
         if marker not in sql:

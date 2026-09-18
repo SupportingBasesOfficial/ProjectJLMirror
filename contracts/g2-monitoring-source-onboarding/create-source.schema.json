@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "jlmirror:g2-monitoring-source-onboarding:create-source@1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "provider_profile",
+    "display_name",
+    "provider_configuration",
+    "credential_binding_ref",
+    "configured_provider_scope"
+  ],
+  "properties": {
+    "provider_profile": {
+      "const": "zabbix"
+    },
+    "display_name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "provider_configuration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["base_url"],
+      "properties": {
+        "base_url": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048,
+          "pattern": "^https://"
+        }
+      }
+    },
+    "credential_binding_ref": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "configured_provider_scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["host_group_refs"],
+      "properties": {
+        "host_group_refs": {
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          }
+        }
+      }
+    }
+  }
+}

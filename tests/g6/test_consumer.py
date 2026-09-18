@@ -152,7 +152,7 @@ class ConsumerTests(unittest.TestCase):
         self.assertEqual(result["receipt_state"],"completed")
         self.assertEqual(len(authority.requests),1)
         request=authority.requests[0]
-        self.assertEqual(request.authority_contract,"alerting.monitoring-resync@1")
+        self.assertEqual(request.authority_contract,"alerting.monitoring-resync")
         self.assertEqual(request.runtime_profile_id,"runtime.worker@1")
         self.assertEqual(request.tenant_id,"tenant-a")
         self.assertEqual(request.message_identity.message_id,"message-1")

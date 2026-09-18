@@ -43,6 +43,16 @@ def apply(path:Path,*,check:bool=True)->subprocess.CompletedProcess:
     ],input_text=path.read_text(encoding="utf-8"),check=check)
 
 
+def expect_migration_failure(marker:str)->None:
+    cp=apply(ROOT/"sql/alerting/001_alert_policy_lifecycle.sql",check=False)
+    if cp.returncode==0 or marker not in cp.stdout+cp.stderr:
+        raise AssertionError(
+            "expected G7 migration failure marker "+marker
+            +"\nstdout="+cp.stdout[-2500:]
+            +"\nstderr="+cp.stderr[-2500:]
+        )
+
+
 def wait_ready()->None:
     stable=0
     for _ in range(90):
@@ -91,6 +101,19 @@ def main()->int:
             apply(path)
         for path in sorted((ROOT/"sql/wave4").glob("*.sql")):
             apply(path)
+
+        apply(FIXTURES/"poison_default_execute.sql")
+        expect_migration_failure("g7.installed_function_acl_unsafe")
+        apply(FIXTURES/"cleanup_default_execute.sql")
+
+        apply(FIXTURES/"poison_executor_owner.sql")
+        expect_migration_failure("g7.executor_unexpected_owned_object")
+        apply(FIXTURES/"cleanup_executor_owner.sql")
+
+        apply(FIXTURES/"poison_existing_function_acl.sql")
+        expect_migration_failure("g7.existing_function_acl_unsafe")
+        apply(FIXTURES/"cleanup_existing_function_acl.sql")
+
         apply(ROOT/"sql/alerting/001_alert_policy_lifecycle.sql")
         apply(FIXTURES/"postgres_seed.sql")
 
@@ -318,7 +341,9 @@ FROM alerting.alert;
             raise AssertionError("invoker direct table mutation unexpectedly succeeded")
 
         print(
-            "g7_postgres_conformance=PASS roles=PASS rls=PASS acl=PASS "
+            "g7_postgres_conformance=PASS default_acl_poison=BLOCKED "
+            "executor_owner_poison=BLOCKED existing_function_acl_poison=BLOCKED "
+            "roles=PASS rls=PASS acl=PASS "
             "problem_create=PASS create_replay=PASS policy_supersession=PASS "
             "cross_version_uniqueness=PASS pinned_resolve=PASS resolve_replay=PASS "
             "stale_fail_closed=PASS health_create=PASS health_resolve=PASS "

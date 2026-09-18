@@ -18,9 +18,9 @@ def problem_policy() -> PolicyVersion:
     )
 
 
-def problem_state(*, revision=7, state="active", severity="warning", current=True) -> SourceState:
+def problem_state(*, subject="problem-1", revision=7, state="active", severity="warning", current=True) -> SourceState:
     return SourceState(
-        tenant_id="tenant-a",source_kind="monitoring_problem",source_subject_id="problem-1",
+        tenant_id="tenant-a",source_kind="monitoring_problem",source_subject_id=subject,
         monitoring_source_id="source-a",monitoring_resource_id="resource-1",
         source_instance_generation="generation-a",
         active_source_instance_generation="generation-a" if current else "generation-b",
@@ -30,7 +30,7 @@ def problem_state(*, revision=7, state="active", severity="warning", current=Tru
 
 
 class DomainTests(unittest.TestCase):
-    def test_current_problem_match_creates_once_per_decision(self):
+    def test_current_problem_match_is_deterministic_per_decision(self):
         first=evaluate(problem_policy(),problem_state(),None,policy_is_effective=True)
         second=evaluate(problem_policy(),problem_state(),None,policy_is_effective=True)
         self.assertEqual(first.action,"create")
@@ -45,7 +45,7 @@ class DomainTests(unittest.TestCase):
         decision=evaluate(problem_policy(),problem_state(),None,policy_is_effective=False)
         self.assertEqual(decision.action,"none")
 
-    def test_pinned_version_can_only_resolve_existing_occurrence_after_recovery(self):
+    def test_pinned_version_can_resolve_existing_occurrence_after_recovery(self):
         active=ActiveAlert(
             alert_id="alert-1",tenant_id="tenant-a",policy_id="policy-a",policy_version=1,
             source_kind="monitoring_problem",source_subject_id="problem-1",source_occurrence_revision=7,
@@ -55,11 +55,12 @@ class DomainTests(unittest.TestCase):
         self.assertEqual(decision.action,"resolve")
         self.assertEqual(decision.alert_id,"alert-1")
 
-    def test_resolved_identity_is_not_an_input_for_reopen(self):
-        later=problem_state(revision=9,state="active")
-        decision=evaluate(problem_policy(),later,None,policy_is_effective=True)
-        self.assertEqual(decision.action,"create")
-        self.assertNotEqual(decision.alert_id,"alert-1")
+    def test_distinct_problem_occurrence_gets_distinct_alert_identity(self):
+        first=evaluate(problem_policy(),problem_state(subject="problem-1"),None,policy_is_effective=True)
+        second=evaluate(problem_policy(),problem_state(subject="problem-2"),None,policy_is_effective=True)
+        self.assertEqual(first.action,"create")
+        self.assertEqual(second.action,"create")
+        self.assertNotEqual(first.alert_id,second.alert_id)
 
     def test_health_family_is_bounded(self):
         policy=PolicyVersion(

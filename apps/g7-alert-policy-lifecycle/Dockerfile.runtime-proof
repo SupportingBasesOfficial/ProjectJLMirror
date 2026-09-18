@@ -1,0 +1,13 @@
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/opt/jlmirror/apps/g7-alert-policy-lifecycle
+
+WORKDIR /opt/jlmirror
+COPY apps/g7-alert-policy-lifecycle/ ./apps/g7-alert-policy-lifecycle/
+COPY contracts/g7-alert-policy-lifecycle/ ./contracts/g7-alert-policy-lifecycle/
+
+USER 65532:65532
+ENTRYPOINT ["python","apps/g7-alert-policy-lifecycle/runtime_entry.py"]

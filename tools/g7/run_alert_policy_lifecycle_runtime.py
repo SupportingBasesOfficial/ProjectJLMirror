@@ -33,7 +33,14 @@ def main() -> int:
     for marker in ("enable row level security","force row level security","security definer"):
         if marker not in sql:
             raise SystemExit(f"missing g7 sql boundary: {marker}")
-    print("g7_runtime=PASS domain=PASS read_ui=PASS sql_boundary=PASS")
+
+    run(sys.executable,"tools/g7/run_g7_postgres_conformance.py")
+    run(sys.executable,"tools/g7/run_g7_container_proof.py")
+
+    print(
+        "g7_runtime=PASS domain=PASS read_ui=PASS sql_boundary=PASS "
+        "postgres=PASS container=PASS"
+    )
     return 0
 
 

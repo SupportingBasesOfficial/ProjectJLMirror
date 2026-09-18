@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "id": "LEARN-PR155-001",
+      "pr": 155,
+      "source": "external_review",
+      "review_comment_id": 4041933025,
+      "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP",
+      "invariant_ids": ["INV-LEARNING-002"],
+      "root_cause": "The implementation pull request was opened immediately after committing the mandatory implementation claim, before the executable G2 application, contract, tests, runtime proof, and runbook had landed. That allowed a material review to observe a claim-only intermediate HEAD whose declared implementation identity was not yet backed by the slice evidence bundle.",
+      "horizontal_audit": [
+        "implementation claim ordering",
+        "executable vertical artifact presence",
+        "contract artifact presence",
+        "slice test and runner presence",
+        "runtime workflow evidence presence",
+        "exact-head evidence after implementation changes",
+        "future product implementation PR bootstrap ordering"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_g1_identity_tenant_shell_authorization.py",
+          "probe": "falsify_implementation_scope_gate_execution"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 273
+    }
+  ]
+}

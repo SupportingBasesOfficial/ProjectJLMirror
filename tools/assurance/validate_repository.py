@@ -364,8 +364,8 @@ def _g4_status_publisher_policy_errors(text: str) -> list[str]:
         head_output="needs.resolve.outputs.head_sha",
     )
     required_markers = (
-        "github.event.comment.body == '/jlmirror-g3-scope-attest'",
-        "github.event.comment.body == '/jlmirror-g3-scope-ready'",
+        "github.event.comment.body == '/jlmirror-g4-scope-attest'",
+        "github.event.comment.body == '/jlmirror-g4-scope-ready'",
         'test "$PR_BASE_REF" = "$DEFAULT_BRANCH"',
         'test "$PR_BASE_REPO" = "$GITHUB_REPOSITORY"',
         'test "$PR_HEAD_REPO" = "$GITHUB_REPOSITORY"',

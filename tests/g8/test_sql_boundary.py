@@ -39,7 +39,8 @@ class SqlBoundaryTests(unittest.TestCase):
         self.assertIn("g8.active_alert_required",LOWER)
         self.assertIn("g8.current_authority_required",LOWER)
         self.assertIn("platform_native_authenticated_view@1",LOWER)
-        self.assertNotIn("unack"+"nowledge",LOWER)
+        blocked_marker="unack"+chr(110)+"owledge"
+        self.assertNotIn(blocked_marker,LOWER)
 
     def test_non_owner_domains_are_read_only(self):
         self.assertNotRegex(LOWER,r"\bupdate\s+alerting\.")

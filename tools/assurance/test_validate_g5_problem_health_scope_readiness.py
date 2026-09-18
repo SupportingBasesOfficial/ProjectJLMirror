@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import copy
-import validate_g5_metrics_scope_readiness as validator
+import validate_g5_problem_health_scope_readiness as validator
 
 REPO = "SupportingBasesOfficial/ProjectJLMirror"
 SERVER = "https://github.com"

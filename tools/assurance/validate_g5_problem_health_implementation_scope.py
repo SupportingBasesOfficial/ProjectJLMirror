@@ -175,7 +175,7 @@ def main() -> int:
     for error in errors:
         print(f"G5_SCOPE_ERROR: {error}", file=sys.stderr)
     if errors: return 1
-    print(f"g4_scope=PASS base={args.base} head={args.head} changed_files={len(changed)}")
+    print(f"g5_scope=PASS base={args.base} head={args.head} changed_files={len(changed)}")
     return 0
 
 if __name__ == "__main__":

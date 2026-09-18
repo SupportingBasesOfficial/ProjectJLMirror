@@ -67,6 +67,58 @@ class Pg:
         return completed.stdout.strip()
 
 
+class FixtureResourceReadPort:
+    def __init__(self) -> None:
+        self._rows = (
+            ResourceRecord(
+                monitoring_resource_id="resource-101",
+                monitoring_source_id="source-a",
+                source_instance_generation="generation-a",
+                generation_state="active_generation",
+                display_name="Core Switch",
+                resource_kind="host",
+                scope_state="in_scope",
+                scope_projection_revision=1,
+                scope_evidence_state="current",
+                presence_state="present",
+                presence_evidence_state="current",
+                provider_object_kind="zabbix_host",
+                provider_external_ref="101",
+                last_observed_at="2026-09-18T00:00:00Z",
+                last_confirmed_present_at="2026-09-18T00:00:00Z",
+                created_at="2026-09-18T00:00:00Z",
+                updated_at="2026-09-18T00:00:00Z",
+            ),
+            ResourceRecord(
+                monitoring_resource_id="resource-102",
+                monitoring_source_id="source-a",
+                source_instance_generation="generation-a",
+                generation_state="active_generation",
+                display_name="Application Server",
+                resource_kind="host",
+                scope_state="in_scope",
+                scope_projection_revision=1,
+                scope_evidence_state="current",
+                presence_state="present",
+                presence_evidence_state="current",
+                provider_object_kind="zabbix_host",
+                provider_external_ref="102",
+                last_observed_at="2026-09-18T00:00:00Z",
+                last_confirmed_present_at="2026-09-18T00:00:00Z",
+                created_at="2026-09-18T00:00:00Z",
+                updated_at="2026-09-18T00:00:00Z",
+            ),
+        )
+
+    def list_active(self, *, tenant_id: str):
+        return self._rows if tenant_id == "tenant-a" else ()
+
+    def get(self, *, tenant_id: str, monitoring_resource_id: str):
+        if tenant_id != "tenant-a":
+            return None
+        return next((row for row in self._rows if row.monitoring_resource_id == monitoring_resource_id), None)
+
+
 class PgResourceReadPort:
     def __init__(self, pg: Pg) -> None:
         self.pg = pg
@@ -173,9 +225,9 @@ COMMIT;
 
 
 class G3Server(G1.G1Server):
-    def __init__(self, server_address, handler, *, fixture_enabled: bool, pg: Pg):
+    def __init__(self, server_address, handler, *, fixture_enabled: bool, pg: Pg, fixture_memory: bool):
         super().__init__(server_address, handler, fixture_enabled=fixture_enabled)
-        self.g3_resources = PgResourceReadPort(pg)
+        self.g3_resources = FixtureResourceReadPort() if fixture_memory else PgResourceReadPort(pg)
 
 
 class Handler(G1.Handler):
@@ -284,6 +336,7 @@ def main() -> int:
     parser.add_argument("--certfile", required=True)
     parser.add_argument("--keyfile", required=True)
     parser.add_argument("--fixture", action="store_true")
+    parser.add_argument("--fixture-memory", action="store_true")
     parser.add_argument("--pg-container", default="jlmirror-g3-postgres")
     parser.add_argument("--pg-database", default="jlmirror")
     args = parser.parse_args()
@@ -293,6 +346,7 @@ def main() -> int:
         Handler,
         fixture_enabled=args.fixture,
         pg=Pg(container=args.pg_container, database=args.pg_database),
+        fixture_memory=args.fixture_memory,
     )
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     context.load_cert_chain(args.certfile, args.keyfile)

@@ -23,9 +23,10 @@ from jlmirror_authority.model import (
 )
 from jlmirror_authority.runtime_profiles import API_AUTH_BOUNDARY
 
-from metrics import (
+from problem_health import (
     CurrentAuthorizationEvidence,
-    METRIC_READ_ACTION,
+    HEALTH_READ_ACTION,
+    PROBLEM_READ_ACTION,
     RESOURCE_READ_ACTION,
 )
 

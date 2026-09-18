@@ -77,6 +77,19 @@ An assignment MUST pin:
 
 Multiple principals MAY be concurrently responsible for one resource.
 
+The only admitted v1 responsibility roles are:
+
+```text
+technical_responsible
+service_owner
+operator
+customer_responsible
+```
+
+The only admitted v1 assignment sources are `manual | configured`.
+
+Assignment identity/content is immutable. Ending an assignment is a one-way terminal closure that MUST record the ending actor, effective-until time and bounded end reason; a closed assignment cannot be reopened.
+
 Responsibility does not grant permission by itself. Current authorization remains separately required for every action.
 
 Free-form names, provider user IDs, email addresses or phone numbers MUST NOT become responsibility identity.
@@ -89,15 +102,18 @@ Exactly one current action owner MAY be selected for one active Alert at a time.
 
 The action owner MUST be a stable platform principal and MUST be separate from resource responsibility.
 
-Bounded action kinds are:
+The only assignable v1 action kinds are:
 
 ```text
 investigate_alert
 acknowledge_alert
 review_alert
 customer_review_required
-no_human_action_required
 ```
+
+`no_human_action_required` is projection-only and MUST NOT create a fake assignment or owner.
+
+Action-assignment identity/content is immutable. Reassignment is an atomic one-way closure of the prior current assignment plus creation of the successor, with the closing actor/reason retained. A closed assignment cannot be reopened.
 
 The persisted assignment fact is authoritative. The current-action projection is derived from those facts and MUST NOT become an independently writable source of truth.
 
@@ -147,6 +163,8 @@ A visibility receipt MUST be immutable and pin:
 - current tenant/session/authorization evidence sufficient for audit;
 - idempotent receipt identity/equivalence evidence.
 
+A new Alert visibility requirement may be created only while that Alert is active/current. If a requirement already existed before the Alert resolved, a later receipt MAY still be recorded as late evidence for that exact requirement. Such late evidence MUST NOT reopen, resolve or otherwise mutate the Alert lifecycle, current action assignment or notification state.
+
 For this admitted capability class only, the system may derive:
 
 ```text
@@ -179,13 +197,14 @@ It MUST NOT silently synthesize:
 
 ## Timeline v1
 
-G8 may expose a chronological timeline composed from immutable:
+G8 may expose a chronological timeline composed from immutable/terminally-closed authoritative facts:
 - resource responsibility assignment start/end;
 - Alert action assignment start/end;
 - ACK;
 - visibility requirement;
-- visibility receipt;
-- current-action projection changes.
+- visibility receipt.
+
+Current-action projection values MAY be displayed alongside the timeline as derived state, but projection changes are not timeline authority.
 
 The timeline is read-only/derived. It is not a seventh mutable business source.
 

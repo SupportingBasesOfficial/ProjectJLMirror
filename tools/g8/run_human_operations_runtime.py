@@ -21,7 +21,12 @@ def main()->int:
     blocked_key="unack"+chr(110)+"owledge_authorized"
     if contract[blocked_key] is not False:
         raise SystemExit("G8 ACK authority drift")
-    print("g8_runtime=PASS domain=PASS read_ui=PASS pg_port=PASS sql_boundary=PASS")
+    run(sys.executable,"tools/g8/run_g8_postgres_conformance.py")
+    run(sys.executable,"tools/g8/run_g8_container_proof.py")
+    print(
+        "g8_runtime=PASS domain=PASS read_ui=PASS pg_port=PASS sql_boundary=PASS "
+        "http=PASS postgres=PASS container=PASS"
+    )
     return 0
 
 

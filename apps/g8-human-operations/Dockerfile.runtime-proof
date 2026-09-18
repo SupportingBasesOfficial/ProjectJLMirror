@@ -1,0 +1,13 @@
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/opt/jlmirror/apps/g8-human-operations
+
+WORKDIR /opt/jlmirror
+COPY apps/g8-human-operations/ ./apps/g8-human-operations/
+COPY contracts/g8-human-operations/ ./contracts/g8-human-operations/
+
+USER 65532:65532
+ENTRYPOINT ["python","apps/g8-human-operations/runtime_entry.py"]

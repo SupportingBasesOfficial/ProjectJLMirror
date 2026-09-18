@@ -376,7 +376,7 @@ INSERT INTO system.async_consumer_inbox(
  comparison_profile_id,comparison_profile_version,comparison_evidence_form,
  comparison_verifier_generation,comparison_evidence
 ) VALUES (
- 'alerting.monitoring-resync@1',
+ 'alerting.monitoring-resync',
  {json.dumps(conflict.producer_message_scope)}::text,
  {json.dumps(conflict.message_id)}::text,
  'tenant-a','monitoring-invalidation-equivalence','1',
@@ -395,11 +395,11 @@ INSERT INTO system.async_consumer_inbox(
         if state!="admitted":
             raise AssertionError("lease fixture was not admitted")
         request=AsyncExecutionRequest(
-            authority_contract="alerting.monitoring-resync@1",
+            authority_contract="alerting.monitoring-resync",
             runtime_profile_id="runtime.worker@1",
             tenant_id=identity.tenant_id,
             message_identity=ScopedMessageIdentity(
-                consumer_contract="alerting.monitoring-resync@1",
+                consumer_contract="alerting.monitoring-resync",
                 message_identity_scope=identity.message_identity_scope,
                 message_id=identity.message_id,
                 tenant_id=identity.tenant_id,
@@ -430,7 +430,7 @@ SELECT
  count(*) FILTER (WHERE state='reconciliation_required')::text||':'||
  count(*) FILTER (WHERE state='quarantined')::text
 FROM system.async_consumer_inbox
-WHERE consumer_contract='alerting.monitoring-resync@1';
+WHERE consumer_contract='alerting.monitoring-resync';
 """)
         if states!="4:1:0":
             raise AssertionError("unexpected G6 durable receipt states: "+states)

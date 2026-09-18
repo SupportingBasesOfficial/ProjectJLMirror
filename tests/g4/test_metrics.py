@@ -97,25 +97,57 @@ class Repository:
         )
         self.observations = (observation(),)
 
-    def list_definitions(self, *, tenant_id: str, monitoring_resource_id: str):
-        return (self.definition,) if tenant_id == "tenant-a" and monitoring_resource_id == "resource-101" else ()
+    def list_definitions(
+        self,
+        *,
+        tenant_id: str,
+        monitoring_resource_id: str,
+        cursor: str | None,
+        limit: int,
+    ):
+        if cursor == "invalid":
+            raise ValueError("cursor_invalid")
+        rows = (self.definition,) if tenant_id == "tenant-a" and monitoring_resource_id == "resource-101" else ()
+        return rows[:limit], "metric-next" if rows and limit == 1 and self.definition.metric_definition_id != "metric-next" else None
 
     def get_definition(self, *, tenant_id: str, metric_definition_id: str):
         return self.definition if tenant_id == "tenant-a" and metric_definition_id == "metric-cpu" else None
 
-    def list_current(self, *, tenant_id: str, monitoring_resource_id: str):
-        return (self.current,) if tenant_id == "tenant-a" and monitoring_resource_id == "resource-101" else ()
+    def list_current(
+        self,
+        *,
+        tenant_id: str,
+        monitoring_resource_id: str,
+        cursor: str | None,
+        limit: int,
+    ):
+        if cursor == "invalid":
+            raise ValueError("cursor_invalid")
+        rows = (self.current,) if tenant_id == "tenant-a" and monitoring_resource_id == "resource-101" else ()
+        return rows[:limit], "metric-next" if rows and limit == 1 else None
 
     def get_current(self, *, tenant_id: str, metric_definition_id: str):
         return self.current if tenant_id == "tenant-a" and metric_definition_id == "metric-cpu" else None
 
-    def history(self, *, tenant_id: str, metric_definition_id: str, from_ts: str, to_ts: str, limit: int):
+    def history(
+        self,
+        *,
+        tenant_id: str,
+        metric_definition_id: str,
+        from_ts: str,
+        to_ts: str,
+        cursor: str | None,
+        limit: int,
+    ):
+        if cursor == "invalid":
+            raise ValueError("cursor_invalid")
         if tenant_id != "tenant-a" or metric_definition_id != "metric-cpu":
             return None
         return HistoryRead(
             definition=self.definition,
             coverage=self.coverage,
             observations=self.observations[:limit],
+            next_cursor="obs-next" if len(self.observations) > limit else None,
         )
 
 
@@ -136,6 +168,39 @@ class MetricsTests(unittest.TestCase):
             ("principal-a", "tenant-a", RESOURCE_READ_ACTION),
             ("principal-a", "tenant-a", METRIC_READ_ACTION),
         ])
+
+    def test_definition_list_preserves_anchor_continuation(self):
+        view = MetricsView(repository=Repository(), authorization=Authorization()).list_definitions(
+            tenant_id="tenant-a",
+            monitoring_resource_id="resource-101",
+            limit=1,
+        )
+        self.assertEqual(view["next_cursor"], "metric-next")
+
+    def test_current_list_preserves_anchor_continuation(self):
+        view = MetricsView(repository=Repository(), authorization=Authorization()).list_current(
+            tenant_id="tenant-a",
+            monitoring_resource_id="resource-101",
+            limit=1,
+        )
+        self.assertEqual(view["next_cursor"], "metric-next")
+
+    def test_invalid_cursor_fails_closed(self):
+        service = MetricsView(repository=Repository(), authorization=Authorization())
+        with self.assertRaises(ValueError):
+            service.list_definitions(
+                tenant_id="tenant-a",
+                monitoring_resource_id="resource-101",
+                cursor="invalid",
+            )
+        with self.assertRaises(ValueError):
+            service.history(
+                tenant_id="tenant-a",
+                metric_definition_id="metric-cpu",
+                from_ts="2026-09-18T05:00:00Z",
+                to_ts="2026-09-18T06:00:00Z",
+                cursor="invalid",
+            )
 
     def test_definition_detail_exposes_only_bounded_provider_reference(self):
         view = MetricsView(repository=Repository(), authorization=Authorization()).get_definition(
@@ -196,6 +261,7 @@ class MetricsTests(unittest.TestCase):
         )
         self.assertEqual(value["completeness"]["state"], "complete")
         self.assertEqual(value["items"][0]["metric_definition_id"], "metric-cpu")
+        self.assertIsNone(value["next_cursor"])
 
     def test_complete_history_requires_covered_through(self):
         repo = Repository()

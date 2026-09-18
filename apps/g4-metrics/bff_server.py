@@ -498,7 +498,7 @@ class FixtureMetricsReadPort:
             definition=self.definition,
             coverage=HistoryCoverage(
                 state="complete",
-                covered_through="2026-09-18T05:10:00Z",
+                covered_through="2026-09-18T06:00:00Z",
                 gap_refs=(),
             ),
             observations=self.observations[:limit],

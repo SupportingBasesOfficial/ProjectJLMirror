@@ -25,7 +25,15 @@ def run_case(files: dict[str, str], *, expect_ok: bool) -> None:
                 "forbidden_code_markers": ["metric_definition","metric_current_state","problem_state","health_projection","canonical_device_class","create table monitoring.","src/jlmirror_monitoring","sql/wave4"],
                 "implementation_claim_path": "implementation/g3-resource-inventory/IMPLEMENTATION_CLAIM.json",
                 "implementation_pr_head_prefix": "impl/g3-resource-inventory",
-                "implementation_pr_required_label": "jlmirror-slice:g3-resource-inventory"
+                "implementation_pr_required_label": "jlmirror-slice:g3-resource-inventory",
+                "runtime_workflow": ".github/workflows/g3-resource-inventory-runtime.yml",
+                "runtime_workflow_name": "JLMIRROR G3 Resource Inventory Runtime",
+                "runtime_entrypoint": "python tools/g3/run_resource_inventory_runtime.py",
+                "runtime_allowed_actions": [
+                    "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+                    "actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1",
+                    "actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38"
+                ]
             }
         }
         p = root / "implementation/g3-resource-inventory-authorization/AUTHORIZATION_MANIFEST.json"
@@ -42,6 +50,34 @@ def run_case(files: dict[str, str], *, expect_ok: bool) -> None:
         claim.parent.mkdir(parents=True, exist_ok=True)
         if not claim.exists():
             claim.write_text(json.dumps({"schema_version":1,"authorization_id":"g3.resource-inventory@1","slice_id":"g3.resource-inventory@1"}),encoding="utf-8")
+        runtime = root / ".github/workflows/g3-resource-inventory-runtime.yml"
+        runtime.parent.mkdir(parents=True, exist_ok=True)
+        if not runtime.exists():
+            runtime.write_text(json.dumps({
+                "name":"JLMIRROR G3 Resource Inventory Runtime",
+                "on":{"pull_request":{},"workflow_dispatch":{}},
+                "permissions":{},
+                "jobs":{"g3-runtime":{"runs-on":"ubuntu-24.04","steps":[
+                    {"uses":"actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"},
+                    {"uses":"actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1"},
+                    {"uses":"actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38"},
+                    {"run":"python tools/g3/run_resource_inventory_runtime.py"}
+                ]}}
+            }), encoding="utf-8")
+        runtime = root / ".github/workflows/g3-resource-inventory-runtime.yml"
+        runtime.parent.mkdir(parents=True, exist_ok=True)
+        if not runtime.exists():
+            runtime.write_text(json.dumps({
+                "name":"JLMIRROR G3 Resource Inventory Runtime",
+                "on":{"pull_request":{},"workflow_dispatch":{}},
+                "permissions":{},
+                "jobs":{"g3-runtime":{"runs-on":"ubuntu-24.04","steps":[
+                    {"uses":"actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"},
+                    {"uses":"actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1"},
+                    {"uses":"actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38"},
+                    {"run":"python tools/g3/run_resource_inventory_runtime.py"}
+                ]}}
+            }), encoding="utf-8")
         subprocess.run(["git","-C",str(root),"add","."],check=True)
         subprocess.run(["git","-C",str(root),"commit","-qm","candidate"],check=True)
         head = subprocess.check_output(["git","-C",str(root),"rev-parse","HEAD"],text=True).strip()
@@ -75,7 +111,15 @@ def run_rename_case() -> None:
                 "forbidden_code_markers": ["metric_definition","metric_current_state","problem_state","health_projection","canonical_device_class","create table monitoring.","src/jlmirror_monitoring","sql/wave4"],
                 "implementation_claim_path": "implementation/g3-resource-inventory/IMPLEMENTATION_CLAIM.json",
                 "implementation_pr_head_prefix": "impl/g3-resource-inventory",
-                "implementation_pr_required_label": "jlmirror-slice:g3-resource-inventory"
+                "implementation_pr_required_label": "jlmirror-slice:g3-resource-inventory",
+                "runtime_workflow": ".github/workflows/g3-resource-inventory-runtime.yml",
+                "runtime_workflow_name": "JLMIRROR G3 Resource Inventory Runtime",
+                "runtime_entrypoint": "python tools/g3/run_resource_inventory_runtime.py",
+                "runtime_allowed_actions": [
+                    "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+                    "actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1",
+                    "actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38"
+                ]
             }
         }
         p = root / "implementation/g3-resource-inventory-authorization/AUTHORIZATION_MANIFEST.json"
@@ -115,9 +159,14 @@ def main() -> int:
     run_case({"apps/g3-resource-inventory/read.py":"RESOURCE_KIND = 'host'\n"}, expect_ok=True)
     run_case({"sql/g3/parallel.sql":"create table monitoring.resource_shadow(id text);\n"}, expect_ok=False)
     run_case({"apps/g3-resource-inventory/metric_view.py":"metric_definition = 'forbidden'\n"}, expect_ok=False)
+    run_case({"apps/g3-resource-inventory/camel.py":"metricDefinition = 'forbidden'\n"}, expect_ok=False)
     run_case({"apps/g3-resource-inventory/device.py":"canonical_device_class = 'server'\n"}, expect_ok=False)
+    run_case({"apps/g3-resource-inventory/write.py":"db.update('monitoring_resource', {'x': 1})\n"}, expect_ok=False)
+    run_case({"apps/g3-resource-inventory/sql.py":"db.execute(\"UPDATE monitoring.monitoring_resource SET x=1\")\n"}, expect_ok=False)
+    run_case({"apps/g3-resource-inventory/read_sql.py":"db.execute(\"SELECT monitoring_resource_id FROM monitoring.monitoring_resource\")\n"}, expect_ok=True)
+    run_case({".github/workflows/g3-resource-inventory-runtime.yml":"{\"name\":\"JLMIRROR G3 Resource Inventory Runtime\",\"on\":{\"pull_request\":{},\"workflow_dispatch\":{}},\"permissions\":{},\"jobs\":{\"g3-runtime\":{\"runs-on\":\"ubuntu-24.04\",\"steps\":[{\"uses\":\"actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\"},{\"run\":\"python tools/g3/run_resource_inventory_runtime.py\"},{\"run\":\"python tools/g4/run_metrics.py\"}]}}}"}, expect_ok=False)
     run_rename_case()
-    print("g3_scope_falsification=PASS path_widening=blocked rename_escape=blocked g4=blocked classification=blocked")
+    print("g3_scope_falsification=PASS path_widening=blocked rename_escape=blocked g4=blocked classification=blocked writes=blocked runtime=bounded")
     return 0
 
 

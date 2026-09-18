@@ -13,9 +13,9 @@ on:
       - '.github/workflows/g8-human-operations-authorization.yml'
       - '.github/workflows/g8-human-operations-implementation-scope.yml'
       - 'tools/assurance/validate_repository.py'
-      - 'implementation/g6-monitoring-alerting-transport/**'
-      - 'sql/integration/002_monitoring_alerting_consumer.sql'
-      - 'implementation/wave-4-alerting-core-model-authorization/**'
+      - 'implementation/g7-alert-policy-lifecycle/**'
+      - 'sql/alerting/001_alert_policy_lifecycle.sql'
+      - 'docs/00-foundation/project-memory/HUMAN-OPERATIONS-MODEL.md'
       - 'docs/00-foundation/ai-e2e-delivery/**'
   push:
     branches:
@@ -32,9 +32,9 @@ on:
       - '.github/workflows/g8-human-operations-authorization.yml'
       - '.github/workflows/g8-human-operations-implementation-scope.yml'
       - 'tools/assurance/validate_repository.py'
-      - 'implementation/g6-monitoring-alerting-transport/**'
-      - 'sql/integration/002_monitoring_alerting_consumer.sql'
-      - 'implementation/wave-4-alerting-core-model-authorization/**'
+      - 'implementation/g7-alert-policy-lifecycle/**'
+      - 'sql/alerting/001_alert_policy_lifecycle.sql'
+      - 'docs/00-foundation/project-memory/HUMAN-OPERATIONS-MODEL.md'
       - 'docs/00-foundation/ai-e2e-delivery/**'
 
 permissions:

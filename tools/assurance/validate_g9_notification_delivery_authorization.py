@@ -33,6 +33,15 @@ def main()->int:
     req(model.get("second_transport_channel_authorized") is False,"second channel widened",errors)
     req(model.get("external_read_is_authoritative_native_view") is False,"external read authority widened",errors)
     req(model.get("authoritative_awareness_requires_g8_native_visibility_when_required") is True,"G8 visibility composition drift",errors)
+    caps=(model.get("channel_capabilities") or {}).get("whatsapp_business@1") or {}
+    req(caps.get("dispatch_evidence") is True,"dispatch capability drift",errors)
+    req(caps.get("provider_acceptance_evidence") is True,"provider-acceptance capability drift",errors)
+    req(caps.get("delivery_evidence") is True,"delivery capability drift",errors)
+    req(caps.get("external_read_evidence")=="supplementary_when_provider_supplies_it","external-read capability drift",errors)
+    req(caps.get("authenticated_human_identity") is False,"channel must not become human identity authority",errors)
+    req(caps.get("response_action_evidence") is False,"response/action authority widened",errors)
+    req(caps.get("authoritative_awareness_terminal") is False,"external channel cannot terminate authoritative awareness",errors)
+    req(caps.get("authoritative_awareness_fallback")=="g8.platform_native_authenticated_view@1","native visibility fallback drift",errors)
     p=data["implementation_path_policy"]
     req(p["implementation_pr_head_prefix"]=="impl/g9-notification-delivery","branch prefix drift",errors)
     req(p["implementation_pr_required_label"]=="jlmirror-slice:g9-notification-delivery","label drift",errors)

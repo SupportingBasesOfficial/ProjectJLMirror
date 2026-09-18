@@ -1,0 +1,29 @@
+{
+  "name": "JLMIRROR G8 Human Operations Runtime",
+  "on": {
+    "pull_request": {
+      "paths": [
+        "apps/g8-human-operations/**",
+        "contracts/g8-human-operations/**",
+        "implementation/g8-human-operations/**",
+        "tests/g8/**",
+        "tools/g8/**",
+        "sql/human_operations/001_human_operations.sql",
+        ".github/workflows/g8-human-operations-runtime.yml"
+      ]
+    },
+    "workflow_dispatch": {}
+  },
+  "permissions": {},
+  "jobs": {
+    "g8-runtime": {
+      "runs-on": "ubuntu-24.04",
+      "steps": [
+        {"uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"},
+        {"uses": "actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1"},
+        {"uses": "actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38"},
+        {"run": "python tools/g8/run_human_operations_runtime.py"}
+      ]
+    }
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "responsibility_roles": [
+    "technical_responsible",
+    "service_owner",
+    "operator",
+    "customer_responsible"
+  ],
+  "responsibility_assignment_sources": ["manual", "configured"],
+  "action_assignment_kinds": [
+    "investigate_alert",
+    "acknowledge_alert",
+    "review_alert",
+    "customer_review_required"
+  ],
+  "projection_only_action_kinds": ["no_human_action_required"],
+  "visibility_viewer_sides": ["internal", "customer"],
+  "visibility_capability_classes": ["platform_native_authenticated_view@1"],
+  "unacknowledge_authorized": false
+}

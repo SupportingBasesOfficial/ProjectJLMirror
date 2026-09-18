@@ -152,6 +152,25 @@ class PgReadTests(unittest.TestCase):
         self.assertIn("presence_state",sql)
         self.assertEqual(variables["fetch_limit"],"101")
 
+    def test_health_filter_uses_effective_evidence_state(self):
+        pg=FakePg([json.dumps({"cursor_valid":True,"items":[]})])
+        G5.PgProblemHealthReadPort(pg).list_health(
+            tenant_id="tenant-a",
+            monitoring_source_id=None,
+            generation_state="historical_generation",
+            health_class=None,
+            evidence_state="stale",
+            scope_state=None,
+            cursor=None,
+            limit=100,
+        )
+        sql,variables=pg.calls[0]
+        self.assertEqual(variables["generation_state"],"historical_generation")
+        self.assertEqual(variables["evidence_state"],"stale")
+        self.assertIn("WITH raw AS",sql)
+        self.assertIn("THEN 'stale'",sql)
+        self.assertIn("AND (:'evidence_state'='' OR evidence_state=:'evidence_state')",sql)
+
     def test_health_cursor_wrong_filter_fails_closed(self):
         pg=FakePg([json.dumps({"cursor_valid":False,"items":[]})])
         with self.assertRaises(ValueError):

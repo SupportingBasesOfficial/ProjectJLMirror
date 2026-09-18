@@ -56,56 +56,54 @@ test "$acl_state" = "0:0:0:1:1:1"
 docker exec -i "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" <<'SQL' >/dev/null
 BEGIN;
 SET LOCAL session_replication_role=replica;
-INSERT INTO monitoring.monitoring_source(
+
+COPY monitoring.monitoring_source(
  tenant_id,monitoring_source_id,provider_scope_tenant_binding_id,provider_profile,
  active_source_instance_generation,configuration_revision,scope_revision,display_name,
  credential_binding_ref,configured_provider_scope,operational_evidence_state,last_sync_operation_id
-) VALUES (
- 'tenant-a','source-1','binding-1','zabbix','generation-1',1,1,'Source 1',
- 'credential-1','{"host_group_refs":[]}'::jsonb,'current','sync-1'
-);
-INSERT INTO monitoring.monitoring_source_generation(
- tenant_id,monitoring_source_id,source_instance_generation,provider_profile,provider_instance_ref,provider_base_url
-) VALUES
- ('tenant-a','source-1','generation-1','zabbix','instance-1','https://zabbix.example.invalid'),
- ('tenant-a','source-1','generation-old','zabbix','instance-old','https://zabbix.example.invalid');
+) FROM STDIN;
+tenant-a	source-1	binding-1	zabbix	generation-1	1	1	Source 1	credential-1	{"host_group_refs":[]}	current	sync-1
+\.
 
-INSERT INTO monitoring.monitoring_resource(
+COPY monitoring.monitoring_source_generation(
+ tenant_id,monitoring_source_id,source_instance_generation,provider_profile,provider_instance_ref,provider_base_url
+) FROM STDIN;
+tenant-a	source-1	generation-1	zabbix	instance-1	https://zabbix.example.invalid
+tenant-a	source-1	generation-old	zabbix	instance-old	https://zabbix.example.invalid
+\.
+
+COPY monitoring.monitoring_resource(
  tenant_id,monitoring_resource_id,monitoring_source_id,source_instance_generation,
  resource_kind,provider_object_kind,provider_external_ref,display_name,
  scope_state,scope_projection_revision,scope_evidence_state,presence_state,presence_evidence_state,
  last_observed_at,last_confirmed_present_at
-) VALUES (
- 'tenant-a','resource-1','source-1','generation-1',
- 'host','zabbix_host','101','Resource 1',
- 'in_scope',1,'current','present','current',
- '2026-09-18 12:00:00+00','2026-09-18 12:00:00+00'
-);
+) FROM STDIN;
+tenant-a	resource-1	source-1	generation-1	host	zabbix_host	101	Resource 1	in_scope	1	current	present	current	2026-09-18 12:00:00+00	2026-09-18 12:00:00+00
+\.
 
-INSERT INTO monitoring.monitoring_problem_provider_binding(
+COPY monitoring.monitoring_problem_provider_binding(
  tenant_id,problem_id,monitoring_source_id,source_instance_generation,monitoring_resource_id,
  provider_profile,provider_external_ref,provider_trigger_ref
-) VALUES ('tenant-a','problem-1','source-1','generation-1','resource-1','zabbix','9001','7001');
+) FROM STDIN;
+tenant-a	problem-1	source-1	generation-1	resource-1	zabbix	9001	7001
+\.
 
-INSERT INTO monitoring.monitoring_problem(
+COPY monitoring.monitoring_problem(
  tenant_id,problem_id,monitoring_source_id,source_instance_generation,monitoring_resource_id,
  problem_state,severity_class,summary,opened_at,resolved_at,last_confirmed_at,evidence_state,
  projection_revision,problem_poll_epoch,problem_poll_generation
-) VALUES (
- 'tenant-a','problem-1','source-1','generation-1','resource-1',
- 'active','warning','CPU threshold exceeded','2026-09-18 11:00:00+00',NULL,
- '2026-09-18 12:00:00+00','current',7,1,1
-);
+) FROM STDIN;
+tenant-a	problem-1	source-1	generation-1	resource-1	active	warning	CPU threshold exceeded	2026-09-18 11:00:00+00	\N	2026-09-18 12:00:00+00	current	7	1	1
+\.
 
-INSERT INTO monitoring.health_projection(
+COPY monitoring.health_projection(
  tenant_id,monitoring_resource_id,monitoring_source_id,source_instance_generation,
  health_class,evidence_state,projection_revision,last_changed_at,last_evidence_at,
  problem_snapshot_evidence_id,reason_refs
-) VALUES (
- 'tenant-a','resource-1','source-1','generation-1',
- 'degraded','current',11,'2026-09-18 11:00:00+00','2026-09-18 12:00:00+00',
- NULL,'["problem-1"]'::jsonb
-);
+) FROM STDIN;
+tenant-a	resource-1	source-1	generation-1	degraded	current	11	2026-09-18 11:00:00+00	2026-09-18 12:00:00+00	\N	["problem-1"]
+\.
+
 COMMIT;
 SQL
 
@@ -203,12 +201,13 @@ reordered_complete="$(complete "$reordered_msg" 1)"
 grep -q 'monitoring_problem_owner_reread_current' <<<"$reordered_complete"
 
 admit 'monitoring.health-projection.changed' 'monitoring_resource' 'resource-1' 'health-transition-lease' "$lease_payload" '2026-09-18 12:02:00+00' >/dev/null
-claim "$lease_msg" >/dev/null
-docker exec "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c "
-UPDATE system.async_consumer_inbox
-   SET claim_expires_at=transaction_timestamp()-interval '1 second'
- WHERE consumer_contract='alerting.monitoring-resync@1'
-   AND message_id='$lease_msg';" >/dev/null
+docker exec "$PG_CONTAINER" psql -Atq -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c "
+  SET ROLE jlmirror_g6_alerting_transport_invoker;
+  SELECT system.g6_claim_monitoring_alerting_receipt(
+    '$scope','$lease_msg','worker-a',1,'admission-lease','authz-lease','service-worker-a',
+    'cred-1','runtime-1','production','placement-1','tenant-a-worker',7
+  )::text;" >/dev/null
+sleep 2
 lease_complete="$(complete "$lease_msg" 1)"
 grep -q '"receipt_state": "reconciliation_required"' <<<"$lease_complete"
 

@@ -189,7 +189,7 @@ def wait_ready(url: str) -> None:
     raise AssertionError("G3 BFF did not become ready")
 
 
-def run_browser(executable: str, *, profile: Path, url: str, marker: str) -> str:
+def run_browser(executable: str, *, profile: Path, url: str, marker: str, server_log: Path) -> str:
     completed = run([
         executable,
         "--headless=new",
@@ -208,7 +208,13 @@ def run_browser(executable: str, *, profile: Path, url: str, marker: str) -> str
     ])
     html = completed.stdout
     if 'data-e2e-result="' + marker + '"' not in html:
-        raise AssertionError("missing browser marker " + marker + "; DOM tail=" + html[-3500:])
+        log_tail = server_log.read_text(encoding="utf-8", errors="replace")[-5000:] if server_log.exists() else ""
+        raise AssertionError(
+            "missing browser marker " + marker
+            + "; DOM head=" + html[:2500]
+            + "; DOM tail=" + html[-2500:]
+            + "; BFF log tail=" + log_tail
+        )
     for forbidden in ("access_token", "refresh_token", "api_token", "Authorization: Bearer"):
         if forbidden in html:
             raise AssertionError("browser DOM leaked forbidden marker: " + forbidden)
@@ -237,6 +243,8 @@ def main() -> int:
             env["PYTHONPATH"] = os.pathsep.join(parts)
 
             port = free_port()
+            server_log = temp / "g3-bff.log"
+            server_log_handle = server_log.open("w", encoding="utf-8")
             server = subprocess.Popen([
                 sys.executable,
                 "apps/g3-resource-inventory/bff_server.py",
@@ -247,7 +255,7 @@ def main() -> int:
                 "--fixture",
                 "--pg-container", CONTAINER,
                 "--pg-database", DATABASE,
-            ], cwd=ROOT, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            ], cwd=ROOT, env=env, stdout=server_log_handle, stderr=server_log_handle, text=True)
             try:
                 base = "https://127.0.0.1:" + str(port)
                 wait_ready(base + "/healthz")
@@ -262,6 +270,7 @@ def main() -> int:
                         profile=temp / ("profile-" + profile_name),
                         url=base + "/__fixture__/g3/login/start?case=" + case_name,
                         marker=marker,
+                        server_log=server_log,
                     )
 
                 tenant_a = pg(
@@ -286,9 +295,10 @@ def main() -> int:
                 except subprocess.TimeoutExpired:
                     server.kill()
                     server.wait(timeout=5)
+                server_log_handle.close()
                 if server.returncode not in (0, -15):
-                    stderr = server.stderr.read() if server.stderr else ""
-                    raise AssertionError("G3 BFF exited unexpectedly: " + stderr[-3000:])
+                    logs = server_log.read_text(encoding="utf-8", errors="replace") if server_log.exists() else ""
+                    raise AssertionError("G3 BFF exited unexpectedly: " + logs[-3000:])
     finally:
         subprocess.run(["docker", "rm", "-f", CONTAINER], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     return 0

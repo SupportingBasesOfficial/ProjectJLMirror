@@ -13,7 +13,7 @@ MANIFEST_PATH = "implementation/g3-resource-inventory-authorization/AUTHORIZATIO
 EXECUTABLE_SUFFIXES = {".py", ".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".sh", ".bash", ".sql", ".go", ".rs", ".java", ".kt", ".cs", ".rb", ".php"}
 PERSISTENCE_RECEIVERS = ("database", "db", "repository", "repo", "prisma", "postgres", "postgresql", "pg", "sqlalchemy", "psycopg", "cursor")
 PERSISTENCE_WRITES = ("insert", "update", "delete", "save", "upsert", "commit", "persist", "executemany")
-SQL_MUTATION_RE = re.compile(r"\\b(?:insert\\s+into|update|delete\\s+from|merge\\s+into|truncate(?:\\s+table)?|alter\\s+(?:table|schema)|drop\\s+(?:table|schema|view|function|procedure)|create\\s+(?:table|schema|view|function|procedure))\\b", re.IGNORECASE)
+SQL_MUTATION_RE = re.compile(r"\b(?:insert\s+into|update|delete\s+from|merge\s+into|truncate(?:\s+table)?|alter\s+(?:table|schema)|drop\s+(?:table|schema|view|function|procedure)|create\s+(?:table|schema|view|function|procedure))\b", re.IGNORECASE)
 
 def git(root: Path, *args: str) -> str:
     return subprocess.check_output(["git", "-C", str(root), *args], text=True).strip()
@@ -47,7 +47,7 @@ def semantic_errors(path: str, text: str, policy: dict) -> list[str]:
         errors.append(f"direct SQL/schema mutation is forbidden in G3 executable artifact: {path}")
     receiver = "|".join(re.escape(x) for x in PERSISTENCE_RECEIVERS)
     method = "|".join(re.escape(x) for x in PERSISTENCE_WRITES)
-    if re.search(rf"\\b(?:{receiver})\\s*\\.\\s*(?:{method})\\s*\\(", text, re.IGNORECASE):
+    if re.search(rf"\b(?:{receiver})\s*\.\s*(?:{method})\s*\(", text, re.IGNORECASE):
         errors.append(f"direct persistence write is forbidden in G3 executable artifact: {path}")
     return errors
 

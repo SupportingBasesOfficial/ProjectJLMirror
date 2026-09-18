@@ -41,6 +41,22 @@ class HumanOperationsService:
             actor_principal_id=actor_principal_id,logical_action_id=logical_action_id,
         )
 
+    def end_resource(
+        self, *,
+        authority:AuthoritySnapshot,
+        tenant_id:str,
+        assignment_id:str,
+        actor_principal_id:str,
+        end_reason:str,
+    )->dict:
+        authority.validate(tenant_id=tenant_id,actor_principal_id=actor_principal_id)
+        if not end_reason or len(end_reason)>256:
+            raise ValueError("invalid end reason")
+        return self.port.end_resource_responsibility(
+            authority=authority,tenant_id=tenant_id,assignment_id=assignment_id,
+            actor_principal_id=actor_principal_id,end_reason=end_reason,
+        )
+
     def assign_action(
         self, *,
         authority:AuthoritySnapshot,
@@ -94,4 +110,23 @@ class HumanOperationsService:
             viewer_principal_id=viewer_principal_id,viewer_side=viewer_side,
             capability_class=capability_class,presentation_ref=presentation_ref,
             actor_principal_id=actor_principal_id,logical_action_id=logical_action_id,
+        )
+
+
+    def record_visibility(
+        self, *,
+        authority:AuthoritySnapshot,
+        tenant_id:str,
+        requirement_id:str,
+        viewer_principal_id:str,
+        logical_action_id:str,
+        session_evidence:dict,
+    )->dict:
+        authority.validate(tenant_id=tenant_id,actor_principal_id=viewer_principal_id)
+        if not isinstance(session_evidence,dict) or not session_evidence:
+            raise ValueError("session evidence required")
+        return self.port.record_visibility_receipt(
+            authority=authority,tenant_id=tenant_id,requirement_id=requirement_id,
+            viewer_principal_id=viewer_principal_id,logical_action_id=logical_action_id,
+            session_evidence=session_evidence,
         )

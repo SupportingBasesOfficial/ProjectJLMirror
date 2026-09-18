@@ -9,7 +9,7 @@ from pathlib import Path
 import ssl
 import subprocess
 import sys
-from urllib.parse import unquote, urlparse
+from urllib.parse import parse_qs, quote, unquote, urlparse
 
 ROOT = Path(__file__).resolve().parents[2]
 APP = Path(__file__).resolve().parent
@@ -230,6 +230,19 @@ class Handler(G1.Handler):
             return
         if parsed.path == "/g3-app.mjs":
             self._send_static(FRONTEND / "app.mjs", "text/javascript; charset=utf-8")
+            return
+        if parsed.path == "/__fixture__/g3/login/start":
+            if not self.server.fixture_enabled:
+                self._send_json(HTTPStatus.NOT_FOUND, {"state": "unavailable"})
+                return
+            case = parse_qs(parsed.query).get("case", ["success"])[0]
+            if case not in {"success", "detail", "revoked", "cross-tenant"}:
+                self._send_json(HTTPStatus.BAD_REQUEST, {"state": "unavailable"})
+                return
+            tenant = "tenant-b" if case == "cross-tenant" else "tenant-a"
+            mode = "revoked" if case == "revoked" else "allowed"
+            location = "/__fixture__/login/start?target_tenant=" + quote(tenant) + "&scenario=allowed&mode=" + quote(mode)
+            self._redirect(location, cookies=[(G3_CASE_COOKIE, case, False, 600, "Strict")])
             return
 
         route = self._parse_resource_path(parsed.path)

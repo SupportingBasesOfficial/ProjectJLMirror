@@ -17,8 +17,6 @@ on:
       - 'sql/integration/002_monitoring_alerting_consumer.sql'
       - 'implementation/wave-4-alerting-core-model-authorization/**'
       - 'docs/00-foundation/ai-e2e-delivery/**'
-      - 'implementation/wave-4-alerting-core-model-authorization/**'
-      - 'docs/00-foundation/ai-e2e-delivery/**'
   push:
     branches:
       - main
@@ -36,8 +34,6 @@ on:
       - 'tools/assurance/validate_repository.py'
       - 'implementation/g6-monitoring-alerting-transport/**'
       - 'sql/integration/002_monitoring_alerting_consumer.sql'
-      - 'implementation/wave-4-alerting-core-model-authorization/**'
-      - 'docs/00-foundation/ai-e2e-delivery/**'
       - 'implementation/wave-4-alerting-core-model-authorization/**'
       - 'docs/00-foundation/ai-e2e-delivery/**'
 

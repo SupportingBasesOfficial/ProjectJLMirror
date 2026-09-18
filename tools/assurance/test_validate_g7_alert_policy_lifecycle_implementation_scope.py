@@ -15,6 +15,7 @@ POLICY={
  "implementation_pr_head_prefix":"impl/g7-alert-policy-lifecycle",
  "implementation_pr_required_label":"jlmirror-slice:g7-alert-policy-lifecycle",
  "exact_sql_path":"sql/alerting/001_alert_policy_lifecycle.sql",
+ "exact_sql_allowed_relations":["alerting.alert_policy","alerting.alert_policy_version","alerting.alert_policy_effective_version","alerting.alert","alerting.alert_transition","alerting.alert_decision"],
  "runtime_workflow":".github/workflows/g7-alert-policy-lifecycle-runtime.yml",
  "runtime_workflow_name":"JLMIRROR G7 Alert Policy Lifecycle Runtime",
  "runtime_entrypoint":"python tools/g7/run_alert_policy_lifecycle_runtime.py",
@@ -38,9 +39,12 @@ def runtime():
 def canonical_sql():
     return """BEGIN;
 CREATE SCHEMA IF NOT EXISTS alerting;
+CREATE TABLE alerting.alert_policy(policy_id uuid);
 CREATE TABLE alerting.alert_policy_version(policy_id uuid, policy_version bigint, source_kind text);
+CREATE TABLE alerting.alert_policy_effective_version(policy_id uuid, policy_version bigint);
 CREATE TABLE alerting.alert(alert_id uuid, lifecycle_state text, policy_id uuid, policy_version bigint);
 CREATE TABLE alerting.alert_transition(alert_transition_id uuid, alert_id uuid, lifecycle_state text, policy_id uuid, policy_version bigint);
+CREATE TABLE alerting.alert_decision(alert_id uuid, policy_id uuid, policy_version bigint);
 COMMENT ON TABLE alerting.alert IS 'active resolved';
 COMMIT;
 """
@@ -72,8 +76,9 @@ def main():
     run_case({"apps/g7-alert-policy-lifecycle/write.py":"db.update('alerting', {'x':1})\n"},False)
     run_case({"apps/g7-alert-policy-lifecycle/provider.py":"client.problem.get(request)\n"},False)
     run_case({"sql/alerting/001_alert_policy_lifecycle.sql":canonical_sql()+"\nCREATE TABLE alerting.notification_intent(id uuid);\n"},False)
+    run_case({"sql/alerting/001_alert_policy_lifecycle.sql":canonical_sql()+"\nCREATE TABLE alerting.hidden_business_state(id uuid);\n"},False)
     run_case({"sql/alerting/001_alert_policy_lifecycle.sql":canonical_sql()+"\nUPDATE monitoring.monitoring_problem SET severity='x';\n"},False)
-    print("g7_scope_falsification=PASS policy_lifecycle=allowed ack=blocked notification=blocked direct_writes=blocked provider_passthrough=blocked monitoring_mutation=blocked")
+    print("g7_scope_falsification=PASS policy_lifecycle=allowed ack=blocked notification=blocked hidden_relation=blocked direct_writes=blocked provider_passthrough=blocked monitoring_mutation=blocked")
     return 0
 
 if __name__=="__main__":

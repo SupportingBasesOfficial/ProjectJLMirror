@@ -460,7 +460,8 @@ class FixtureProblemHealthReadPort:
             rows = [r for r in rows if r.problem_state == problem_state]
         if severity_class is not None:
             rows = [r for r in rows if r.severity_class == severity_class]
-        rows.sort(key=lambda r: (r.opened_at, r.problem_id), reverse=True)
+        rows.sort(key=lambda r: r.problem_id)
+        rows.sort(key=lambda r: r.opened_at, reverse=True)
         if cursor is not None:
             indexes = [i for i,r in enumerate(rows) if r.problem_id == cursor]
             if len(indexes) != 1:

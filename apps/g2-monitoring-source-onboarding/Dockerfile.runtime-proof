@@ -1,0 +1,16 @@
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+
+WORKDIR /opt/jlmirror
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/opt/jlmirror/src:/opt/jlmirror/apps/g2-monitoring-source-onboarding
+
+COPY src/ ./src/
+COPY apps/g1-identity-tenant-shell/ ./apps/g1-identity-tenant-shell/
+COPY apps/g2-monitoring-source-onboarding/ ./apps/g2-monitoring-source-onboarding/
+
+EXPOSE 8445
+
+ENTRYPOINT ["python", "apps/g2-monitoring-source-onboarding/bff_server.py"]

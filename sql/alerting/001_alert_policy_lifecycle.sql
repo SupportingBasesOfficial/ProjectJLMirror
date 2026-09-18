@@ -19,6 +19,74 @@ BEGIN
 END;
 $$;
 
+-- The executor is a dedicated NOLOGIN capability owner. Before any G7
+-- storage authority is granted, reject unsafe attributes, memberships or
+-- unrelated persistent objects already owned by that role.
+DO $
+DECLARE
+    v_executor_oid OID;
+    v_unexpected TEXT;
+BEGIN
+    SELECT oid INTO v_executor_oid
+      FROM pg_roles
+     WHERE rolname='jlmirror_g7_alerting_executor';
+
+    IF EXISTS (
+        SELECT 1
+          FROM pg_roles
+         WHERE oid=v_executor_oid
+           AND (
+               rolcanlogin OR rolsuper OR rolcreatedb OR rolcreaterole
+               OR rolinherit OR rolreplication OR rolbypassrls
+           )
+    ) THEN
+        RAISE EXCEPTION 'g7.executor_unsafe_attributes';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+          FROM pg_auth_members
+         WHERE roleid=v_executor_oid OR member=v_executor_oid
+    ) THEN
+        RAISE EXCEPTION 'g7.executor_unsafe_membership';
+    END IF;
+
+    WITH allowed_proc_oids AS (
+        SELECT to_regprocedure(signature) AS proc_oid
+          FROM (VALUES
+              ('alerting.g7_create_policy_version(text,text,bigint,text,text,text[],text,text)'),
+              ('alerting.g7_set_effective_policy_version(text,text,bigint,boolean)'),
+              ('alerting.g7_apply_current_evaluation(text,text,bigint,text)'),
+              ('alerting.g7_list_alerts(text,integer)'),
+              ('alerting.g7_get_alert(text,text)')
+          ) AS allowed(signature)
+    )
+    SELECT format(
+               'class=%s,objid=%s,dbid=%s',
+               d.classid::regclass::TEXT,d.objid,d.dbid
+           )
+      INTO v_unexpected
+      FROM pg_shdepend d
+     WHERE d.refclassid='pg_authid'::regclass
+       AND d.refobjid=v_executor_oid
+       AND d.deptype='o'
+       AND NOT (
+           d.classid='pg_proc'::regclass
+           AND d.objid IN (
+               SELECT proc_oid
+                 FROM allowed_proc_oids
+                WHERE proc_oid IS NOT NULL
+           )
+       )
+     ORDER BY d.dbid,d.classid,d.objid
+     LIMIT 1;
+
+    IF v_unexpected IS NOT NULL THEN
+        RAISE EXCEPTION 'g7.executor_unexpected_owned_object:%',v_unexpected;
+    END IF;
+END;
+$;
+
 GRANT USAGE ON SCHEMA alerting, monitoring TO jlmirror_g7_alerting_executor;
 GRANT USAGE ON SCHEMA alerting TO jlmirror_g7_alerting_invoker;
 REVOKE CREATE ON SCHEMA alerting, monitoring FROM jlmirror_g7_alerting_executor, jlmirror_g7_alerting_invoker;
@@ -304,6 +372,80 @@ $$;
 CREATE TRIGGER alert_projection_guard
 BEFORE UPDATE OR DELETE ON alerting.alert
 FOR EACH ROW EXECUTE FUNCTION alerting.g7_guard_alert_mutation();
+
+-- CREATE OR REPLACE preserves function OIDs and ACLs. Reject poisoned
+-- canonical entry points before replacing their bodies or elevating them under
+-- the dedicated executor.
+DO $
+DECLARE
+    v_executor_oid OID;
+    v_invoker_oid OID;
+    v_row RECORD;
+    v_proc_oid OID;
+    v_dependency TEXT;
+BEGIN
+    SELECT oid INTO v_executor_oid
+      FROM pg_roles
+     WHERE rolname='jlmirror_g7_alerting_executor';
+    SELECT oid INTO v_invoker_oid
+      FROM pg_roles
+     WHERE rolname='jlmirror_g7_alerting_invoker';
+
+    FOR v_row IN
+        SELECT signature
+          FROM (VALUES
+              ('alerting.g7_create_policy_version(text,text,bigint,text,text,text[],text,text)'),
+              ('alerting.g7_set_effective_policy_version(text,text,bigint,boolean)'),
+              ('alerting.g7_apply_current_evaluation(text,text,bigint,text)'),
+              ('alerting.g7_list_alerts(text,integer)'),
+              ('alerting.g7_get_alert(text,text)')
+          ) AS guarded(signature)
+    LOOP
+        v_proc_oid := to_regprocedure(v_row.signature);
+        IF v_proc_oid IS NULL THEN
+            CONTINUE;
+        END IF;
+
+        IF EXISTS (
+            SELECT 1
+              FROM pg_proc p,
+                   LATERAL aclexplode(
+                       COALESCE(p.proacl,acldefault('f',p.proowner))
+                   ) a
+             WHERE p.oid=v_proc_oid
+               AND a.privilege_type='EXECUTE'
+               AND (
+                   a.grantee=0
+                   OR (
+                       a.grantee<>p.proowner
+                       AND (
+                           a.grantee<>v_invoker_oid
+                           OR a.is_grantable
+                       )
+                   )
+               )
+        ) THEN
+            RAISE EXCEPTION 'g7.existing_function_acl_unsafe:%',v_row.signature;
+        END IF;
+
+        SELECT format(
+                   'class=%s,objid=%s,objsubid=%s,deptype=%s',
+                   d.classid::regclass::TEXT,d.objid,d.objsubid,d.deptype
+               )
+          INTO v_dependency
+          FROM pg_depend d
+         WHERE d.refclassid='pg_proc'::regclass
+           AND d.refobjid=v_proc_oid
+         ORDER BY d.classid,d.objid,d.objsubid,d.deptype
+         LIMIT 1;
+
+        IF v_dependency IS NOT NULL THEN
+            RAISE EXCEPTION 'g7.existing_function_dependency_unsafe:%:%',
+                v_row.signature,v_dependency;
+        END IF;
+    END LOOP;
+END;
+$;
 
 CREATE OR REPLACE FUNCTION alerting.g7_create_policy_version(
     p_tenant_id TEXT,
@@ -872,5 +1014,90 @@ GRANT EXECUTE ON FUNCTION alerting.g7_list_alerts(TEXT,INTEGER)
 TO jlmirror_g7_alerting_invoker;
 GRANT EXECUTE ON FUNCTION alerting.g7_get_alert(TEXT,TEXT)
 TO jlmirror_g7_alerting_invoker;
+
+-- Final transactional closure: every privileged entry point must be owned by
+-- the exact executor, remain SECURITY DEFINER, expose no PUBLIC/named proxy
+-- EXECUTE authority, and grant only non-delegable EXECUTE to the canonical
+-- invoker. This also detects unsafe installer default function privileges on
+-- first creation before the transaction can commit.
+DO $
+DECLARE
+    v_executor_oid OID;
+    v_invoker_oid OID;
+    v_row RECORD;
+    v_proc_oid OID;
+BEGIN
+    SELECT oid INTO v_executor_oid
+      FROM pg_roles
+     WHERE rolname='jlmirror_g7_alerting_executor';
+    SELECT oid INTO v_invoker_oid
+      FROM pg_roles
+     WHERE rolname='jlmirror_g7_alerting_invoker';
+
+    FOR v_row IN
+        SELECT signature
+          FROM (VALUES
+              ('alerting.g7_create_policy_version(text,text,bigint,text,text,text[],text,text)'),
+              ('alerting.g7_set_effective_policy_version(text,text,bigint,boolean)'),
+              ('alerting.g7_apply_current_evaluation(text,text,bigint,text)'),
+              ('alerting.g7_list_alerts(text,integer)'),
+              ('alerting.g7_get_alert(text,text)')
+          ) AS guarded(signature)
+    LOOP
+        v_proc_oid := to_regprocedure(v_row.signature);
+        IF v_proc_oid IS NULL THEN
+            RAISE EXCEPTION 'g7.installed_function_missing:%',v_row.signature;
+        END IF;
+
+        IF EXISTS (
+            SELECT 1
+              FROM pg_proc p
+             WHERE p.oid=v_proc_oid
+               AND (p.proowner<>v_executor_oid OR NOT p.prosecdef)
+        ) THEN
+            RAISE EXCEPTION 'g7.installed_function_definition_unsafe:%',
+                v_row.signature;
+        END IF;
+
+        IF EXISTS (
+            SELECT 1
+              FROM pg_proc p,
+                   LATERAL aclexplode(
+                       COALESCE(p.proacl,acldefault('f',p.proowner))
+                   ) a
+             WHERE p.oid=v_proc_oid
+               AND a.privilege_type='EXECUTE'
+               AND (
+                   a.grantee=0
+                   OR (
+                       a.grantee<>p.proowner
+                       AND (
+                           a.grantee<>v_invoker_oid
+                           OR a.is_grantable
+                       )
+                   )
+               )
+        ) THEN
+            RAISE EXCEPTION 'g7.installed_function_acl_unsafe:%',
+                v_row.signature;
+        END IF;
+
+        IF NOT EXISTS (
+            SELECT 1
+              FROM pg_proc p,
+                   LATERAL aclexplode(
+                       COALESCE(p.proacl,acldefault('f',p.proowner))
+                   ) a
+             WHERE p.oid=v_proc_oid
+               AND a.privilege_type='EXECUTE'
+               AND a.grantee=v_invoker_oid
+               AND NOT a.is_grantable
+        ) THEN
+            RAISE EXCEPTION 'g7.installed_invoker_execute_missing:%',
+                v_row.signature;
+        END IF;
+    END LOOP;
+END;
+$;
 
 COMMIT;

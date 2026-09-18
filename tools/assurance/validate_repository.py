@@ -23,10 +23,12 @@ TEXT_SUFFIXES = {".md", ".yml", ".yaml", ".py", ".json", ".toml", ".txt"}
 STATUS_PUBLISHER_WORKFLOW = ".github/workflows/adversarial-learning-reconciliation.yml"
 G1_STATUS_PUBLISHER_WORKFLOW = ".github/workflows/g1-identity-tenant-shell-implementation-scope.yml"
 G2_STATUS_PUBLISHER_WORKFLOW = ".github/workflows/g2-monitoring-source-onboarding-implementation-scope.yml"
+G3_STATUS_PUBLISHER_WORKFLOW = ".github/workflows/g3-resource-inventory-implementation-scope.yml"
 STATUS_PUBLISHER_WORKFLOWS = {
     STATUS_PUBLISHER_WORKFLOW,
     G1_STATUS_PUBLISHER_WORKFLOW,
     G2_STATUS_PUBLISHER_WORKFLOW,
+    G3_STATUS_PUBLISHER_WORKFLOW,
 }
 EXPECTED_STATUS_ENDPOINT = "repos/${GITHUB_REPOSITORY}/statuses/${PR_HEAD_SHA}"
 

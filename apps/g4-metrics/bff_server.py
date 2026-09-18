@@ -133,7 +133,50 @@ class PgMetricsReadPort:
             raise RuntimeError("metric observation read shape is invalid")
         return MetricObservationRecord(**value)
 
-    def list_definitions(self, *, tenant_id: str, monitoring_resource_id: str):
+    def _definition_cursor_valid(
+        self,
+        *,
+        tenant_id: str,
+        monitoring_resource_id: str,
+        cursor: str,
+    ) -> bool:
+        raw = self.pg.query(
+            """
+BEGIN;
+SET LOCAL ROLE wave4_runtime;
+SET LOCAL jlmirror.tenant_id=:'tenant';
+SELECT count(*)
+FROM monitoring.metric_definition d
+JOIN monitoring.monitoring_source s
+  ON s.tenant_id=d.tenant_id
+ AND s.monitoring_source_id=d.monitoring_source_id
+WHERE d.tenant_id=:'tenant'
+  AND d.monitoring_resource_id=:'resource_id'
+  AND d.source_instance_generation=s.active_source_instance_generation
+  AND d.metric_definition_id=:'cursor';
+COMMIT;
+""",
+            tenant=tenant_id,
+            resource_id=monitoring_resource_id,
+            cursor=cursor,
+        )
+        return raw.splitlines()[-1:] == ["1"]
+
+    def list_definitions(
+        self,
+        *,
+        tenant_id: str,
+        monitoring_resource_id: str,
+        cursor: str | None,
+        limit: int,
+    ):
+        if cursor is not None and not self._definition_cursor_valid(
+            tenant_id=tenant_id,
+            monitoring_resource_id=monitoring_resource_id,
+            cursor=cursor,
+        ):
+            raise ValueError("cursor_invalid")
+
         raw = self.pg.query(
             """
 BEGIN;
@@ -163,18 +206,25 @@ FROM (
   WHERE d.tenant_id=:'tenant'
     AND d.monitoring_resource_id=:'resource_id'
     AND d.source_instance_generation=s.active_source_instance_generation
+    AND (:'cursor'='' OR d.metric_definition_id > :'cursor')
   ORDER BY d.metric_definition_id
-  LIMIT 500
+  LIMIT :'fetch_limit'::integer
 ) x;
 COMMIT;
 """,
             tenant=tenant_id,
             resource_id=monitoring_resource_id,
+            cursor=cursor or "",
+            fetch_limit=str(limit + 1),
         )
         values = json.loads(raw or "[]")
-        if not isinstance(values, list) or len(values) > 500:
-            raise RuntimeError("metric definition list exceeds read bound")
-        return tuple(self._definition(value) for value in values)
+        if not isinstance(values, list) or len(values) > limit + 1:
+            raise RuntimeError("metric definition page exceeds read bound")
+        has_more = len(values) > limit
+        page_values = values[:limit]
+        rows = tuple(self._definition(value) for value in page_values)
+        next_cursor = rows[-1].metric_definition_id if has_more and rows else None
+        return rows, next_cursor
 
     def get_definition(self, *, tenant_id: str, metric_definition_id: str):
         raw = self.pg.query(
@@ -217,7 +267,50 @@ COMMIT;
         )
         return None if not raw else self._definition(json.loads(raw))
 
-    def list_current(self, *, tenant_id: str, monitoring_resource_id: str):
+    def _current_cursor_valid(
+        self,
+        *,
+        tenant_id: str,
+        monitoring_resource_id: str,
+        cursor: str,
+    ) -> bool:
+        raw = self.pg.query(
+            """
+BEGIN;
+SET LOCAL ROLE wave4_runtime;
+SET LOCAL jlmirror.tenant_id=:'tenant';
+SELECT count(*)
+FROM monitoring.metric_current_state c
+JOIN monitoring.monitoring_source s
+  ON s.tenant_id=c.tenant_id
+ AND s.monitoring_source_id=c.monitoring_source_id
+WHERE c.tenant_id=:'tenant'
+  AND c.monitoring_resource_id=:'resource_id'
+  AND c.source_instance_generation=s.active_source_instance_generation
+  AND c.metric_definition_id=:'cursor';
+COMMIT;
+""",
+            tenant=tenant_id,
+            resource_id=monitoring_resource_id,
+            cursor=cursor,
+        )
+        return raw.splitlines()[-1:] == ["1"]
+
+    def list_current(
+        self,
+        *,
+        tenant_id: str,
+        monitoring_resource_id: str,
+        cursor: str | None,
+        limit: int,
+    ):
+        if cursor is not None and not self._current_cursor_valid(
+            tenant_id=tenant_id,
+            monitoring_resource_id=monitoring_resource_id,
+            cursor=cursor,
+        ):
+            raise ValueError("cursor_invalid")
+
         raw = self.pg.query(
             """
 BEGIN;
@@ -251,18 +344,25 @@ FROM (
   WHERE c.tenant_id=:'tenant'
     AND c.monitoring_resource_id=:'resource_id'
     AND c.source_instance_generation=s.active_source_instance_generation
+    AND (:'cursor'='' OR c.metric_definition_id > :'cursor')
   ORDER BY c.metric_definition_id
-  LIMIT 500
+  LIMIT :'fetch_limit'::integer
 ) x;
 COMMIT;
 """,
             tenant=tenant_id,
             resource_id=monitoring_resource_id,
+            cursor=cursor or "",
+            fetch_limit=str(limit + 1),
         )
         values = json.loads(raw or "[]")
-        if not isinstance(values, list) or len(values) > 500:
-            raise RuntimeError("metric current-state list exceeds read bound")
-        return tuple(self._current(value) for value in values)
+        if not isinstance(values, list) or len(values) > limit + 1:
+            raise RuntimeError("metric current-state page exceeds read bound")
+        has_more = len(values) > limit
+        page_values = values[:limit]
+        rows = tuple(self._current(value) for value in page_values)
+        next_cursor = rows[-1].metric_definition_id if has_more and rows else None
+        return rows, next_cursor
 
     def get_current(self, *, tenant_id: str, metric_definition_id: str):
         raw = self.pg.query(
@@ -306,6 +406,37 @@ COMMIT;
         )
         return None if not raw else self._current(json.loads(raw))
 
+    def _history_cursor_valid(
+        self,
+        *,
+        tenant_id: str,
+        metric_definition_id: str,
+        from_ts: str,
+        to_ts: str,
+        cursor: str,
+    ) -> bool:
+        raw = self.pg.query(
+            """
+BEGIN;
+SET LOCAL ROLE wave4_runtime;
+SET LOCAL jlmirror.tenant_id=:'tenant';
+SELECT count(*)
+FROM monitoring.metric_observation
+WHERE tenant_id=:'tenant'
+  AND metric_definition_id=:'metric_id'
+  AND observation_id=:'cursor'
+  AND observed_at >= :'from_ts'::timestamptz
+  AND observed_at < :'to_ts'::timestamptz;
+COMMIT;
+""",
+            tenant=tenant_id,
+            metric_id=metric_definition_id,
+            cursor=cursor,
+            from_ts=from_ts,
+            to_ts=to_ts,
+        )
+        return raw.splitlines()[-1:] == ["1"]
+
     def history(
         self,
         *,
@@ -313,6 +444,7 @@ COMMIT;
         metric_definition_id: str,
         from_ts: str,
         to_ts: str,
+        cursor: str | None,
         limit: int,
     ):
         definition = self.get_definition(
@@ -321,6 +453,14 @@ COMMIT;
         )
         if definition is None:
             return None
+        if cursor is not None and not self._history_cursor_valid(
+            tenant_id=tenant_id,
+            metric_definition_id=metric_definition_id,
+            from_ts=from_ts,
+            to_ts=to_ts,
+            cursor=cursor,
+        ):
+            raise ValueError("cursor_invalid")
 
         raw = self.pg.query(
             """
@@ -344,8 +484,20 @@ FROM (
     AND o.metric_definition_id=:'metric_id'
     AND o.observed_at >= :'from_ts'::timestamptz
     AND o.observed_at < :'to_ts'::timestamptz
+    AND (
+      :'cursor'=''
+      OR (o.observed_at,o.observation_id) > (
+        SELECT a.observed_at,a.observation_id
+        FROM monitoring.metric_observation a
+        WHERE a.tenant_id=:'tenant'
+          AND a.metric_definition_id=:'metric_id'
+          AND a.observation_id=:'cursor'
+          AND a.observed_at >= :'from_ts'::timestamptz
+          AND a.observed_at < :'to_ts'::timestamptz
+      )
+    )
   ORDER BY o.observed_at,o.observation_id
-  LIMIT :'limit'::integer
+  LIMIT :'fetch_limit'::integer
 ) x;
 COMMIT;
 """,
@@ -353,10 +505,16 @@ COMMIT;
             metric_id=metric_definition_id,
             from_ts=from_ts,
             to_ts=to_ts,
-            limit=str(limit),
+            cursor=cursor or "",
+            fetch_limit=str(limit + 1),
         )
         values = json.loads(raw or "[]")
-        observations = tuple(self._observation(value) for value in values)
+        if not isinstance(values, list) or len(values) > limit + 1:
+            raise RuntimeError("metric history page exceeds read bound")
+        has_more = len(values) > limit
+        page_values = values[:limit]
+        observations = tuple(self._observation(value) for value in page_values)
+        next_cursor = observations[-1].observation_id if has_more and observations else None
 
         coverage_raw = self.pg.query(
             """
@@ -391,7 +549,6 @@ COMMIT;
             coverage_state = row["coverage_state"]
             if coverage_state == "gap":
                 state = "gap_detected"
-                gap_refs = ("provider-history-gap",)
             elif coverage_state == "reconciliation_required":
                 state = "reconciliation_required"
             elif coverage_state == "finalized":
@@ -416,6 +573,7 @@ COMMIT;
                 gap_refs=gap_refs,
             ),
             observations=observations,
+            next_cursor=next_cursor,
         )
 
 
@@ -479,21 +637,73 @@ class FixtureMetricsReadPort:
             ),
         )
 
-    def list_definitions(self, *, tenant_id: str, monitoring_resource_id: str):
-        return (self.definition,) if tenant_id == "tenant-a" and monitoring_resource_id == "resource-101" else ()
+    def list_definitions(
+        self,
+        *,
+        tenant_id: str,
+        monitoring_resource_id: str,
+        cursor: str | None,
+        limit: int,
+    ):
+        if tenant_id != "tenant-a" or monitoring_resource_id != "resource-101":
+            if cursor is not None:
+                raise ValueError("cursor_invalid")
+            return (), None
+        if cursor is None:
+            return (self.definition,)[:limit], None
+        if cursor == self.definition.metric_definition_id:
+            return (), None
+        raise ValueError("cursor_invalid")
 
     def get_definition(self, *, tenant_id: str, metric_definition_id: str):
         return self.definition if tenant_id == "tenant-a" and metric_definition_id == "metric-cpu" else None
 
-    def list_current(self, *, tenant_id: str, monitoring_resource_id: str):
-        return (self.current,) if tenant_id == "tenant-a" and monitoring_resource_id == "resource-101" else ()
+    def list_current(
+        self,
+        *,
+        tenant_id: str,
+        monitoring_resource_id: str,
+        cursor: str | None,
+        limit: int,
+    ):
+        if tenant_id != "tenant-a" or monitoring_resource_id != "resource-101":
+            if cursor is not None:
+                raise ValueError("cursor_invalid")
+            return (), None
+        if cursor is None:
+            return (self.current,)[:limit], None
+        if cursor == self.current.metric_definition_id:
+            return (), None
+        raise ValueError("cursor_invalid")
 
     def get_current(self, *, tenant_id: str, metric_definition_id: str):
         return self.current if tenant_id == "tenant-a" and metric_definition_id == "metric-cpu" else None
 
-    def history(self, *, tenant_id: str, metric_definition_id: str, from_ts: str, to_ts: str, limit: int):
+    def history(
+        self,
+        *,
+        tenant_id: str,
+        metric_definition_id: str,
+        from_ts: str,
+        to_ts: str,
+        cursor: str | None,
+        limit: int,
+    ):
         if tenant_id != "tenant-a" or metric_definition_id != "metric-cpu":
+            if cursor is not None:
+                raise ValueError("cursor_invalid")
             return None
+        observations = list(self.observations)
+        start = 0
+        if cursor is not None:
+            indexes = [i for i, item in enumerate(observations) if item.observation_id == cursor]
+            if len(indexes) != 1:
+                raise ValueError("cursor_invalid")
+            start = indexes[0] + 1
+        page = observations[start:start + limit + 1]
+        has_more = len(page) > limit
+        page = page[:limit]
+        next_cursor = page[-1].observation_id if has_more and page else None
         return HistoryRead(
             definition=self.definition,
             coverage=HistoryCoverage(
@@ -501,7 +711,8 @@ class FixtureMetricsReadPort:
                 covered_through="2026-09-18T06:00:00Z",
                 gap_refs=(),
             ),
-            observations=self.observations[:limit],
+            observations=tuple(page),
+            next_cursor=next_cursor,
         )
 
 

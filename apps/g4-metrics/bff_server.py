@@ -533,7 +533,7 @@ COMMIT;
             next_cursor=next_cursor,
         )
 
-class FixtureMetricsReadPort:class FixtureMetricsReadPort:
+class FixtureMetricsReadPort:
     def __init__(self) -> None:
         self.definition = MetricDefinitionRecord(
             metric_definition_id="metric-cpu",

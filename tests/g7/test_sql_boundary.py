@@ -49,6 +49,22 @@ class SqlBoundaryTests(unittest.TestCase):
         self.assertIn("g7.decision_equivalence_conflict",LOWER)
         self.assertIn("alert_one_active_occurrence",LOWER)
         self.assertIn("pg_advisory_xact_lock",LOWER)
+        self.assertIn("active_occurrence_owned_by_other_policy_version",LOWER)
+        self.assertIn("policy_version_missing_or_superseded",LOWER)
+        self.assertIn("'duplicate',true",LOWER)
+
+    def test_active_uniqueness_is_policy_lineage_not_policy_version(self):
+        match=re.search(
+            r"create\s+unique\s+index\s+alert_one_active_occurrence\s+"
+            r"on\s+alerting\.alert\s*\((.*?)\)\s*where\s+lifecycle_state='active'",
+            LOWER,re.S,
+        )
+        self.assertIsNotNone(match)
+        columns=match.group(1)
+        self.assertIn("policy_id",columns)
+        self.assertIn("source_kind",columns)
+        self.assertIn("source_subject_id",columns)
+        self.assertNotIn("policy_version",columns)
 
 
 if __name__=="__main__":

@@ -32,13 +32,32 @@ from jlmirror_authority.session import BrowserSessionHandle, resolve_browser_ses
 
 def _load_g3():
     path = ROOT / "apps/g3-resource-inventory/bff_server.py"
+    g3_app = str(path.parent)
     spec = importlib.util.spec_from_file_location("jlmirror_g3_g4_composed_bff", path)
     if spec is None or spec.loader is None:
         raise RuntimeError("canonical G3 BFF cannot be loaded")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
+
+    saved_modules = {
+        name: sys.modules.get(name)
+        for name in ("current_authorization", "inventory")
+    }
+    previous_path = list(sys.path)
+    try:
+        sys.path.insert(0, g3_app)
+        for name in saved_modules:
+            sys.modules.pop(name, None)
+
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+        return module
+    finally:
+        sys.path[:] = previous_path
+        for name, value in saved_modules.items():
+            if value is None:
+                sys.modules.pop(name, None)
+            else:
+                sys.modules[name] = value
 
 
 G3 = _load_g3()

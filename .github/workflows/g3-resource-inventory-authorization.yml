@@ -1,0 +1,27 @@
+{
+  "name": "JLMIRROR G3 Resource Inventory Authorization",
+  "on": {
+    "pull_request": {
+      "paths": [
+        "implementation/g3-resource-inventory-authorization/**",
+        "tools/assurance/validate_g3_resource_inventory_authorization.py",
+        "tools/assurance/validate_g3_resource_inventory_implementation_scope.py",
+        ".github/workflows/g3-resource-inventory-authorization.yml",
+        ".github/workflows/g3-resource-inventory-implementation-scope.yml"
+      ]
+    },
+    "workflow_dispatch": {}
+  },
+  "permissions": {},
+  "jobs": {
+    "authorize-g3": {
+      "runs-on": "ubuntu-latest",
+      "steps": [
+        {"uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"},
+        {"uses": "actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1"},
+        {"run": "python tools/assurance/validate_g3_resource_inventory_authorization.py"},
+        {"run": "python tools/assurance/validate_repository.py"}
+      ]
+    }
+  }
+}

@@ -9,7 +9,7 @@ def main()->int:
     args=parser.parse_args()
     if args.self_check:
         from consumer import CONSUMER_CONTRACT, HEALTH_CONTRACT, PROBLEM_CONTRACT
-        if CONSUMER_CONTRACT!="alerting.monitoring-resync@1":
+        if CONSUMER_CONTRACT!="alerting.monitoring-resync":
             raise RuntimeError("consumer contract drift")
         if {PROBLEM_CONTRACT,HEALTH_CONTRACT}!={
             "monitoring.problem-state.changed","monitoring.health-projection.changed"

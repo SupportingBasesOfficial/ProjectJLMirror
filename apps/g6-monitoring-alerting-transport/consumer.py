@@ -11,7 +11,7 @@ from jlmirror_async import (
     require_current_execution,
 )
 
-CONSUMER_CONTRACT = "alerting.monitoring-resync@1"
+CONSUMER_CONTRACT = "alerting.monitoring-resync"
 PROBLEM_CONTRACT = "monitoring.problem-state.changed"
 HEALTH_CONTRACT = "monitoring.health-projection.changed"
 

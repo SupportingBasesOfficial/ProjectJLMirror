@@ -35,6 +35,7 @@ def _load_g1():
 
 
 G1 = _load_g1()
+G3_CASE_COOKIE = "jlmirror_g3_case"
 
 
 def utcnow() -> datetime:

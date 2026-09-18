@@ -55,13 +55,13 @@ def envelope():
 
 def admission():
     identity=ScopedMessageIdentity(
-        consumer_contract="alerting.monitoring-resync@1",
+        consumer_contract="alerting.monitoring-resync",
         message_identity_scope="monitoring:tenant:scope",
         message_id="message-1",
         tenant_id="tenant-a",
     )
     request=AsyncExecutionRequest(
-        authority_contract="alerting.monitoring-resync@1",
+        authority_contract="alerting.monitoring-resync",
         runtime_profile_id="runtime.worker@1",
         tenant_id="tenant-a",
         message_identity=identity,
@@ -101,7 +101,7 @@ def admission():
 
 class PgPortTests(unittest.TestCase):
     def test_admit_calls_only_guarded_capability(self):
-        pg=FakePg(['{"consumer_contract":"alerting.monitoring-resync@1","message_identity_scope":"monitoring:tenant:scope","message_id":"message-1","tenant_id":"tenant-a","receipt_state":"admitted","duplicate":false}'])
+        pg=FakePg(['{"consumer_contract":"alerting.monitoring-resync","message_identity_scope":"monitoring:tenant:scope","message_id":"message-1","tenant_id":"tenant-a","receipt_state":"admitted","duplicate":false}'])
         identity,state=PgTransportPort(pg).admit(envelope())
         self.assertEqual(state,"admitted")
         self.assertEqual(identity.tenant_id,"tenant-a")

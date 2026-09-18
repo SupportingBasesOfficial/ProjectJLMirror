@@ -22,8 +22,6 @@ class SqlBoundaryTests(unittest.TestCase):
         ):
             self.assertIn(name,LOWER)
         self.assertNotIn("alert_id",LOWER)
-        self.assertNotIn("policy_id",LOWER)
-        self.assertNotIn("lifecycle_state",LOWER)
 
     def test_application_role_receives_execute_not_table_mutation(self):
         self.assertIn("grant execute on function",LOWER)

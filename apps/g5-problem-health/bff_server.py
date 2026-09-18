@@ -254,7 +254,7 @@ BEGIN;
 SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY;
 SET LOCAL ROLE wave4_runtime;
 SET LOCAL jlmirror.tenant_id=:'tenant';
-WITH eligible AS (
+WITH raw AS (
   SELECT
     h.monitoring_resource_id,
     h.monitoring_source_id,
@@ -266,7 +266,19 @@ WITH eligible AS (
     r.presence_state,
     r.presence_evidence_state,
     h.health_class,
-    h.evidence_state,
+    CASE
+      WHEN h.source_instance_generation<>s.active_source_instance_generation
+           AND h.evidence_state='current'
+        THEN 'stale'
+      WHEN (
+        r.scope_state<>'in_scope'
+        OR r.scope_evidence_state<>'current'
+        OR r.presence_state<>'present'
+        OR r.presence_evidence_state<>'current'
+      ) AND h.evidence_state='current'
+        THEN 'reconciliation_required'
+      ELSE h.evidence_state
+    END AS evidence_state,
     h.projection_revision,
     h.last_changed_at,
     h.last_evidence_at,
@@ -279,17 +291,15 @@ WITH eligible AS (
     ON r.tenant_id=h.tenant_id
    AND r.monitoring_resource_id=h.monitoring_resource_id
   WHERE h.tenant_id=:'tenant'
-    AND (:'source_id'='' OR h.monitoring_source_id=:'source_id')
-    AND (
-      (:'generation_state'='active_generation'
-       AND h.source_instance_generation=s.active_source_instance_generation)
-      OR
-      (:'generation_state'='historical_generation'
-       AND h.source_instance_generation<>s.active_source_instance_generation)
-    )
-    AND (:'health_class'='' OR h.health_class=:'health_class')
-    AND (:'evidence_state'='' OR h.evidence_state=:'evidence_state')
-    AND (:'scope_state'='' OR r.scope_state=:'scope_state')
+),
+eligible AS (
+  SELECT *
+  FROM raw
+  WHERE (:'source_id'='' OR monitoring_source_id=:'source_id')
+    AND generation_state=:'generation_state'
+    AND (:'health_class'='' OR health_class=:'health_class')
+    AND (:'evidence_state'='' OR evidence_state=:'evidence_state')
+    AND (:'scope_state'='' OR scope_state=:'scope_state')
 ),
 anchor AS (
   SELECT (:'cursor'='' OR EXISTS (

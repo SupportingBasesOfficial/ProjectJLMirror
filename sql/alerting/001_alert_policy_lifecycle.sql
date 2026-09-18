@@ -108,7 +108,7 @@ CREATE TABLE alerting.alert (
 
 CREATE UNIQUE INDEX alert_one_active_occurrence
 ON alerting.alert(
-    tenant_id,policy_id,policy_version,source_kind,source_subject_id
+    tenant_id,policy_id,source_kind,source_subject_id
 )
 WHERE lifecycle_state='active';
 
@@ -369,7 +369,12 @@ BEGIN
        AND policy_version=p_policy_version;
 
     IF FOUND THEN
-        IF v_existing.content_hash IS DISTINCT FROM v_hash THEN
+        IF v_existing.content_hash IS DISTINCT FROM v_hash
+           OR v_existing.source_kind IS DISTINCT FROM p_source_kind
+           OR v_existing.problem_min_severity IS DISTINCT FROM p_problem_min_severity
+           OR v_existing.health_classes IS DISTINCT FROM v_health
+           OR v_existing.monitoring_source_id IS DISTINCT FROM p_monitoring_source_id
+           OR v_existing.monitoring_resource_id IS DISTINCT FROM p_monitoring_resource_id THEN
             RAISE EXCEPTION 'g7.policy_version_equivalence_conflict';
         END IF;
         RETURN jsonb_build_object(
@@ -421,9 +426,12 @@ BEGIN
 
     PERFORM set_config('jlmirror.tenant_id',p_tenant_id,true);
     PERFORM 1 FROM alerting.alert_policy_version
-     WHERE tenant_id=p_tenant_id AND policy_id=p_policy_id AND policy_version=p_policy_version;
+     WHERE tenant_id=p_tenant_id
+       AND policy_id=p_policy_id
+       AND policy_version=p_policy_version
+       AND superseded_at IS NULL;
     IF NOT FOUND THEN
-        RAISE EXCEPTION 'g7.policy_version_missing';
+        RAISE EXCEPTION 'g7.policy_version_missing_or_superseded';
     END IF;
 
     SELECT policy_version INTO v_old
@@ -617,21 +625,17 @@ BEGIN
       FROM alerting.alert
      WHERE tenant_id=p_tenant_id
        AND policy_id=p_policy_id
-       AND policy_version=p_policy_version
        AND source_kind=v_policy.source_kind
        AND source_subject_id=p_source_subject_id
        AND lifecycle_state='active'
      FOR UPDATE;
 
-    IF NOT FOUND AND (NOT v_match OR NOT v_effective) THEN
-        RETURN jsonb_build_object('effect','none','reason','no_effect_authority','source_revision',v_revision);
-    END IF;
-
-    IF FOUND AND v_match THEN
+    IF FOUND AND v_active.policy_version<>p_policy_version THEN
         RETURN jsonb_build_object(
             'effect','none',
-            'reason','active_occurrence_still_matches',
+            'reason','active_occurrence_owned_by_other_policy_version',
             'alert_id',v_active.alert_id,
+            'owner_policy_version',v_active.policy_version,
             'source_revision',v_revision
         );
     END IF;
@@ -642,7 +646,53 @@ BEGIN
         || chr(31) || v_revision::TEXT
     );
 
+    SELECT * INTO v_existing
+      FROM alerting.alert_decision
+     WHERE tenant_id=p_tenant_id AND decision_id=v_decision_id;
+
     IF FOUND THEN
+        v_decision_hash := CASE v_existing.effect_kind
+            WHEN 'create' THEN md5(
+                v_decision_id || chr(31) || v_policy.content_hash || chr(31) || 'create'
+            )
+            WHEN 'resolve' THEN md5(
+                v_decision_id || chr(31) || v_policy.content_hash || chr(31)
+                || 'resolve' || chr(31) || v_existing.alert_id
+            )
+            ELSE NULL
+        END;
+        IF v_decision_hash IS NULL
+           OR v_existing.decision_hash IS DISTINCT FROM v_decision_hash
+           OR v_existing.policy_id IS DISTINCT FROM p_policy_id
+           OR v_existing.policy_version IS DISTINCT FROM p_policy_version
+           OR v_existing.source_kind IS DISTINCT FROM v_policy.source_kind
+           OR v_existing.source_subject_id IS DISTINCT FROM p_source_subject_id
+           OR v_existing.source_revision IS DISTINCT FROM v_revision THEN
+            RAISE EXCEPTION 'g7.decision_equivalence_conflict';
+        END IF;
+        RETURN jsonb_build_object(
+            'effect',v_existing.effect_kind,
+            'alert_id',v_existing.alert_id,
+            'decision_id',v_existing.decision_id,
+            'duplicate',true,
+            'source_revision',v_existing.source_revision
+        );
+    END IF;
+
+    IF v_active.alert_id IS NULL AND (NOT v_match OR NOT v_effective) THEN
+        RETURN jsonb_build_object('effect','none','reason','no_effect_authority','source_revision',v_revision);
+    END IF;
+
+    IF v_active.alert_id IS NOT NULL AND v_match THEN
+        RETURN jsonb_build_object(
+            'effect','none',
+            'reason','active_occurrence_still_matches',
+            'alert_id',v_active.alert_id,
+            'source_revision',v_revision
+        );
+    END IF;
+
+    IF v_active.alert_id IS NOT NULL THEN
         v_alert_id := v_active.alert_id;
         v_decision_hash := md5(
             v_decision_id || chr(31) || v_policy.content_hash || chr(31)
@@ -653,23 +703,6 @@ BEGIN
             v_decision_id || chr(31) || v_policy.content_hash || chr(31) || 'create'
         );
         v_alert_id := 'g7-alert:' || md5(v_decision_id || chr(31) || v_policy.content_hash);
-    END IF;
-
-    SELECT * INTO v_existing
-      FROM alerting.alert_decision
-     WHERE tenant_id=p_tenant_id AND decision_id=v_decision_id;
-
-    IF FOUND THEN
-        IF v_existing.decision_hash IS DISTINCT FROM v_decision_hash THEN
-            RAISE EXCEPTION 'g7.decision_equivalence_conflict';
-        END IF;
-        RETURN jsonb_build_object(
-            'effect',v_existing.effect_kind,
-            'alert_id',v_existing.alert_id,
-            'decision_id',v_existing.decision_id,
-            'duplicate',true,
-            'source_revision',v_existing.source_revision
-        );
     END IF;
 
     IF v_active.alert_id IS NOT NULL THEN

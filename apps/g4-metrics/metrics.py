@@ -243,6 +243,16 @@ class MetricsView:
             return None
         self._admit_resource_and_metric(tenant_id)
         _generation(result.definition.generation_state)
+        if result.coverage.state not in {
+            "complete", "incomplete", "gap_detected", "reconciliation_required"
+        }:
+            raise RuntimeError("invalid history completeness state")
+        if result.coverage.state == "complete":
+            if result.coverage.covered_through is None:
+                raise RuntimeError("complete history requires covered_through evidence")
+            covered = _parse_utc(result.coverage.covered_through)
+            if covered < end:
+                raise RuntimeError("complete history does not cover requested window")
         if len(result.observations) > limit:
             raise RuntimeError("history repository exceeded requested limit")
         for row in result.observations:

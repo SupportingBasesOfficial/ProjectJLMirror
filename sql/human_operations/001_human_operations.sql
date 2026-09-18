@@ -18,7 +18,7 @@ BEGIN
 END;
 $$;
 
-DO $
+DO $$
 DECLARE
     v_executor_oid OID;
     v_unexpected TEXT;
@@ -74,7 +74,7 @@ BEGIN
         RAISE EXCEPTION 'g8.executor_unexpected_owned_object:%',v_unexpected;
     END IF;
 END;
-$;
+$$;
 
 GRANT USAGE ON SCHEMA human_operations, monitoring, alerting TO jlmirror_g8_human_operations_executor;
 GRANT USAGE ON SCHEMA human_operations TO jlmirror_g8_human_operations_invoker;
@@ -288,17 +288,17 @@ CREATE OR REPLACE FUNCTION human_operations.g8_reject_immutable_mutation()
 RETURNS trigger
 LANGUAGE plpgsql SECURITY INVOKER
 SET search_path=pg_catalog,human_operations
-AS $
+AS $$
 BEGIN
     RAISE EXCEPTION 'g8.immutable_fact';
 END;
-$;
+$$;
 
 CREATE OR REPLACE FUNCTION human_operations.g8_guard_responsibility_closure()
 RETURNS trigger
 LANGUAGE plpgsql SECURITY INVOKER
 SET search_path=pg_catalog,human_operations
-AS $
+AS $$
 BEGIN
     IF TG_OP='DELETE' THEN
         RAISE EXCEPTION 'g8.responsibility_delete_forbidden';
@@ -325,13 +325,13 @@ BEGIN
     END IF;
     RETURN NEW;
 END;
-$;
+$$;
 
 CREATE OR REPLACE FUNCTION human_operations.g8_guard_action_closure()
 RETURNS trigger
 LANGUAGE plpgsql SECURITY INVOKER
 SET search_path=pg_catalog,human_operations
-AS $
+AS $$
 BEGIN
     IF TG_OP='DELETE' THEN
         RAISE EXCEPTION 'g8.action_delete_forbidden';
@@ -357,7 +357,7 @@ BEGIN
     END IF;
     RETURN NEW;
 END;
-$;
+$$;
 
 CREATE TRIGGER g8_resource_responsibility_guard
 BEFORE UPDATE OR DELETE ON human_operations.resource_responsibility_assignment
@@ -864,7 +864,7 @@ GRANT EXECUTE ON FUNCTION human_operations.g8_record_visibility_receipt(TEXT,TEX
 GRANT EXECUTE ON FUNCTION human_operations.g8_alert_human_operations(TEXT,TEXT) TO jlmirror_g8_human_operations_invoker;
 GRANT EXECUTE ON FUNCTION human_operations.g8_resource_responsibilities(TEXT,TEXT) TO jlmirror_g8_human_operations_invoker;
 
-DO $
+DO $$
 DECLARE
     v_executor_oid OID;
     v_invoker_oid OID;
@@ -927,6 +927,6 @@ BEGIN
         END IF;
     END LOOP;
 END;
-$;
+$$;
 
 COMMIT;

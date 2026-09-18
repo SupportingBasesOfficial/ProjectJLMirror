@@ -806,11 +806,18 @@ class Handler(G3.Handler):
                 resource = query.get("monitoring_resource_id", [None])[0]
                 if resource is None:
                     raise ValueError("monitoring_resource_id is required")
+                cursor = query.get("cursor", [None])[0]
+                try:
+                    limit = int(query.get("limit", ["200"])[0])
+                except ValueError as exc:
+                    raise ValueError("limit must be an integer") from exc
                 self._send_private_json(
                     HTTPStatus.OK,
                     service.list_definitions(
                         tenant_id=tenant_id,
                         monitoring_resource_id=resource,
+                        cursor=cursor,
+                        limit=limit,
                     ),
                 )
                 return True
@@ -826,11 +833,18 @@ class Handler(G3.Handler):
                 resource = query.get("monitoring_resource_id", [None])[0]
                 if resource is None:
                     raise ValueError("monitoring_resource_id is required")
+                cursor = query.get("cursor", [None])[0]
+                try:
+                    limit = int(query.get("limit", ["200"])[0])
+                except ValueError as exc:
+                    raise ValueError("limit must be an integer") from exc
                 self._send_json(
                     HTTPStatus.OK,
                     service.list_current(
                         tenant_id=tenant_id,
                         monitoring_resource_id=resource,
+                        cursor=cursor,
+                        limit=limit,
                     ),
                 )
                 return True
@@ -842,6 +856,7 @@ class Handler(G3.Handler):
             to_ts = query.get("to", [None])[0]
             if metric_id is None or from_ts is None or to_ts is None:
                 raise ValueError("metric_definition_id, from and to are required")
+            cursor = query.get("cursor", [None])[0]
             limit_text = query.get("limit", ["200"])[0]
             try:
                 limit = int(limit_text)
@@ -852,6 +867,7 @@ class Handler(G3.Handler):
                 metric_definition_id=metric_id,
                 from_ts=from_ts,
                 to_ts=to_ts,
+                cursor=cursor,
                 limit=limit,
             )
             if value is None:

@@ -22,7 +22,7 @@ $$;
 -- The executor is a dedicated NOLOGIN capability owner. Before any G7
 -- storage authority is granted, reject unsafe attributes, memberships or
 -- unrelated persistent objects already owned by that role.
-DO $
+DO $$
 DECLARE
     v_executor_oid OID;
     v_unexpected TEXT;
@@ -85,7 +85,7 @@ BEGIN
         RAISE EXCEPTION 'g7.executor_unexpected_owned_object:%',v_unexpected;
     END IF;
 END;
-$;
+$$;
 
 GRANT USAGE ON SCHEMA alerting, monitoring TO jlmirror_g7_alerting_executor;
 GRANT USAGE ON SCHEMA alerting TO jlmirror_g7_alerting_invoker;
@@ -376,7 +376,7 @@ FOR EACH ROW EXECUTE FUNCTION alerting.g7_guard_alert_mutation();
 -- CREATE OR REPLACE preserves function OIDs and ACLs. Reject poisoned
 -- canonical entry points before replacing their bodies or elevating them under
 -- the dedicated executor.
-DO $
+DO $$
 DECLARE
     v_executor_oid OID;
     v_invoker_oid OID;
@@ -445,7 +445,7 @@ BEGIN
         END IF;
     END LOOP;
 END;
-$;
+$$;
 
 CREATE OR REPLACE FUNCTION alerting.g7_create_policy_version(
     p_tenant_id TEXT,
@@ -1020,7 +1020,7 @@ TO jlmirror_g7_alerting_invoker;
 -- EXECUTE authority, and grant only non-delegable EXECUTE to the canonical
 -- invoker. This also detects unsafe installer default function privileges on
 -- first creation before the transaction can commit.
-DO $
+DO $$
 DECLARE
     v_executor_oid OID;
     v_invoker_oid OID;
@@ -1098,6 +1098,6 @@ BEGIN
         END IF;
     END LOOP;
 END;
-$;
+$$;
 
 COMMIT;

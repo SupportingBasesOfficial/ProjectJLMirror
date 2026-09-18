@@ -32,13 +32,13 @@ resource responsibility
 ## Required behavior
 
 1. Support multiple concurrent responsible principals for one canonical Monitoring Resource.
-2. Preserve effective intervals and assigning actor/source.
-3. Support exactly one current Alert action owner while retaining history.
+2. Preserve effective intervals and assigning/ending actor/source with one-way terminal closure.
+3. Support exactly one current Alert action owner while retaining history; `no_human_action_required` is projection-only and never creates a fake owner.
 4. Record ACK as immutable actor/time/scope evidence; no unack.
 5. Require current authorization and active/current Alert before new ACK/action effects.
-6. Provide JLMirror-native authenticated visibility requirements for internal or customer principals.
+6. Provide JLMirror-native authenticated visibility requirements for internal or customer principals only while an Alert is active/current.
 7. Derive `not_viewed_yet` only for the admitted native visibility path while no authoritative receipt exists.
-8. Record immutable native visibility receipt and derive `viewed`.
+8. Record immutable native visibility receipt and derive `viewed`; a receipt for a pre-existing requirement may arrive after Alert resolution only as late evidence and must not mutate Alert/action state.
 9. Never infer WhatsApp/email/provider delivery or external read status.
 10. Expose bounded protected API/BFF/UI and derived timeline.
 
@@ -53,7 +53,7 @@ Direct application table mutation is forbidden.
 Prove:
 - cross-tenant denial;
 - stale/resolved Alert denial for new human effects;
-- assignment concurrency and exactly one current action owner;
+- assignment concurrency, terminal closure and exactly one current action owner;
 - ACK replay/equivalence conflict;
 - viewer != acknowledger;
 - multiple responsible principals;

@@ -348,7 +348,9 @@ SELECT COALESCE(json_agg(row_to_json(x)),'[]'::json)::text
 FROM (
   SELECT
     coverage_state,
-    finalized_through_clock
+    finalized_through_clock,
+    CASE WHEN finalized_through_clock IS NULL THEN NULL
+         ELSE to_timestamp(finalized_through_clock) END AS finalized_through_at
   FROM monitoring.metric_history_stream_state
   WHERE tenant_id=:'tenant'
     AND metric_definition_id=:'metric_id'
@@ -374,9 +376,16 @@ COMMIT;
             elif coverage_state == "reconciliation_required":
                 state = "reconciliation_required"
             elif coverage_state == "finalized":
-                state = "complete"
-                if observations:
-                    covered_through = observations[-1].observed_at
+                finalized_through_at = row.get("finalized_through_at")
+                if finalized_through_at is not None:
+                    covered_through = finalized_through_at
+                    finalized = datetime.fromisoformat(
+                        finalized_through_at.replace("Z", "+00:00")
+                    ).astimezone(timezone.utc)
+                    requested_to = datetime.fromisoformat(
+                        to_ts.replace("Z", "+00:00")
+                    ).astimezone(timezone.utc)
+                    state = "complete" if finalized >= requested_to else "incomplete"
             elif coverage_state != "open":
                 raise RuntimeError("unknown metric history coverage state")
 

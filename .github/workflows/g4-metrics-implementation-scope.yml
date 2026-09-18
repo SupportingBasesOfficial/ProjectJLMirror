@@ -14,7 +14,7 @@ env:
   G4_SCOPE_COMMAND: /jlmirror-g4-scope-attest
   G4_READY_COMMAND: /jlmirror-g4-scope-ready
   G4_SCOPE_VALIDATOR: tools/assurance/validate_g4_metrics_implementation_scope.py
-  G3_READINESS_VALIDATOR: tools/assurance/validate_g4_metrics_scope_readiness.py
+  G4_READINESS_VALIDATOR: tools/assurance/validate_g4_metrics_scope_readiness.py
   G4_SCOPE_STATUS_CONTEXT: JLMIRROR / g4-metrics-implementation-scope
   G4_READY_STATUS_CONTEXT: JLMIRROR / g4-metrics-merge-readiness
   G4_REQUIRED_LABEL: jlmirror-slice:g4-metrics
@@ -211,7 +211,7 @@ jobs:
         run: |
           set -euo pipefail
           trusted_readiness="$RUNNER_TEMP/g4-scope-readiness-validator.py"
-          gh api "repos/${GITHUB_REPOSITORY}/contents/${G3_READINESS_VALIDATOR}?ref=${PR_BASE_SHA}" --jq .content | base64 -d > "$trusted_readiness"
+          gh api "repos/${GITHUB_REPOSITORY}/contents/${G4_READINESS_VALIDATOR}?ref=${PR_BASE_SHA}" --jq .content | base64 -d > "$trusted_readiness"
           test -s "$trusted_readiness"
           printf 'TRUSTED_READINESS_VALIDATOR=%s\n' "$trusted_readiness" >> "$GITHUB_ENV"
 

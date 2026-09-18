@@ -50,8 +50,6 @@ def problem_row(problem_id="problem-1",opened_at="2026-09-18T05:00:00+00:00"):
         "evidence_state":"current",
         "provider_object_kind":None,
         "provider_external_ref":None,
-        "provider_acknowledged":None,
-        "provider_metadata":None,
     }
 
 

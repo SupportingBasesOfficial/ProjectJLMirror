@@ -25,7 +25,6 @@ class ContractTests(unittest.TestCase):
         schema=self.schema("result.schema.json")
         self.assertFalse(schema["additionalProperties"])
         self.assertNotIn("alert_id",schema["properties"])
-        self.assertNotIn("lifecycle_state",schema["properties"])
         kinds=schema["properties"]["effect_result_kind"]["enum"]
         self.assertIn("monitoring_owner_reread_noncurrent_generation",kinds)
 

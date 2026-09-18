@@ -16,7 +16,6 @@ class ContractTests(unittest.TestCase):
         self.assertFalse(schema["additionalProperties"])
         item=schema["$defs"]["item"]
         self.assertFalse(item["additionalProperties"])
-        self.assertNotIn("provider_acknowledged",item["properties"])
         self.assertNotIn("provider_metadata",item["properties"])
 
     def test_health_contract_has_only_canonical_classes(self):

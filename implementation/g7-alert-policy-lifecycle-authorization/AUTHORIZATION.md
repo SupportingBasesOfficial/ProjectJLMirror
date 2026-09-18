@@ -131,13 +131,25 @@ Shared G1–G6, Wave 2, Wave 4 and Monitoring files remain read-only.
 
 ## Persistence boundary
 
-The exact SQL migration may create only G7-owned Alerting business state required for:
+The exact SQL migration may create only these G7-owned Alerting relations:
+
+```text
+alerting.alert_policy
+alerting.alert_policy_version
+alerting.alert_policy_effective_version
+alerting.alert
+alerting.alert_transition
+alerting.alert_decision
+```
+
+Those relations are limited to:
 - immutable policy identity/version;
 - current policy activation/effective-version binding;
 - canonical Alert projection;
 - immutable Alert transition history;
-- exact decision/idempotency evidence;
-- least-privilege guarded capabilities and tenant RLS.
+- exact decision/idempotency evidence.
+
+Guarded functions, roles, constraints, indexes and tenant RLS may support those relations, but no additional Alerting business-state relation is authorized.
 
 It may not create ACK, responsibility, notification, delivery, view/read, response/waiting, approval, ITSM, Automation or AIOps state.
 

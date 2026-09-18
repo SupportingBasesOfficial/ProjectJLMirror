@@ -233,6 +233,16 @@ class G3Server(G1.G1Server):
 class Handler(G1.Handler):
     server: G3Server
 
+    def _send_private_json(self, status: int, body: dict) -> None:
+        payload = json.dumps(body, separators=(",", ":")).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(payload)))
+        self.send_header("Cache-Control", "private, no-cache")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.end_headers()
+        self.wfile.write(payload)
+
     @staticmethod
     def _parse_resource_path(path: str):
         parts = path.split("/")
@@ -308,7 +318,7 @@ class Handler(G1.Handler):
             try:
                 service = self._service(session)
                 if resource_id is None:
-                    self._send_json(HTTPStatus.OK, service.list_current(tenant_id=tenant_id))
+                    self._send_private_json(HTTPStatus.OK, service.list_current(tenant_id=tenant_id))
                     return
                 detail = service.get_detail(
                     tenant_id=tenant_id,

@@ -31,7 +31,7 @@ def main() -> int:
     # Historical PR154 diff admission must remain strict for its own branch,
     # but successor PRs that merely touch a watched cross-cutting validator
     # must not be reclassified as the old G2 authorization PR.
-    if not validator.should_validate_historical_authorization_diff(event_name=None, head_ref=None, ref_name=None):
+    if not validator.should_validate_historical_authorization_diff(event_name="", head_ref="", ref_name=""):
         raise AssertionError("local G2 authorization validation must remain strict")
     if not validator.should_validate_historical_authorization_diff(
         event_name="pull_request",

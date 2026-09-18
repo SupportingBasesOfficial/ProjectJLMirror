@@ -43,7 +43,7 @@ def main() -> int:
     except Exception:
         labels = set(); errors.append("labels-json is invalid")
     if policy["implementation_pr_required_label"] not in labels: errors.append("implementation PR missing required G3 label")
-    changed = [p for p in git(root, "diff", "--name-only", f"{args.base}...{args.head}").splitlines() if p]
+    changed = [p for p in git(root, "diff", "--name-only", "--no-renames", f"{args.base}...{args.head}").splitlines() if p]
     if not changed: errors.append("implementation diff is empty")
     forbidden_tokens = tuple(str(x).lower() for x in policy.get("forbidden_path_tokens") or [])
     for path in changed:

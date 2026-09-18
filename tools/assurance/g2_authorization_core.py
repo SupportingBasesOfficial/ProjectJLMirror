@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import os
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -17,6 +18,7 @@ REVIEW_GUARDRAILS = ROOT / "tools/assurance/test_validate_g2_monitoring_source_o
 LEARNING_LEDGER = ROOT / "governance/adversarial/learning-ledger.d/pr-154-g2-authorization-review-findings.json"
 BASE_SHA = "8e26b05596aeca2e45578908ca4afc4f1fa175d6"
 AUTH_ID = "g2.monitoring-source-onboarding@1"
+AUTHORIZATION_BRANCH = "governance/g2-monitoring-source-onboarding-authorization"
 EXPECTED_SCOPE_WORKFLOW_BLOB = "f19ed6d94ffc63f3acffd773eaf9246217a80495"
 
 _SCOPE_CORE_PATH = ROOT / "tools/assurance/g2_scope_core.py"
@@ -171,7 +173,32 @@ def validate_docs() -> list[str]:
     return errors
 
 
+def should_validate_historical_authorization_diff(
+    *,
+    event_name: str | None = None,
+    head_ref: str | None = None,
+    ref_name: str | None = None,
+) -> bool:
+    """Apply the PR154 historical diff allowlist only to its own branch/event.
+
+    Outside GitHub Actions (no event metadata), remain strict so local/adversarial
+    invocations still exercise the historical authorization boundary.
+    """
+    event = event_name if event_name is not None else os.environ.get("GITHUB_EVENT_NAME")
+    head = head_ref if head_ref is not None else os.environ.get("GITHUB_HEAD_REF")
+    ref = ref_name if ref_name is not None else os.environ.get("GITHUB_REF_NAME")
+    if not event:
+        return True
+    if event == "pull_request":
+        return head == AUTHORIZATION_BRANCH
+    if event == "push":
+        return ref == AUTHORIZATION_BRANCH
+    return False
+
+
 def validate_changed_paths() -> list[str]:
+    if not should_validate_historical_authorization_diff():
+        return []
     try:
         out = subprocess.check_output(["git", "-C", str(ROOT), "diff", "--name-only", "--no-renames", f"{BASE_SHA}...HEAD"], text=True)
     except subprocess.CalledProcessError as exc:

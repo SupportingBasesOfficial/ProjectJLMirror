@@ -28,6 +28,30 @@ def main() -> int:
         mutated[key] = value
         must_fail(mutated, fragment)
 
+    # Historical PR154 diff admission must remain strict for its own branch,
+    # but successor PRs that merely touch a watched cross-cutting validator
+    # must not be reclassified as the old G2 authorization PR.
+    if not validator.should_validate_historical_authorization_diff(event_name="", head_ref="", ref_name=""):
+        raise AssertionError("local G2 authorization validation must remain strict")
+    if not validator.should_validate_historical_authorization_diff(
+        event_name="pull_request",
+        head_ref="governance/g2-monitoring-source-onboarding-authorization",
+        ref_name="158/merge",
+    ):
+        raise AssertionError("canonical G2 authorization PR must enforce historical diff allowlist")
+    if validator.should_validate_historical_authorization_diff(
+        event_name="pull_request",
+        head_ref="governance/g3-resource-inventory-authorization",
+        ref_name="158/merge",
+    ):
+        raise AssertionError("successor governance PR must not be treated as historical G2 authorization diff")
+    if validator.should_validate_historical_authorization_diff(
+        event_name="push",
+        head_ref="",
+        ref_name="main",
+    ):
+        raise AssertionError("main push must validate canonical G2 authority without replaying PR154 diff allowlist")
+
     workflow = validator.SCOPE_WORKFLOW.read_text(encoding="utf-8")
     if validator.validate_scope_workflow_text(workflow):
         raise AssertionError("canonical trusted workflow does not match its locked blob")
@@ -46,7 +70,7 @@ def main() -> int:
         if not errors or not any("canonical blob drift" in error for error in errors):
             raise AssertionError(f"workflow mutation escaped blob lock: {errors}")
 
-    print("g2_authorization_falsifier=PASS manifest_mutations=4 workflow_blob_mutations=4")
+    print("g2_authorization_falsifier=PASS manifest_mutations=4 workflow_blob_mutations=4 historical_diff_scope=branch-bound")
     return 0
 
 

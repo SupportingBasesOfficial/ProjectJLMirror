@@ -3,11 +3,17 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
+import unicodedata
 import sys
 from pathlib import Path
 
 MANIFEST_PATH = "implementation/g3-resource-inventory-authorization/AUTHORIZATION_MANIFEST.json"
+EXECUTABLE_SUFFIXES = {".py", ".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".sh", ".bash", ".sql", ".go", ".rs", ".java", ".kt", ".cs", ".rb", ".php"}
+PERSISTENCE_RECEIVERS = ("database", "db", "repository", "repo", "prisma", "postgres", "postgresql", "pg", "sqlalchemy", "psycopg", "cursor")
+PERSISTENCE_WRITES = ("insert", "update", "delete", "save", "upsert", "commit", "persist", "executemany")
+SQL_MUTATION_RE = re.compile(r"\\b(?:insert\\s+into|update|delete\\s+from|merge\\s+into|truncate(?:\\s+table)?|alter\\s+(?:table|schema)|drop\\s+(?:table|schema|view|function|procedure)|create\\s+(?:table|schema|view|function|procedure))\\b", re.IGNORECASE)
 
 def git(root: Path, *args: str) -> str:
     return subprocess.check_output(["git", "-C", str(root), *args], text=True).strip()
@@ -20,6 +26,80 @@ def candidate_text(root: Path, path: str, head: str) -> str:
         return subprocess.check_output(["git", "-C", str(root), "show", f"{head}:{path}"], text=True, stderr=subprocess.DEVNULL)
     except subprocess.CalledProcessError:
         return ""
+
+def semantic_fold(value: str) -> str:
+    normalized = unicodedata.normalize("NFKC", value).casefold()
+    normalized = re.sub(r"\\u\\{?([0-9a-fA-F]{4,6})\\}?", lambda m: chr(int(m.group(1), 16)), normalized)
+    normalized = re.sub(r"\\x([0-9a-fA-F]{2})", lambda m: chr(int(m.group(1), 16)), normalized)
+    return re.sub(r"[^a-z0-9]+", "", normalized)
+
+
+def semantic_errors(path: str, text: str, policy: dict) -> list[str]:
+    if Path(path).suffix.lower() not in EXECUTABLE_SUFFIXES:
+        return []
+    errors: list[str] = []
+    folded = semantic_fold(text)
+    for marker in policy.get("forbidden_code_markers") or []:
+        marker_folded = semantic_fold(str(marker))
+        if marker_folded and marker_folded in folded:
+            errors.append(f"forbidden G3 semantic marker '{marker}' in {path}")
+    if SQL_MUTATION_RE.search(text):
+        errors.append(f"direct SQL/schema mutation is forbidden in G3 executable artifact: {path}")
+    receiver = "|".join(re.escape(x) for x in PERSISTENCE_RECEIVERS)
+    method = "|".join(re.escape(x) for x in PERSISTENCE_WRITES)
+    if re.search(rf"\\b(?:{receiver})\\s*\\.\\s*(?:{method})\\s*\\(", text, re.IGNORECASE):
+        errors.append(f"direct persistence write is forbidden in G3 executable artifact: {path}")
+    return errors
+
+
+def runtime_workflow_errors(text: str, policy: dict) -> list[str]:
+    errors: list[str] = []
+    try:
+        workflow = json.loads(text)
+    except json.JSONDecodeError:
+        return ["G3 runtime workflow must use canonical JSON-compatible workflow structure"]
+    if workflow.get("name") != policy.get("runtime_workflow_name"):
+        errors.append("G3 runtime workflow name drift")
+    if workflow.get("permissions") != {}:
+        errors.append("G3 runtime workflow must default to zero permissions")
+    triggers = workflow.get("on")
+    if not isinstance(triggers, dict) or set(triggers) != {"pull_request", "workflow_dispatch"}:
+        errors.append("G3 runtime workflow trigger surface drift")
+    jobs = workflow.get("jobs")
+    if not isinstance(jobs, dict) or set(jobs) != {"g3-runtime"}:
+        errors.append("G3 runtime workflow must contain exactly g3-runtime job")
+        return errors
+    job = jobs["g3-runtime"]
+    if not isinstance(job, dict) or job.get("runs-on") not in {"ubuntu-24.04", "ubuntu-latest"}:
+        errors.append("G3 runtime job runner drift")
+    steps = job.get("steps") if isinstance(job, dict) else None
+    if not isinstance(steps, list) or not steps:
+        errors.append("G3 runtime workflow steps missing")
+        return errors
+    allowed_actions = set(policy.get("runtime_allowed_actions") or [])
+    runs: list[str] = []
+    for step in steps:
+        if not isinstance(step, dict):
+            errors.append("G3 runtime workflow step must be an object")
+            continue
+        use = step.get("uses")
+        run = step.get("run")
+        if use is not None:
+            if use not in allowed_actions:
+                errors.append(f"G3 runtime workflow uses unauthorized action: {use}")
+            if run is not None:
+                errors.append("G3 runtime workflow step cannot combine uses and run")
+        elif run is not None:
+            if not isinstance(run, str):
+                errors.append("G3 runtime workflow run step must be a string")
+            else:
+                runs.append(run.strip())
+        else:
+            errors.append("G3 runtime workflow step must contain uses or run")
+    if runs != [policy.get("runtime_entrypoint")]:
+        errors.append("G3 runtime workflow must execute exactly the canonical runtime entrypoint once")
+    return errors
+
 
 def main() -> int:
     parser = argparse.ArgumentParser()
@@ -54,10 +134,14 @@ def main() -> int:
         if any(token in lower_path for token in forbidden_tokens):
             errors.append(f"forbidden G3 path token in {path}")
         if path.startswith(tuple(policy.get("semantic_scan_prefixes") or [])):
-            text = candidate_text(root, path, args.head).lower()
-            for marker in policy.get("forbidden_code_markers") or []:
-                if marker.lower() in text:
-                    errors.append(f"forbidden G3 semantic marker '{marker}' in {path}")
+            text = candidate_text(root, path, args.head)
+            errors.extend(semantic_errors(path, text, policy))
+    runtime_path = policy["runtime_workflow"]
+    runtime_text = candidate_text(root, runtime_path, args.head)
+    if not runtime_text:
+        errors.append("G3 runtime workflow missing")
+    else:
+        errors.extend(runtime_workflow_errors(runtime_text, policy))
     claim_path = policy["implementation_claim_path"]
     claim_text = candidate_text(root, claim_path, args.head)
     if not claim_text:

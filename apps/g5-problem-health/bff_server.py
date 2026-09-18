@@ -71,7 +71,6 @@ class PgProblemHealthReadPort:
             "generation_state", "monitoring_resource_id", "summary", "problem_state",
             "severity_class", "opened_at", "resolved_at", "last_confirmed_at",
             "evidence_state", "provider_object_kind", "provider_external_ref",
-            "provider_acknowledged", "provider_metadata",
         }
         if set(value) != expected:
             raise RuntimeError("problem read shape is invalid")
@@ -127,8 +126,6 @@ WITH eligible AS (
     p.evidence_state,
     NULL::text AS provider_object_kind,
     NULL::text AS provider_external_ref,
-    NULL::boolean AS provider_acknowledged,
-    NULL::json AS provider_metadata
   FROM monitoring.monitoring_problem p
   JOIN monitoring.monitoring_source s
     ON s.tenant_id=p.tenant_id
@@ -222,8 +219,6 @@ FROM (
     p.evidence_state,
     'zabbix_event'::text AS provider_object_kind,
     b.provider_external_ref,
-    p.provider_acknowledged,
-    p.provider_metadata
   FROM monitoring.monitoring_problem p
   JOIN monitoring.monitoring_source s
     ON s.tenant_id=p.tenant_id
@@ -400,8 +395,6 @@ class FixtureProblemHealthReadPort:
             evidence_state="current",
             provider_object_kind="zabbix_event",
             provider_external_ref="9001",
-            provider_acknowledged=True,
-            provider_metadata={"tags":["cpu"]},
         )
         self.resolved = ProblemRecord(
             problem_id="problem-2",

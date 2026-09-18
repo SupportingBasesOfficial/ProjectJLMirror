@@ -34,8 +34,6 @@ class ProblemRecord:
     evidence_state: str
     provider_object_kind: str | None = None
     provider_external_ref: str | None = None
-    provider_acknowledged: bool | None = None
-    provider_metadata: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -291,18 +289,9 @@ class ProblemHealthView:
             "evidence_state": evidence,
         }
         if detail:
-            metadata = row.provider_metadata or {}
-            encoded = json.dumps(metadata, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
-            if len(encoded) > 131072:
-                raise RuntimeError("provider metadata exceeds accepted bound")
             value["external_references"] = {
                 "provider_object_kind": row.provider_object_kind,
                 "provider_external_ref": row.provider_external_ref,
-            }
-            value["provider_metadata"] = {
-                "provider_acknowledged": bool(row.provider_acknowledged),
-                "metadata": metadata,
-                "authoritative_for_platform_ack": False,
             }
         return value
 

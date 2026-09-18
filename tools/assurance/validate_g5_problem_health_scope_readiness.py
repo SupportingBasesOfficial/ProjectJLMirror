@@ -107,7 +107,7 @@ def validate_workflow_run(run: dict[str, Any], *, run_id: int, repo: str, defaul
 
 
 def expected_publisher_job_name(*, pr_number: int, mode: str, base_sha: str, head_sha: str, head_ref: str) -> str:
-    return f"g4-publish-final pr={pr_number} mode={mode} base={base_sha} head={head_sha} ref={head_ref}"
+    return f"g5-publish-final pr={pr_number} mode={mode} base={base_sha} head={head_sha} ref={head_ref}"
 
 
 def validate_publisher_job(jobs_payload: dict[str, Any], *, pr_number: int, mode: str, base_sha: str, head_sha: str, head_ref: str) -> None:

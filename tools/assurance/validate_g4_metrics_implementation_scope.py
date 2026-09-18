@@ -169,7 +169,7 @@ def main() -> int:
         try:
             claim = json.loads(claim_text)
             if set(claim) != {"schema_version","authorization_id","slice_id"}: errors.append("G4 implementation claim shape drift")
-            if claim.get("schema_version") != 1 or claim.get("authorization_id") != "g4.resource-inventory@1" or claim.get("slice_id") != "g4.resource-inventory@1": errors.append("G4 implementation claim identity drift")
+            if claim.get("schema_version") != 1 or claim.get("authorization_id") != "g4.metrics@1" or claim.get("slice_id") != "g4.metrics@1": errors.append("G4 implementation claim identity drift")
         except Exception:
             errors.append("G4 implementation claim is invalid JSON")
     for error in errors:

@@ -6,6 +6,8 @@ on:
       - 'implementation/g3-resource-inventory-authorization/**'
       - 'tools/assurance/validate_g3_resource_inventory_authorization.py'
       - 'tools/assurance/validate_g3_resource_inventory_implementation_scope.py'
+      - 'tools/assurance/test_validate_g3_resource_inventory_authorization.py'
+      - 'tools/assurance/test_validate_g3_resource_inventory_implementation_scope.py'
       - 'tools/assurance/validate_g3_resource_inventory_scope_readiness.py'
       - '.github/workflows/g3-resource-inventory-authorization.yml'
       - '.github/workflows/g3-resource-inventory-implementation-scope.yml'
@@ -75,6 +77,12 @@ jobs:
 
       - name: Validate G3 authorization
         run: python3 tools/assurance/validate_g3_resource_inventory_authorization.py
+
+      - name: Falsify G3 authorization boundaries
+        run: python3 tools/assurance/test_validate_g3_resource_inventory_authorization.py
+
+      - name: Falsify future G3 implementation scope
+        run: python3 tools/assurance/test_validate_g3_resource_inventory_implementation_scope.py
 
       - name: Validate repository structure and workflow safety
         run: python3 tools/assurance/validate_repository.py

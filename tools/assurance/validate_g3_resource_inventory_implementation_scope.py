@@ -45,9 +45,24 @@ def semantic_errors(path: str, text: str, policy: dict) -> list[str]:
             errors.append(f"forbidden G3 semantic marker '{marker}' in {path}")
     if SQL_MUTATION_RE.search(text):
         errors.append(f"direct SQL/schema mutation is forbidden in G3 executable artifact: {path}")
-    receiver = "|".join(re.escape(x) for x in PERSISTENCE_RECEIVERS)
+    receivers = set(PERSISTENCE_RECEIVERS)
+    assignment_re = re.compile(
+        r"\b(?:const\s+|let\s+|var\s+)?([A-Za-z_$][\w$]*)\s*=\s*(?:(?:self|this)\s*\.\s*)?([A-Za-z_$][\w$]*)\b"
+    )
+    changed = True
+    while changed:
+        changed = False
+        for alias, source in assignment_re.findall(text):
+            if source.casefold() in {name.casefold() for name in receivers} and alias not in receivers:
+                receivers.add(alias)
+                changed = True
+
+    receiver = "|".join(sorted((re.escape(x) for x in receivers), key=len, reverse=True))
     method = "|".join(re.escape(x) for x in PERSISTENCE_WRITES)
-    if re.search(rf"\b(?:{receiver})\s*\.\s*(?:{method})\s*\(", text, re.IGNORECASE):
+    property_write_re = re.compile(rf"\b(?:{receiver})\s*\.\s*(?:{method})\b", re.IGNORECASE)
+    bracket_write_re = re.compile(rf"\b(?:{receiver})\s*\[\s*['\"](?:{method})['\"]\s*\]", re.IGNORECASE)
+    getattr_write_re = re.compile(rf"\bgetattr\s*\(\s*(?:{receiver})\s*,\s*['\"](?:{method})['\"]\s*\)", re.IGNORECASE)
+    if property_write_re.search(text) or bracket_write_re.search(text) or getattr_write_re.search(text):
         errors.append(f"direct persistence write is forbidden in G3 executable artifact: {path}")
     return errors
 

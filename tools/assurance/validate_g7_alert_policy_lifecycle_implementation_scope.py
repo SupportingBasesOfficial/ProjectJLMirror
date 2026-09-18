@@ -58,12 +58,17 @@ def semantic_errors(path:str,text:str,policy:dict)->list[str]:
             errors.append(f"direct persistence write is forbidden in G7 application executable artifact: {path}")
     return errors
 
-def exact_sql_errors(text:str)->list[str]:
+def exact_sql_errors(text:str, policy:dict)->list[str]:
     errors=[]
     folded=semantic_fold(text)
     for marker in ("policy_id","policy_version","alert_id","alert_transition_id","lifecycle_state","active","resolved"):
         if semantic_fold(marker) not in folded:
             errors.append(f"G7 exact SQL missing required Alerting marker: {marker}")
+    allowed_relations=set(policy.get("exact_sql_allowed_relations") or [])
+    created_relations=re.findall(r"\bcreate\s+table(?:\s+if\s+not\s+exists)?\s+([a-zA-Z_][\w]*\.[a-zA-Z_][\w]*)",text,re.IGNORECASE)
+    for relation in created_relations:
+        if relation.casefold().startswith("alerting.") and relation.casefold() not in {r.casefold() for r in allowed_relations}:
+            errors.append(f"G7 exact SQL creates non-authorized Alerting relation: {relation}")
     forbidden_patterns=(
         r"\binsert\s+into\s+monitoring\.",
         r"\bupdate\s+monitoring\.",
@@ -148,7 +153,7 @@ def main()->int:
             errors.extend(semantic_errors(path,candidate_text(root,path,args.head),policy))
     sql_path=policy["exact_sql_path"]; sql_text=candidate_text(root,sql_path,args.head)
     if not sql_text: errors.append("G7 exact Alerting SQL migration missing")
-    else: errors.extend(exact_sql_errors(sql_text))
+    else: errors.extend(exact_sql_errors(sql_text,policy))
     runtime_path=policy["runtime_workflow"]; runtime_text=candidate_text(root,runtime_path,args.head)
     if not runtime_text: errors.append("G7 runtime workflow missing")
     else: errors.extend(runtime_workflow_errors(runtime_text,policy))

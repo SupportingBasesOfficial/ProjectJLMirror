@@ -82,7 +82,7 @@ def main() -> int:
     validate(fixtures("ready"), "ready")
 
     reject(lambda a: a[1]["labels"].clear(), "required canonical label")
-    reject(lambda a: a[1]["head"].update(ref="feature/not-g6"), "canonical G7 prefix")
+    reject(lambda a: a[1]["head"].update(ref="feature/not-g7"), "canonical G7 prefix")
     reject(lambda a: a[2]["commit"].update(sha="c" * 40), "default-branch tip")
     reject(lambda a: a[3][0]["creator"].update(id=999), "canonical GitHub Actions publisher")
     reject(lambda a: a[3][0].update(description="stale"), "coordinates are stale")

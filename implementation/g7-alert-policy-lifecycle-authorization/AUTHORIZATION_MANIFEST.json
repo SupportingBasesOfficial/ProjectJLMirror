@@ -112,7 +112,16 @@
     ],
     "direct_application_persistence_writes": "forbidden",
     "exact_sql_business_authority": "granted_only_for_exact_g7_policy_alert_lifecycle_path",
-    "direct_provider_calls": "forbidden"
+    "direct_provider_calls": "forbidden",
+    "exact_sql_allowed_relations": [
+      "alerting.alert_policy",
+      "alerting.alert_policy_version",
+      "alerting.alert_policy_effective_version",
+      "alerting.alert",
+      "alerting.alert_transition",
+      "alerting.alert_decision"
+    ],
+    "exact_sql_relation_rule": "all_created_alerting_relations_must_be_explicitly_allowlisted"
   },
   "authorized_capability_scope": [
     "tenant_owned_policy_identity_and_immutable_version",

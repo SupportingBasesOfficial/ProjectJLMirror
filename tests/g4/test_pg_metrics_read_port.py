@@ -57,13 +57,21 @@ def definition_row() -> dict:
 class PgReadTests(unittest.TestCase):
     def test_definition_list_is_resource_scoped_and_active_generation_only(self):
         pg = FakePg([json.dumps([definition_row()])])
-        rows = G4.PgMetricsReadPort(pg).list_definitions(
+        rows, next_cursor = G4.PgMetricsReadPort(pg).list_definitions(
             tenant_id="tenant-a",
             monitoring_resource_id="resource-101",
+            cursor=None,
+            limit=100,
         )
         self.assertEqual(rows[0].metric_definition_id, "metric-cpu")
+        self.assertIsNone(next_cursor)
         sql, variables = pg.calls[0]
-        self.assertEqual(variables, {"tenant":"tenant-a","resource_id":"resource-101"})
+        self.assertEqual(variables, {
+            "tenant":"tenant-a",
+            "resource_id":"resource-101",
+            "cursor":"",
+            "fetch_limit":"101",
+        })
         self.assertIn("SET LOCAL jlmirror.tenant_id=:'tenant'", sql)
         self.assertIn("active_source_instance_generation", sql)
         self.assertIn("monitoring_resource_id=:'resource_id'", sql)
@@ -87,13 +95,65 @@ class PgReadTests(unittest.TestCase):
             "last_changed_at":"2026-09-18T05:10:01+00:00",
         }
         pg = FakePg([json.dumps([row])])
-        G4.PgMetricsReadPort(pg).list_current(
+        rows, next_cursor = G4.PgMetricsReadPort(pg).list_current(
             tenant_id="tenant-a",
             monitoring_resource_id="resource-101",
+            cursor=None,
+            limit=100,
         )
+        self.assertEqual(len(rows), 1)
+        self.assertIsNone(next_cursor)
         sql = pg.calls[0][0].lower()
         self.assertIn("metric_current_state", sql)
         self.assertNotIn("metric_observation o", sql)
+
+    def test_definition_page_uses_limit_plus_one_and_returns_anchor(self):
+        first = definition_row()
+        second = {**definition_row(), "metric_definition_id":"metric-mem", "name":"Memory"}
+        pg = FakePg([json.dumps([first, second])])
+        rows, next_cursor = G4.PgMetricsReadPort(pg).list_definitions(
+            tenant_id="tenant-a",
+            monitoring_resource_id="resource-101",
+            cursor=None,
+            limit=1,
+        )
+        self.assertEqual([row.metric_definition_id for row in rows], ["metric-cpu"])
+        self.assertEqual(next_cursor, "metric-cpu")
+        self.assertEqual(pg.calls[0][1]["fetch_limit"], "2")
+
+    def test_definition_cursor_is_revalidated_in_same_resource_scope(self):
+        pg = FakePg(["0"])
+        with self.assertRaises(ValueError):
+            G4.PgMetricsReadPort(pg).list_definitions(
+                tenant_id="tenant-a",
+                monitoring_resource_id="resource-101",
+                cursor="metric-other",
+                limit=100,
+            )
+        sql, variables = pg.calls[0]
+        self.assertEqual(variables["cursor"], "metric-other")
+        self.assertIn("monitoring_resource_id=:'resource_id'", sql)
+        self.assertIn("active_source_instance_generation", sql)
+
+    def test_history_cursor_is_revalidated_in_same_metric_window(self):
+        pg = FakePg([
+            json.dumps({**definition_row(), "provider_object_kind":"zabbix_item", "provider_external_ref":"2001"}),
+            "0",
+        ])
+        with self.assertRaises(ValueError):
+            G4.PgMetricsReadPort(pg).history(
+                tenant_id="tenant-a",
+                metric_definition_id="metric-cpu",
+                from_ts="2025-09-18T05:00:00Z",
+                to_ts="2025-09-18T06:00:00Z",
+                cursor="obs-outside-window",
+                limit=100,
+            )
+        sql, variables = pg.calls[1]
+        self.assertEqual(variables["cursor"], "obs-outside-window")
+        self.assertIn("observation_id=:'cursor'", sql)
+        self.assertIn("observed_at >= :'from_ts'::timestamptz", sql)
+        self.assertIn("observed_at < :'to_ts'::timestamptz", sql)
 
     def test_history_is_exact_metric_and_finite_window(self):
         pg = FakePg([
@@ -110,6 +170,7 @@ class PgReadTests(unittest.TestCase):
             metric_definition_id="metric-cpu",
             from_ts="2025-09-18T05:00:00Z",
             to_ts="2025-09-18T06:00:00Z",
+            cursor=None,
             limit=100,
         )
         history_sql, variables = pg.calls[1]
@@ -135,6 +196,7 @@ class PgReadTests(unittest.TestCase):
             metric_definition_id="metric-cpu",
             from_ts="2025-09-18T05:00:00Z",
             to_ts="2025-09-18T06:00:00Z",
+            cursor=None,
             limit=100,
         )
         self.assertEqual(result.coverage.state, "incomplete")

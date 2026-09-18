@@ -74,8 +74,8 @@ async function main(){
   const active=ps.body.items.some(item=>
     item.problem_id==="problem-1"&&item.problem_state==="active"&&item.resolved_at===null
   );
-  const forbiddenAck=document.body.textContent.includes("JLMirror ACK");
-  root.dataset.e2eResult=active&&!forbiddenAck?"g5-active-pass":"fail";
+  const leakedProviderMetadata=ps.body.items.some(item=>Object.hasOwn(item,"provider_metadata"));
+  root.dataset.e2eResult=active&&!leakedProviderMetadata?"g5-active-pass":"fail";
   state.textContent=`${ps.body.items.length} problem(s)`;
 }
 

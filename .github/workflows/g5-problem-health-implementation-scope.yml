@@ -11,10 +11,10 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  G5_SCOPE_COMMAND: /jlmirror-g4-scope-attest
-  G5_READY_COMMAND: /jlmirror-g4-scope-ready
-  G5_SCOPE_VALIDATOR: tools/assurance/validate_g5_metrics_implementation_scope.py
-  G5_READINESS_VALIDATOR: tools/assurance/validate_g5_metrics_scope_readiness.py
+  G5_SCOPE_COMMAND: /jlmirror-g5-scope-attest
+  G5_READY_COMMAND: /jlmirror-g5-scope-ready
+  G5_SCOPE_VALIDATOR: tools/assurance/validate_g5_problem_health_implementation_scope.py
+  G5_READINESS_VALIDATOR: tools/assurance/validate_g5_problem_health_scope_readiness.py
   G5_SCOPE_STATUS_CONTEXT: JLMIRROR / g5-problem-health-implementation-scope
   G5_READY_STATUS_CONTEXT: JLMIRROR / g5-problem-health-merge-readiness
   G5_REQUIRED_LABEL: jlmirror-slice:g5-problem-health
@@ -24,8 +24,8 @@ jobs:
   resolve:
     if: >-
       github.event.issue.pull_request != null &&
-      (github.event.comment.body == '/jlmirror-g4-scope-attest' ||
-       github.event.comment.body == '/jlmirror-g4-scope-ready') &&
+      (github.event.comment.body == '/jlmirror-g5-scope-attest' ||
+       github.event.comment.body == '/jlmirror-g5-scope-ready') &&
       (github.event.comment.author_association == 'OWNER' ||
        github.event.comment.author_association == 'MEMBER' ||
        github.event.comment.author_association == 'COLLABORATOR')
@@ -165,9 +165,9 @@ jobs:
           PR_BASE_SHA: ${{ needs.resolve.outputs.base_sha }}
         run: |
           set -euo pipefail
-          trusted_dir="$RUNNER_TEMP/g4-scope-evaluator"
+          trusted_dir="$RUNNER_TEMP/g5-scope-evaluator"
           mkdir -p "$trusted_dir"
-          trusted_validator="$trusted_dir/validate_g5_metrics_implementation_scope.py"
+          trusted_validator="$trusted_dir/validate_g5_problem_health_implementation_scope.py"
           git show "${PR_BASE_SHA}:${G5_SCOPE_VALIDATOR}" > "$trusted_validator"
           test -s "$trusted_validator"
           printf 'TRUSTED_VALIDATOR=%s\n' "$trusted_validator" >> "$GITHUB_ENV"
@@ -210,7 +210,7 @@ jobs:
           PR_BASE_SHA: ${{ needs.resolve.outputs.base_sha }}
         run: |
           set -euo pipefail
-          trusted_readiness="$RUNNER_TEMP/g4-scope-readiness-validator.py"
+          trusted_readiness="$RUNNER_TEMP/g5-scope-readiness-validator.py"
           gh api "repos/${GITHUB_REPOSITORY}/contents/${G5_READINESS_VALIDATOR}?ref=${PR_BASE_SHA}" --jq .content | base64 -d > "$trusted_readiness"
           test -s "$trusted_readiness"
           printf 'TRUSTED_READINESS_VALIDATOR=%s\n' "$trusted_readiness" >> "$GITHUB_ENV"
@@ -228,7 +228,7 @@ jobs:
             --server-url "$GITHUB_SERVER_URL"
 
   publish-final:
-    name: g4-publish-final pr=${{ needs.resolve.outputs.pr_number }} mode=${{ needs.resolve.outputs.mode }} base=${{ needs.resolve.outputs.base_sha }} head=${{ needs.resolve.outputs.head_sha }} ref=${{ needs.resolve.outputs.head_ref }}
+    name: g5-publish-final pr=${{ needs.resolve.outputs.pr_number }} mode=${{ needs.resolve.outputs.mode }} base=${{ needs.resolve.outputs.base_sha }} head=${{ needs.resolve.outputs.head_sha }} ref=${{ needs.resolve.outputs.head_ref }}
     if: always() && needs.resolve.result == 'success' && needs.publish-pending.result == 'success'
     needs: [resolve, publish-pending, analyze, verify-ready]
     runs-on: ubuntu-24.04

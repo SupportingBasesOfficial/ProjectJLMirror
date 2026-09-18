@@ -67,7 +67,9 @@ class ProblemHealthReadPort(Protocol):
         self,
         *,
         tenant_id: str,
+        monitoring_source_id: str | None,
         monitoring_resource_id: str | None,
+        generation_state: str,
         problem_state: str | None,
         severity_class: str | None,
         cursor: str | None,
@@ -78,8 +80,11 @@ class ProblemHealthReadPort(Protocol):
         self,
         *,
         tenant_id: str,
+        monitoring_source_id: str | None,
+        generation_state: str,
         health_class: str | None,
         evidence_state: str | None,
+        scope_state: str | None,
         cursor: str | None,
         limit: int,
     ) -> tuple[Sequence[HealthRecord], str | None]: ...
@@ -135,7 +140,9 @@ class ProblemHealthView:
         self,
         *,
         tenant_id: str,
+        monitoring_source_id: str | None = None,
         monitoring_resource_id: str | None = None,
+        generation_state: str = "active_generation",
         problem_state: str | None = None,
         severity_class: str | None = None,
         cursor: str | None = None,
@@ -143,8 +150,12 @@ class ProblemHealthView:
     ) -> dict:
         _validate_cursor(cursor)
         _validate_limit(limit)
+        if monitoring_source_id is not None and (not monitoring_source_id or len(monitoring_source_id) > 512):
+            raise ValueError("monitoring_source_id is invalid")
         if monitoring_resource_id is not None and (not monitoring_resource_id or len(monitoring_resource_id) > 512):
             raise ValueError("monitoring_resource_id is invalid")
+        if generation_state not in {"active_generation", "historical_generation"}:
+            raise ValueError("generation_state is invalid")
         if problem_state is not None and problem_state not in {"active", "resolved"}:
             raise ValueError("problem_state is invalid")
         if severity_class is not None and severity_class not in {"unknown", "informational", "warning", "degraded", "critical"}:
@@ -155,7 +166,9 @@ class ProblemHealthView:
             self._admit(tenant_id, RESOURCE_READ_ACTION)
         rows, next_cursor = self._repository.list_problems(
             tenant_id=tenant_id,
+            monitoring_source_id=monitoring_source_id,
             monitoring_resource_id=monitoring_resource_id,
+            generation_state=generation_state,
             problem_state=problem_state,
             severity_class=severity_class,
             cursor=cursor,
@@ -188,23 +201,35 @@ class ProblemHealthView:
         self,
         *,
         tenant_id: str,
+        monitoring_source_id: str | None = None,
+        generation_state: str = "active_generation",
         health_class: str | None = None,
         evidence_state: str | None = None,
+        scope_state: str | None = None,
         cursor: str | None = None,
         limit: int = 200,
     ) -> dict:
         _validate_cursor(cursor)
         _validate_limit(limit)
+        if monitoring_source_id is not None and (not monitoring_source_id or len(monitoring_source_id) > 512):
+            raise ValueError("monitoring_source_id is invalid")
+        if generation_state not in {"active_generation", "historical_generation"}:
+            raise ValueError("generation_state is invalid")
         if health_class is not None and health_class not in {"unknown", "healthy", "degraded", "unhealthy"}:
             raise ValueError("health_class is invalid")
         if evidence_state is not None and evidence_state not in {"current", "stale", "incomplete", "reconciliation_required", "unavailable"}:
             raise ValueError("evidence_state is invalid")
+        if scope_state is not None and scope_state not in {"in_scope", "out_of_scope"}:
+            raise ValueError("scope_state is invalid")
 
         self._admit(tenant_id, HEALTH_READ_ACTION)
         rows, next_cursor = self._repository.list_health(
             tenant_id=tenant_id,
+            monitoring_source_id=monitoring_source_id,
+            generation_state=generation_state,
             health_class=health_class,
             evidence_state=evidence_state,
+            scope_state=scope_state,
             cursor=cursor,
             limit=limit,
         )

@@ -1,0 +1,152 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "G4MetricHistory",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "metric_definition_id",
+    "source_instance_generation",
+    "generation_state",
+    "window",
+    "completeness",
+    "items",
+    "next_cursor"
+  ],
+  "properties": {
+    "metric_definition_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "source_instance_generation": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "generation_state": {
+      "enum": [
+        "active_generation",
+        "historical_generation"
+      ]
+    },
+    "window": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "from",
+        "to"
+      ],
+      "properties": {
+        "from": {
+          "type": "string"
+        },
+        "to": {
+          "type": "string"
+        }
+      }
+    },
+    "completeness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "covered_through",
+        "gap_refs"
+      ],
+      "properties": {
+        "state": {
+          "enum": [
+            "complete",
+            "incomplete",
+            "gap_detected",
+            "reconciliation_required"
+          ]
+        },
+        "covered_through": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "gap_refs": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "string",
+            "maxLength": 512
+          }
+        }
+      }
+    },
+    "items": {
+      "type": "array",
+      "maxItems": 500,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "observation_id",
+          "metric_definition_id",
+          "monitoring_resource_id",
+          "monitoring_source_id",
+          "source_instance_generation",
+          "observed_at",
+          "accepted_at",
+          "value_kind",
+          "value"
+        ],
+        "properties": {
+          "observation_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "metric_definition_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "monitoring_resource_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "monitoring_source_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "source_instance_generation": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "observed_at": {
+            "type": "string"
+          },
+          "accepted_at": {
+            "type": "string"
+          },
+          "value_kind": {
+            "enum": [
+              "number",
+              "integer",
+              "boolean",
+              "string",
+              "text",
+              "log"
+            ]
+          },
+          "value": {}
+        }
+      }
+    },
+    "next_cursor": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 1024
+    }
+  }
+}

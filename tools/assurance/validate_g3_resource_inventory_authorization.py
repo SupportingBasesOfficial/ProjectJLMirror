@@ -61,6 +61,16 @@ def main() -> int:
     require(policy.get("implementation_claim_path") == "implementation/g3-resource-inventory/IMPLEMENTATION_CLAIM.json", "claim path drift", errors)
     require(policy.get("implementation_claim_authorization_id") == AUTH_ID, "claim authorization id drift", errors)
     require(policy.get("shared_existing_paths_policy") == "read_only_unless_separate_successor_authorization", "shared path policy drift", errors)
+    require(policy.get("runtime_workflow") == ".github/workflows/g3-resource-inventory-runtime.yml", "runtime workflow path drift", errors)
+    require(policy.get("runtime_workflow_name") == "JLMIRROR G3 Resource Inventory Runtime", "runtime workflow name drift", errors)
+    require(policy.get("runtime_entrypoint") == "python tools/g3/run_resource_inventory_runtime.py", "runtime entrypoint drift", errors)
+    require(set(policy.get("runtime_allowed_actions") or []) == {
+        "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+        "actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1",
+        "actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38",
+    }, "runtime allowed-action set drift", errors)
+    require(policy.get("direct_persistence_writes") == "forbidden", "direct persistence write boundary drift", errors)
+    require(policy.get("direct_schema_authority") == "forbidden", "direct schema authority boundary drift", errors)
     require(set(data.get("authorized_capability_scope") or []) == EXPECTED_CAPS, "authorized capability scope drift", errors)
     require(set(data.get("required_invariants") or []) == EXPECTED_INVARIANTS, "required invariant set drift", errors)
     for marker in ("MONITORING_RESOURCE_ID = CANONICAL_PLATFORM_IDENTITY", "RESOURCE_KIND = host", "ZABBIX_HOSTID != MONITORING_RESOURCE_ID", "G3_AUTHORIZED != G4_AUTHORIZED", "GREEN_STATUS != MERGE_AUTHORIZATION"):

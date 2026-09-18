@@ -262,12 +262,12 @@ INSERT INTO monitoring.monitoring_problem(
  tenant_id,problem_id,monitoring_source_id,source_instance_generation,
  monitoring_resource_id,problem_state,severity_class,summary,opened_at,resolved_at,
  last_confirmed_at,evidence_state,projection_revision,problem_poll_epoch,
- problem_poll_generation,provider_acknowledged,provider_metadata
+ problem_poll_generation,provider_metadata
 ) VALUES (
  'tenant-a','problem-1','source-a','generation-a','resource-1',
  'active','warning','CPU threshold exceeded',
  transaction_timestamp()-interval '10 minutes',NULL,transaction_timestamp(),
- 'current',7,1,1,false,'{}'::jsonb
+ 'current',7,1,1,'{}'::jsonb
 );
 
 INSERT INTO monitoring.health_projection(

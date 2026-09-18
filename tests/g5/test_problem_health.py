@@ -44,8 +44,6 @@ def problem(*, state="active", generation="active_generation", evidence="current
         evidence_state=evidence,
         provider_object_kind="zabbix_event",
         provider_external_ref="9001",
-        provider_acknowledged=True,
-        provider_metadata={"tags":["cpu"]},
     )
 
 
@@ -107,14 +105,13 @@ class ProblemHealthTests(unittest.TestCase):
             ("principal-a","tenant-a",RESOURCE_READ_ACTION),
         ])
 
-    def test_problem_detail_provider_ack_is_metadata_only(self):
+    def test_problem_detail_exposes_only_bounded_external_reference(self):
         value=ProblemHealthView(repository=Repository(),authorization=Authorization()).get_problem(
             tenant_id="tenant-a",
             problem_id="problem-1",
         )
-        self.assertTrue(value["provider_metadata"]["provider_acknowledged"])
-        self.assertFalse(value["provider_metadata"]["authoritative_for_platform_ack"])
         self.assertEqual(value["external_references"]["provider_external_ref"],"9001")
+        self.assertNotIn("provider_metadata",value)
 
     def test_historical_active_problem_never_presents_current_evidence(self):
         repo=Repository()

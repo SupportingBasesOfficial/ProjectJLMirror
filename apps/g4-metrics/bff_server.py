@@ -133,35 +133,6 @@ class PgMetricsReadPort:
             raise RuntimeError("metric observation read shape is invalid")
         return MetricObservationRecord(**value)
 
-    def _definition_cursor_valid(
-        self,
-        *,
-        tenant_id: str,
-        monitoring_resource_id: str,
-        cursor: str,
-    ) -> bool:
-        raw = self.pg.query(
-            """
-BEGIN;
-SET LOCAL ROLE wave4_runtime;
-SET LOCAL jlmirror.tenant_id=:'tenant';
-SELECT count(*)
-FROM monitoring.metric_definition d
-JOIN monitoring.monitoring_source s
-  ON s.tenant_id=d.tenant_id
- AND s.monitoring_source_id=d.monitoring_source_id
-WHERE d.tenant_id=:'tenant'
-  AND d.monitoring_resource_id=:'resource_id'
-  AND d.source_instance_generation=s.active_source_instance_generation
-  AND d.metric_definition_id=:'cursor';
-COMMIT;
-""",
-            tenant=tenant_id,
-            resource_id=monitoring_resource_id,
-            cursor=cursor,
-        )
-        return raw.splitlines()[-1:] == ["1"]
-
     def list_definitions(
         self,
         *,
@@ -170,20 +141,13 @@ COMMIT;
         cursor: str | None,
         limit: int,
     ):
-        if cursor is not None and not self._definition_cursor_valid(
-            tenant_id=tenant_id,
-            monitoring_resource_id=monitoring_resource_id,
-            cursor=cursor,
-        ):
-            raise ValueError("cursor_invalid")
-
         raw = self.pg.query(
             """
 BEGIN;
+SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY;
 SET LOCAL ROLE wave4_runtime;
 SET LOCAL jlmirror.tenant_id=:'tenant';
-SELECT COALESCE(json_agg(row_to_json(x) ORDER BY x.metric_definition_id),'[]'::json)::text
-FROM (
+WITH eligible AS (
   SELECT
     d.metric_definition_id,
     d.monitoring_resource_id,
@@ -206,10 +170,24 @@ FROM (
   WHERE d.tenant_id=:'tenant'
     AND d.monitoring_resource_id=:'resource_id'
     AND d.source_instance_generation=s.active_source_instance_generation
-    AND (:'cursor'='' OR d.metric_definition_id > :'cursor')
-  ORDER BY d.metric_definition_id
+),
+anchor AS (
+  SELECT (:'cursor'='' OR EXISTS (
+    SELECT 1 FROM eligible WHERE metric_definition_id=:'cursor'
+  )) AS valid
+),
+page AS (
+  SELECT e.*
+  FROM eligible e CROSS JOIN anchor a
+  WHERE a.valid
+    AND (:'cursor'='' OR e.metric_definition_id > :'cursor')
+  ORDER BY e.metric_definition_id
   LIMIT :'fetch_limit'::integer
-) x;
+)
+SELECT json_build_object(
+  'cursor_valid',(SELECT valid FROM anchor),
+  'items',COALESCE((SELECT json_agg(row_to_json(page) ORDER BY metric_definition_id) FROM page),'[]'::json)
+)::text;
 COMMIT;
 """,
             tenant=tenant_id,
@@ -217,12 +195,16 @@ COMMIT;
             cursor=cursor or "",
             fetch_limit=str(limit + 1),
         )
-        values = json.loads(raw or "[]")
-        if not isinstance(values, list) or len(values) > limit + 1:
+        payload = json.loads(raw or "{}")
+        if set(payload) != {"cursor_valid", "items"} or not isinstance(payload["items"], list):
+            raise RuntimeError("metric definition page shape is invalid")
+        if not payload["cursor_valid"]:
+            raise ValueError("cursor_invalid")
+        values = payload["items"]
+        if len(values) > limit + 1:
             raise RuntimeError("metric definition page exceeds read bound")
         has_more = len(values) > limit
-        page_values = values[:limit]
-        rows = tuple(self._definition(value) for value in page_values)
+        rows = tuple(self._definition(value) for value in values[:limit])
         next_cursor = rows[-1].metric_definition_id if has_more and rows else None
         return rows, next_cursor
 
@@ -267,35 +249,6 @@ COMMIT;
         )
         return None if not raw else self._definition(json.loads(raw))
 
-    def _current_cursor_valid(
-        self,
-        *,
-        tenant_id: str,
-        monitoring_resource_id: str,
-        cursor: str,
-    ) -> bool:
-        raw = self.pg.query(
-            """
-BEGIN;
-SET LOCAL ROLE wave4_runtime;
-SET LOCAL jlmirror.tenant_id=:'tenant';
-SELECT count(*)
-FROM monitoring.metric_current_state c
-JOIN monitoring.monitoring_source s
-  ON s.tenant_id=c.tenant_id
- AND s.monitoring_source_id=c.monitoring_source_id
-WHERE c.tenant_id=:'tenant'
-  AND c.monitoring_resource_id=:'resource_id'
-  AND c.source_instance_generation=s.active_source_instance_generation
-  AND c.metric_definition_id=:'cursor';
-COMMIT;
-""",
-            tenant=tenant_id,
-            resource_id=monitoring_resource_id,
-            cursor=cursor,
-        )
-        return raw.splitlines()[-1:] == ["1"]
-
     def list_current(
         self,
         *,
@@ -304,20 +257,13 @@ COMMIT;
         cursor: str | None,
         limit: int,
     ):
-        if cursor is not None and not self._current_cursor_valid(
-            tenant_id=tenant_id,
-            monitoring_resource_id=monitoring_resource_id,
-            cursor=cursor,
-        ):
-            raise ValueError("cursor_invalid")
-
         raw = self.pg.query(
             """
 BEGIN;
+SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY;
 SET LOCAL ROLE wave4_runtime;
 SET LOCAL jlmirror.tenant_id=:'tenant';
-SELECT COALESCE(json_agg(row_to_json(x) ORDER BY x.metric_definition_id),'[]'::json)::text
-FROM (
+WITH eligible AS (
   SELECT
     c.metric_definition_id,
     c.monitoring_resource_id,
@@ -344,10 +290,24 @@ FROM (
   WHERE c.tenant_id=:'tenant'
     AND c.monitoring_resource_id=:'resource_id'
     AND c.source_instance_generation=s.active_source_instance_generation
-    AND (:'cursor'='' OR c.metric_definition_id > :'cursor')
-  ORDER BY c.metric_definition_id
+),
+anchor AS (
+  SELECT (:'cursor'='' OR EXISTS (
+    SELECT 1 FROM eligible WHERE metric_definition_id=:'cursor'
+  )) AS valid
+),
+page AS (
+  SELECT e.*
+  FROM eligible e CROSS JOIN anchor a
+  WHERE a.valid
+    AND (:'cursor'='' OR e.metric_definition_id > :'cursor')
+  ORDER BY e.metric_definition_id
   LIMIT :'fetch_limit'::integer
-) x;
+)
+SELECT json_build_object(
+  'cursor_valid',(SELECT valid FROM anchor),
+  'items',COALESCE((SELECT json_agg(row_to_json(page) ORDER BY metric_definition_id) FROM page),'[]'::json)
+)::text;
 COMMIT;
 """,
             tenant=tenant_id,
@@ -355,12 +315,16 @@ COMMIT;
             cursor=cursor or "",
             fetch_limit=str(limit + 1),
         )
-        values = json.loads(raw or "[]")
-        if not isinstance(values, list) or len(values) > limit + 1:
+        payload = json.loads(raw or "{}")
+        if set(payload) != {"cursor_valid", "items"} or not isinstance(payload["items"], list):
+            raise RuntimeError("metric current-state page shape is invalid")
+        if not payload["cursor_valid"]:
+            raise ValueError("cursor_invalid")
+        values = payload["items"]
+        if len(values) > limit + 1:
             raise RuntimeError("metric current-state page exceeds read bound")
         has_more = len(values) > limit
-        page_values = values[:limit]
-        rows = tuple(self._current(value) for value in page_values)
+        rows = tuple(self._current(value) for value in values[:limit])
         next_cursor = rows[-1].metric_definition_id if has_more and rows else None
         return rows, next_cursor
 
@@ -406,37 +370,6 @@ COMMIT;
         )
         return None if not raw else self._current(json.loads(raw))
 
-    def _history_cursor_valid(
-        self,
-        *,
-        tenant_id: str,
-        metric_definition_id: str,
-        from_ts: str,
-        to_ts: str,
-        cursor: str,
-    ) -> bool:
-        raw = self.pg.query(
-            """
-BEGIN;
-SET LOCAL ROLE wave4_runtime;
-SET LOCAL jlmirror.tenant_id=:'tenant';
-SELECT count(*)
-FROM monitoring.metric_observation
-WHERE tenant_id=:'tenant'
-  AND metric_definition_id=:'metric_id'
-  AND observation_id=:'cursor'
-  AND observed_at >= :'from_ts'::timestamptz
-  AND observed_at < :'to_ts'::timestamptz;
-COMMIT;
-""",
-            tenant=tenant_id,
-            metric_id=metric_definition_id,
-            cursor=cursor,
-            from_ts=from_ts,
-            to_ts=to_ts,
-        )
-        return raw.splitlines()[-1:] == ["1"]
-
     def history(
         self,
         *,
@@ -447,28 +380,52 @@ COMMIT;
         cursor: str | None,
         limit: int,
     ):
-        definition = self.get_definition(
-            tenant_id=tenant_id,
-            metric_definition_id=metric_definition_id,
-        )
-        if definition is None:
-            return None
-        if cursor is not None and not self._history_cursor_valid(
-            tenant_id=tenant_id,
-            metric_definition_id=metric_definition_id,
-            from_ts=from_ts,
-            to_ts=to_ts,
-            cursor=cursor,
-        ):
-            raise ValueError("cursor_invalid")
-
         raw = self.pg.query(
             """
 BEGIN;
+SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY;
 SET LOCAL ROLE wave4_runtime;
 SET LOCAL jlmirror.tenant_id=:'tenant';
-SELECT COALESCE(json_agg(row_to_json(x) ORDER BY x.observed_at,x.observation_id),'[]'::json)::text
-FROM (
+WITH definition AS (
+  SELECT
+    d.metric_definition_id,
+    d.monitoring_resource_id,
+    d.monitoring_source_id,
+    d.source_instance_generation,
+    CASE WHEN d.source_instance_generation=s.active_source_instance_generation
+         THEN 'active_generation' ELSE 'historical_generation' END AS generation_state,
+    d.name,
+    d.value_kind,
+    d.unit,
+    d.scope_state,
+    d.scope_projection_revision,
+    d.scope_evidence_state,
+    d.definition_state,
+    b.provider_object_kind,
+    b.provider_external_ref
+  FROM monitoring.metric_definition d
+  JOIN monitoring.monitoring_source s
+    ON s.tenant_id=d.tenant_id
+   AND s.monitoring_source_id=d.monitoring_source_id
+  LEFT JOIN monitoring.metric_definition_provider_binding b
+    ON b.tenant_id=d.tenant_id
+   AND b.metric_definition_id=d.metric_definition_id
+  WHERE d.tenant_id=:'tenant'
+    AND d.metric_definition_id=:'metric_id'
+),
+anchor_row AS (
+  SELECT o.observed_at,o.observation_id
+  FROM monitoring.metric_observation o
+  WHERE o.tenant_id=:'tenant'
+    AND o.metric_definition_id=:'metric_id'
+    AND o.observation_id=:'cursor'
+    AND o.observed_at >= :'from_ts'::timestamptz
+    AND o.observed_at < :'to_ts'::timestamptz
+),
+anchor AS (
+  SELECT (:'cursor'='' OR EXISTS (SELECT 1 FROM anchor_row)) AS valid
+),
+page AS (
   SELECT
     o.observation_id,
     o.metric_definition_id,
@@ -479,26 +436,37 @@ FROM (
     o.accepted_at,
     o.value_kind,
     o.canonical_value AS value
-  FROM monitoring.metric_observation o
-  WHERE o.tenant_id=:'tenant'
+  FROM monitoring.metric_observation o CROSS JOIN anchor a
+  WHERE a.valid
+    AND o.tenant_id=:'tenant'
     AND o.metric_definition_id=:'metric_id'
     AND o.observed_at >= :'from_ts'::timestamptz
     AND o.observed_at < :'to_ts'::timestamptz
     AND (
       :'cursor'=''
       OR (o.observed_at,o.observation_id) > (
-        SELECT a.observed_at,a.observation_id
-        FROM monitoring.metric_observation a
-        WHERE a.tenant_id=:'tenant'
-          AND a.metric_definition_id=:'metric_id'
-          AND a.observation_id=:'cursor'
-          AND a.observed_at >= :'from_ts'::timestamptz
-          AND a.observed_at < :'to_ts'::timestamptz
+        SELECT observed_at,observation_id FROM anchor_row
       )
     )
   ORDER BY o.observed_at,o.observation_id
   LIMIT :'fetch_limit'::integer
-) x;
+),
+coverage AS (
+  SELECT
+    coverage_state,
+    finalized_through_clock,
+    CASE WHEN finalized_through_clock IS NULL THEN NULL
+         ELSE to_timestamp(finalized_through_clock) END AS finalized_through_at
+  FROM monitoring.metric_history_stream_state
+  WHERE tenant_id=:'tenant'
+    AND metric_definition_id=:'metric_id'
+)
+SELECT json_build_object(
+  'definition',(SELECT row_to_json(definition) FROM definition),
+  'cursor_valid',(SELECT valid FROM anchor),
+  'items',COALESCE((SELECT json_agg(row_to_json(page) ORDER BY observed_at,observation_id) FROM page),'[]'::json),
+  'coverage',COALESCE((SELECT json_agg(row_to_json(coverage)) FROM coverage),'[]'::json)
+)::text;
 COMMIT;
 """,
             tenant=tenant_id,
@@ -508,36 +476,25 @@ COMMIT;
             cursor=cursor or "",
             fetch_limit=str(limit + 1),
         )
-        values = json.loads(raw or "[]")
-        if not isinstance(values, list) or len(values) > limit + 1:
+        payload = json.loads(raw or "{}")
+        if set(payload) != {"definition", "cursor_valid", "items", "coverage"}:
+            raise RuntimeError("metric history read shape is invalid")
+        if payload["definition"] is None:
+            return None
+        if not payload["cursor_valid"]:
+            raise ValueError("cursor_invalid")
+        if not isinstance(payload["items"], list) or not isinstance(payload["coverage"], list):
+            raise RuntimeError("metric history collection shape is invalid")
+
+        definition = self._definition(payload["definition"])
+        values = payload["items"]
+        if len(values) > limit + 1:
             raise RuntimeError("metric history page exceeds read bound")
         has_more = len(values) > limit
-        page_values = values[:limit]
-        observations = tuple(self._observation(value) for value in page_values)
+        observations = tuple(self._observation(value) for value in values[:limit])
         next_cursor = observations[-1].observation_id if has_more and observations else None
 
-        coverage_raw = self.pg.query(
-            """
-BEGIN;
-SET LOCAL ROLE wave4_runtime;
-SET LOCAL jlmirror.tenant_id=:'tenant';
-SELECT COALESCE(json_agg(row_to_json(x)),'[]'::json)::text
-FROM (
-  SELECT
-    coverage_state,
-    finalized_through_clock,
-    CASE WHEN finalized_through_clock IS NULL THEN NULL
-         ELSE to_timestamp(finalized_through_clock) END AS finalized_through_at
-  FROM monitoring.metric_history_stream_state
-  WHERE tenant_id=:'tenant'
-    AND metric_definition_id=:'metric_id'
-) x;
-COMMIT;
-""",
-            tenant=tenant_id,
-            metric_id=metric_definition_id,
-        )
-        coverage_rows = json.loads(coverage_raw or "[]")
+        coverage_rows = payload["coverage"]
         if len(coverage_rows) > 1:
             raise RuntimeError("metric history coverage has ambiguous stream authority")
 
@@ -576,8 +533,7 @@ COMMIT;
             next_cursor=next_cursor,
         )
 
-
-class FixtureMetricsReadPort:
+class FixtureMetricsReadPort:class FixtureMetricsReadPort:
     def __init__(self) -> None:
         self.definition = MetricDefinitionRecord(
             metric_definition_id="metric-cpu",

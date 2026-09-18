@@ -210,7 +210,7 @@ jobs:
           PR_BASE_SHA: ${{ needs.resolve.outputs.base_sha }}
         run: |
           set -euo pipefail
-          trusted_readiness="$RUNNER_TEMP/g6-scope-readiness-validator.py"
+          trusted_readiness="$RUNNER_TEMP/g7-scope-readiness-validator.py"
           gh api "repos/${GITHUB_REPOSITORY}/contents/${G7_READINESS_VALIDATOR}?ref=${PR_BASE_SHA}" --jq .content | base64 -d > "$trusted_readiness"
           test -s "$trusted_readiness"
           printf 'TRUSTED_READINESS_VALIDATOR=%s\n' "$trusted_readiness" >> "$GITHUB_ENV"

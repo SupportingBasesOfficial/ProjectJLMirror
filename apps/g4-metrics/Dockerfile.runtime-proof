@@ -1,0 +1,17 @@
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+
+WORKDIR /opt/jlmirror
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/opt/jlmirror/src:/opt/jlmirror/apps/g4-metrics
+
+COPY src/ ./src/
+COPY apps/g1-identity-tenant-shell/ ./apps/g1-identity-tenant-shell/
+COPY apps/g3-resource-inventory/ ./apps/g3-resource-inventory/
+COPY apps/g4-metrics/ ./apps/g4-metrics/
+
+EXPOSE 8447
+
+ENTRYPOINT ["python", "apps/g4-metrics/bff_server.py"]

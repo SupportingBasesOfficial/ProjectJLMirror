@@ -1,0 +1,19 @@
+{
+  "name": "JLMIRROR G3 Resource Inventory Implementation Scope",
+  "on": {
+    "pull_request": {}
+  },
+  "permissions": {
+    "contents": "read"
+  },
+  "jobs": {
+    "g3-scope": {
+      "if": "startsWith(github.head_ref, 'impl/g3-resource-inventory')",
+      "runs-on": "ubuntu-latest",
+      "steps": [
+        {"uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1", "with": {"fetch-depth": 0}},
+        {"run": "python tools/assurance/validate_g3_resource_inventory_implementation_scope.py --base \"${{ github.event.pull_request.base.sha }}\" --head \"${{ github.event.pull_request.head.sha }}\""}
+      ]
+    }
+  }
+}

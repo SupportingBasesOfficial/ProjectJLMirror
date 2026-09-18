@@ -30,6 +30,14 @@ def main()->int:
     req(policy["implementation_pr_required_label"]=="jlmirror-slice:g7-alert-policy-lifecycle","label drift",errors)
     req(policy["implementation_claim_authorization_id"]==AUTH_ID,"claim identity drift",errors)
     req(policy["exact_sql_path"]=="sql/alerting/001_alert_policy_lifecycle.sql","exact SQL path drift",errors)
+    req(set(policy.get("exact_sql_allowed_relations") or [])=={
+        "alerting.alert_policy",
+        "alerting.alert_policy_version",
+        "alerting.alert_policy_effective_version",
+        "alerting.alert",
+        "alerting.alert_transition",
+        "alerting.alert_decision",
+    },"exact SQL relation allowlist drift",errors)
     req(policy["runtime_workflow"]==".github/workflows/g7-alert-policy-lifecycle-runtime.yml","runtime path drift",errors)
     req(policy["runtime_workflow_name"]=="JLMIRROR G7 Alert Policy Lifecycle Runtime","runtime name drift",errors)
     req(policy["runtime_entrypoint"]=="python tools/g7/run_alert_policy_lifecycle_runtime.py","runtime entrypoint drift",errors)

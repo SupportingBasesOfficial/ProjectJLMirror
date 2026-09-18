@@ -1,0 +1,146 @@
+{
+  "schema_version": 1,
+  "authorization_id": "g9.notification-delivery@1",
+  "canonical_base": "main@a264e17852bfd114546438ee9094c7655c920839",
+  "implementation_authority_before_merge": "blocked",
+  "implementation_authority_after_merge": "granted_for_exact_g9_notification_delivery_only",
+  "merge_authorization": "not_granted",
+  "notification_authority": "whatsapp_intent_dispatch_delivery_evidence_only",
+  "authority_source_paths": [
+    "docs/00-foundation/ai-e2e-delivery/PRODUCT-EXECUTION-ROADMAP.md",
+    "docs/00-foundation/project-memory/HUMAN-OPERATIONS-MODEL.md",
+    "docs/00-foundation/project-memory/OPEN-QUESTIONS-AND-DEFERRED.md",
+    "implementation/g8-human-operations/IMPLEMENTATION_CLAIM.json",
+    "implementation/g8-human-operations/DESIGN.md",
+    "sql/human_operations/001_human_operations.sql"
+  ],
+  "issue_authority": [
+    "#149"
+  ],
+  "notification_v1": {
+    "channels": [
+      "whatsapp_business@1"
+    ],
+    "intent_reasons": [
+      "alert_requires_attention",
+      "alert_action_requested",
+      "customer_awareness_required"
+    ],
+    "attempt_states": [
+      "dispatching",
+      "sent",
+      "provider_accepted",
+      "delivered",
+      "failed",
+      "unknown"
+    ],
+    "provider_evidence_kinds": [
+      "provider_accepted",
+      "delivered",
+      "external_read_observed",
+      "failed",
+      "unknown"
+    ],
+    "retry_same_channel_only": true,
+    "max_attempts_required": true,
+    "second_transport_channel_authorized": false,
+    "external_read_is_authoritative_native_view": false,
+    "authoritative_awareness_requires_g8_native_visibility_when_required": true
+  },
+  "implementation_path_policy": {
+    "implementation_pr_head_prefix": "impl/g9-notification-delivery",
+    "implementation_pr_required_label": "jlmirror-slice:g9-notification-delivery",
+    "implementation_claim_path": "implementation/g9-notification-delivery/IMPLEMENTATION_CLAIM.json",
+    "implementation_claim_authorization_id": "g9.notification-delivery@1",
+    "allowed_prefixes": [
+      "apps/g9-notification-delivery/",
+      "contracts/g9-notification-delivery/",
+      "implementation/g9-notification-delivery/",
+      "tests/g9/",
+      "tools/g9/"
+    ],
+    "allowed_exact_paths": [
+      "sql/notification/001_notification_delivery.sql",
+      ".github/workflows/g9-notification-delivery-runtime.yml"
+    ],
+    "exact_sql_path": "sql/notification/001_notification_delivery.sql",
+    "exact_sql_allowed_relations": [
+      "notification.notification_intent",
+      "notification.notification_attempt",
+      "notification.notification_provider_evidence",
+      "notification.notification_projection",
+      "notification.notification_dispatch_outbox",
+      "notification.notification_callback_inbox"
+    ],
+    "runtime_workflow": ".github/workflows/g9-notification-delivery-runtime.yml",
+    "runtime_workflow_name": "JLMIRROR G9 Notification Delivery Runtime",
+    "runtime_entrypoint": "python tools/g9/run_notification_delivery_runtime.py",
+    "runtime_allowed_actions": [
+      "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+      "actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1",
+      "actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38"
+    ],
+    "semantic_scan_prefixes": [
+      "apps/g9-notification-delivery/",
+      "contracts/g9-notification-delivery/",
+      "implementation/g9-notification-delivery/",
+      "tests/g9/",
+      "tools/g9/"
+    ],
+    "forbidden_path_tokens": [
+      "email",
+      "sms",
+      "push",
+      "teams",
+      "slack",
+      "approval",
+      "budget",
+      "quote",
+      "itsm",
+      "incident",
+      "ticket",
+      "automation",
+      "aiops",
+      "provider-write"
+    ],
+    "forbidden_code_markers": [
+      "alert_reopen",
+      "unacknowledge",
+      "approval_state",
+      "awaiting_budget_approval",
+      "incident_id",
+      "ticket_id",
+      "provider_write_back",
+      "send_email",
+      "send_sms",
+      "teams_webhook",
+      "slack_webhook"
+    ]
+  },
+  "identity_laws": [
+    "NOTIFICATION_INTENT != DELIVERY_ATTEMPT",
+    "DELIVERY_ATTEMPT != PROVIDER_EVIDENCE",
+    "SENT != PROVIDER_ACCEPTED",
+    "PROVIDER_ACCEPTED != DELIVERED",
+    "DELIVERED != VIEWED",
+    "EXTERNAL_READ != G8_AUTHORITATIVE_VIEW",
+    "NOTIFICATION_RECIPIENT != RESPONSIBLE_PERSON",
+    "NOTIFICATION_RECIPIENT != CURRENT_ACTION_OWNER",
+    "PROVIDER_MESSAGE_ID != NOTIFICATION_INTENT_ID",
+    "NOTIFICATION_STATE != ALERT_LIFECYCLE",
+    "TIMELINE != MUTABLE_BUSINESS_TRUTH"
+  ],
+  "explicitly_not_authorized": [
+    "alert_lifecycle_or_policy_mutation",
+    "responsibility_current_action_or_ack_mutation",
+    "g8_visibility_receipt_fabrication",
+    "response_or_waiting_business_state",
+    "budget_quote_or_approval_workflow",
+    "sla_escalation_or_routing_policy",
+    "itsm_incident_ticket_task_behavior",
+    "automation_or_aiops_mutation",
+    "provider_write_back",
+    "additional_transport_channels",
+    "production_activation"
+  ]
+}

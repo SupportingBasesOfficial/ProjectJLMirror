@@ -65,10 +65,16 @@ def exact_sql_errors(text:str, policy:dict)->list[str]:
         if semantic_fold(marker) not in folded:
             errors.append(f"G7 exact SQL missing required Alerting marker: {marker}")
     allowed_relations=set(policy.get("exact_sql_allowed_relations") or [])
-    created_relations=re.findall(r"\bcreate\s+table(?:\s+if\s+not\s+exists)?\s+([a-zA-Z_][\w]*\.[a-zA-Z_][\w]*)",text,re.IGNORECASE)
-    for relation in created_relations:
-        if relation.casefold().startswith("alerting.") and relation.casefold() not in {r.casefold() for r in allowed_relations}:
-            errors.append(f"G7 exact SQL creates non-authorized Alerting relation: {relation}")
+    created_relations=re.findall(
+        r'\bcreate\s+table(?:\s+if\s+not\s+exists)?\s+"?([a-zA-Z_][\w]*)"?\s*\.\s*"?([a-zA-Z_][\w]*)"?',
+        text,
+        re.IGNORECASE,
+    )
+    normalized_allowed={r.casefold() for r in allowed_relations}
+    for schema, table in created_relations:
+        relation=f"{schema}.{table}".casefold()
+        if schema.casefold()=="alerting" and relation not in normalized_allowed:
+            errors.append(f"G7 exact SQL creates non-authorized Alerting relation: {schema}.{table}")
     forbidden_patterns=(
         r"\binsert\s+into\s+monitoring\.",
         r"\bupdate\s+monitoring\.",

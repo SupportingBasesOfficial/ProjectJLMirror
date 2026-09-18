@@ -125,7 +125,7 @@ WITH eligible AS (
     p.last_confirmed_at,
     p.evidence_state,
     NULL::text AS provider_object_kind,
-    NULL::text AS provider_external_ref,
+    NULL::text AS provider_external_ref
   FROM monitoring.monitoring_problem p
   JOIN monitoring.monitoring_source s
     ON s.tenant_id=p.tenant_id
@@ -218,7 +218,7 @@ FROM (
     p.last_confirmed_at,
     p.evidence_state,
     'zabbix_event'::text AS provider_object_kind,
-    b.provider_external_ref,
+    b.provider_external_ref
   FROM monitoring.monitoring_problem p
   JOIN monitoring.monitoring_source s
     ON s.tenant_id=p.tenant_id

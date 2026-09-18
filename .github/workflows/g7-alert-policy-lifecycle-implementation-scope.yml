@@ -101,7 +101,7 @@ jobs:
             printf 'labels_b64=%s\n' "$LABELS_B64"
             printf 'default_branch=%s\n' "$DEFAULT_BRANCH"
           } >> "$GITHUB_OUTPUT"
-          echo "g6_trusted_command=${MODE} pr=${PR_NUMBER} base=${PR_BASE_SHA} head=${PR_HEAD_SHA} ref=${PR_HEAD_REF} default_branch=${DEFAULT_BRANCH}"
+          echo "g7_trusted_command=${MODE} pr=${PR_NUMBER} base=${PR_BASE_SHA} head=${PR_HEAD_SHA} ref=${PR_HEAD_REF} default_branch=${DEFAULT_BRANCH}"
 
   publish-pending:
     needs: resolve
@@ -165,7 +165,7 @@ jobs:
           PR_BASE_SHA: ${{ needs.resolve.outputs.base_sha }}
         run: |
           set -euo pipefail
-          trusted_dir="$RUNNER_TEMP/g6-scope-evaluator"
+          trusted_dir="$RUNNER_TEMP/g7-scope-evaluator"
           mkdir -p "$trusted_dir"
           trusted_validator="$trusted_dir/validate_g7_alert_policy_lifecycle_implementation_scope.py"
           git show "${PR_BASE_SHA}:${G7_SCOPE_VALIDATOR}" > "$trusted_validator"
@@ -228,7 +228,7 @@ jobs:
             --server-url "$GITHUB_SERVER_URL"
 
   publish-final:
-    name: g6-publish-final pr=${{ needs.resolve.outputs.pr_number }} mode=${{ needs.resolve.outputs.mode }} base=${{ needs.resolve.outputs.base_sha }} head=${{ needs.resolve.outputs.head_sha }} ref=${{ needs.resolve.outputs.head_ref }}
+    name: g7-publish-final pr=${{ needs.resolve.outputs.pr_number }} mode=${{ needs.resolve.outputs.mode }} base=${{ needs.resolve.outputs.base_sha }} head=${{ needs.resolve.outputs.head_sha }} ref=${{ needs.resolve.outputs.head_ref }}
     if: always() && needs.resolve.result == 'success' && needs.publish-pending.result == 'success'
     needs: [resolve, publish-pending, analyze, verify-ready]
     runs-on: ubuntu-24.04

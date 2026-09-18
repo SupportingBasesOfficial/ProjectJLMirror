@@ -19,7 +19,8 @@ A policy identity owns immutable numbered versions. New Alert creation requires 
 version to be the tenant policy's current effective enabled version.
 
 An Alert that was created by version V remains pinned to V. If V is later
-superseded or disabled, V gains no new-occurrence authority. The only later
+superseded or disabled, V gains no new-occurrence authority. A superseded
+version cannot later be selected as effective again. The only later
 effect V may produce is the terminal resolution of an Alert occurrence that V
 already created, after a fresh current Monitoring reread proves the V condition
 no longer matches. This continuation rule never reopens an Alert and never
@@ -36,9 +37,14 @@ Alert is active, later revisions belong to that same Alert occurrence. After it
 resolves, a later matching projection revision creates a new `alert_id`.
 
 The database enforces at most one active Alert for the same
-`tenant + policy_id + policy_version + source_kind + source_subject_id`.
+`tenant + policy_id + source_kind + source_subject_id` across policy versions.
+A newer effective version therefore cannot create a second active Alert over an
+occurrence still owned by an older version. The older pinned version may only
+continue that already-open occurrence to terminal resolution.
+
 Every create/resolve decision is separately idempotent by exact source
-projection revision and immutable policy content hash.
+projection revision and immutable policy content hash. Replaying the same
+effectful source revision returns the already-recorded effect and Alert identity.
 
 ## Currentness
 

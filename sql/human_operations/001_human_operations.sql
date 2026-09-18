@@ -739,11 +739,26 @@ BEGIN
       FROM alerting.alert WHERE tenant_id=p_tenant_id AND alert_id=p_alert_id;
     IF NOT FOUND THEN RAISE EXCEPTION 'g8.alert_missing'; END IF;
 
-    SELECT to_jsonb(x) INTO v_action FROM (
-      SELECT owner_principal_id,action_kind,action_assignment_id,effective_from
-      FROM human_operations.alert_action_assignment
-      WHERE tenant_id=p_tenant_id AND alert_id=p_alert_id AND effective_until IS NULL
-    ) x;
+    IF v_alert_state='active' THEN
+      SELECT to_jsonb(x) INTO v_action FROM (
+        SELECT owner_principal_id,action_kind,action_assignment_id,effective_from
+        FROM human_operations.alert_action_assignment
+        WHERE tenant_id=p_tenant_id AND alert_id=p_alert_id AND effective_until IS NULL
+      ) x;
+      IF v_action IS NULL THEN
+        v_action:=jsonb_build_object(
+          'owner_principal_id',NULL,
+          'action_assignment_id',NULL,
+          'action_kind','no_human_action_required'
+        );
+      END IF;
+    ELSE
+      v_action:=jsonb_build_object(
+        'owner_principal_id',NULL,
+        'action_assignment_id',NULL,
+        'action_kind','no_human_action_required'
+      );
+    END IF;
 
     SELECT COALESCE(jsonb_agg(to_jsonb(x) ORDER BY acknowledged_at),'[]'::jsonb) INTO v_acks FROM (
       SELECT acknowledgement_id,principal_id,acknowledged_at,note

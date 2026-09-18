@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "G6MonitoringIntegrationEnvelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "producer_message_scope",
+    "message_id",
+    "message_class",
+    "contract_name",
+    "contract_version",
+    "producer",
+    "producer_generation",
+    "scope_class",
+    "tenant_id",
+    "subject_type",
+    "subject_id",
+    "occurred_at",
+    "created_at",
+    "operation_id",
+    "not_before",
+    "deadline",
+    "correlation_id",
+    "causation_id",
+    "data_classification",
+    "serialization_profile_id",
+    "encoded_payload"
+  ],
+  "properties": {
+    "producer_message_scope": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "message_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024
+    },
+    "message_class": {
+      "const": "integration_event"
+    },
+    "contract_name": {
+      "enum": [
+        "monitoring.problem-state.changed",
+        "monitoring.health-projection.changed"
+      ]
+    },
+    "contract_version": {
+      "const": "1"
+    },
+    "producer": {
+      "const": "Monitoring"
+    },
+    "producer_generation": {
+      "type": "null"
+    },
+    "scope_class": {
+      "const": "tenant"
+    },
+    "tenant_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "subject_type": {
+      "enum": [
+        "monitoring_problem",
+        "monitoring_resource"
+      ]
+    },
+    "subject_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024
+    },
+    "occurred_at": {
+      "type": "string"
+    },
+    "created_at": {
+      "type": "null"
+    },
+    "operation_id": {
+      "type": "null"
+    },
+    "not_before": {
+      "type": "null"
+    },
+    "deadline": {
+      "type": "null"
+    },
+    "correlation_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024
+    },
+    "causation_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024
+    },
+    "data_classification": {
+      "const": "confidential_tenant"
+    },
+    "serialization_profile_id": {
+      "const": "jsonb-text-utf8@1"
+    },
+    "encoded_payload": {
+      "type": "string",
+      "contentEncoding": "base64"
+    }
+  }
+}

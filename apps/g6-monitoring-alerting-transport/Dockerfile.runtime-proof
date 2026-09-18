@@ -1,0 +1,13 @@
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+
+WORKDIR /opt/jlmirror
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/opt/jlmirror/src:/opt/jlmirror/apps/g6-monitoring-alerting-transport
+
+COPY src/ ./src/
+COPY apps/g6-monitoring-alerting-transport/ ./apps/g6-monitoring-alerting-transport/
+
+ENTRYPOINT ["python", "apps/g6-monitoring-alerting-transport/worker_entry.py"]

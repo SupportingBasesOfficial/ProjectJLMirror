@@ -214,6 +214,7 @@ SELECT human_operations.g8_assign_resource_responsibility(
 
         current_responsibles=scalar("""
 SET ROLE jlmirror_g8_human_operations_executor;
+SELECT set_config('jlmirror.tenant_id','tenant-a',true);
 SELECT count(*) FROM human_operations.resource_responsibility_assignment
 WHERE tenant_id='tenant-a' AND monitoring_resource_id='resource-a' AND effective_until IS NULL;
 RESET ROLE;
@@ -236,6 +237,7 @@ RESET ROLE;
 
         action_state=scalar("""
 SET ROLE jlmirror_g8_human_operations_executor;
+SELECT set_config('jlmirror.tenant_id','tenant-a',true);
 SELECT
  count(*) FILTER (WHERE effective_until IS NULL)::text||':'||
  count(*)::text

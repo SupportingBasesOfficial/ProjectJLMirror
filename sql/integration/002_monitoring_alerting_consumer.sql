@@ -211,7 +211,7 @@ BEGIN
         comparison_profile_id,comparison_profile_version,comparison_evidence_form,
         comparison_verifier_generation,comparison_evidence
     ) VALUES (
-        'alerting.monitoring-resync@1',p_producer_message_scope,p_message_id,p_tenant_id,
+        'alerting.monitoring-resync',p_producer_message_scope,p_message_id,p_tenant_id,
         'monitoring-invalidation-equivalence','1','canonical-jsonb-envelope-payload',
         NULL,v_comparison_evidence
     )
@@ -222,7 +222,7 @@ BEGIN
     SELECT *
       INTO v_receipt
       FROM system.async_consumer_inbox
-     WHERE consumer_contract='alerting.monitoring-resync@1'
+     WHERE consumer_contract='alerting.monitoring-resync'
        AND message_identity_scope=p_producer_message_scope
        AND message_id=p_message_id
      FOR SHARE;
@@ -289,7 +289,7 @@ BEGIN
     SELECT *
       INTO v_receipt
       FROM system.async_consumer_inbox
-     WHERE consumer_contract='alerting.monitoring-resync@1'
+     WHERE consumer_contract='alerting.monitoring-resync'
        AND message_identity_scope=p_message_identity_scope
        AND message_id=p_message_id
      FOR UPDATE;
@@ -383,7 +383,7 @@ BEGIN
     SELECT *
       INTO v_receipt
       FROM system.async_consumer_inbox
-     WHERE consumer_contract='alerting.monitoring-resync@1'
+     WHERE consumer_contract='alerting.monitoring-resync'
        AND message_identity_scope=p_message_identity_scope
        AND message_id=p_message_id
      FOR UPDATE;

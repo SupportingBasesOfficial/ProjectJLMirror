@@ -77,6 +77,7 @@ def main():
     run_case({"apps/g7-alert-policy-lifecycle/provider.py":"client.problem.get(request)\n"},False)
     run_case({"sql/alerting/001_alert_policy_lifecycle.sql":canonical_sql()+"\nCREATE TABLE alerting.notification_intent(id uuid);\n"},False)
     run_case({"sql/alerting/001_alert_policy_lifecycle.sql":canonical_sql()+"\nCREATE TABLE alerting.hidden_business_state(id uuid);\n"},False)
+    run_case({"sql/alerting/001_alert_policy_lifecycle.sql":canonical_sql()+'\nCREATE TABLE "alerting"."hidden_quoted_state"(id uuid);\n'},False)
     run_case({"sql/alerting/001_alert_policy_lifecycle.sql":canonical_sql()+"\nUPDATE monitoring.monitoring_problem SET severity='x';\n"},False)
     print("g7_scope_falsification=PASS policy_lifecycle=allowed ack=blocked notification=blocked hidden_relation=blocked direct_writes=blocked provider_passthrough=blocked monitoring_mutation=blocked")
     return 0

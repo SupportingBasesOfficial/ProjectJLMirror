@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "source_kinds": ["monitoring_problem", "monitoring_health_projection"],
+  "problem": {
+    "severity_order": ["unknown", "informational", "warning", "degraded", "critical"],
+    "required_state": "active",
+    "selectors": ["monitoring_source_id", "monitoring_resource_id"]
+  },
+  "health": {
+    "classes": ["unknown", "healthy", "degraded", "unhealthy"],
+    "selectors": ["monitoring_source_id", "monitoring_resource_id"]
+  },
+  "lifecycle": ["active", "resolved"],
+  "resolved_terminal": true
+}

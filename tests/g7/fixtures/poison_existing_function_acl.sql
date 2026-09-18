@@ -1,0 +1,5 @@
+CREATE SCHEMA IF NOT EXISTS alerting;
+CREATE FUNCTION alerting.g7_list_alerts(TEXT,INTEGER)
+RETURNS JSONB
+LANGUAGE sql
+AS $$ SELECT '[]'::jsonb $$;

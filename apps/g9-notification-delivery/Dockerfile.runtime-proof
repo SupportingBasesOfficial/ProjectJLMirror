@@ -1,0 +1,13 @@
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/opt/jlmirror/apps/g9-notification-delivery
+
+WORKDIR /opt/jlmirror
+COPY apps/g9-notification-delivery/ ./apps/g9-notification-delivery/
+COPY contracts/g9-notification-delivery/ ./contracts/g9-notification-delivery/
+
+USER 65532:65532
+ENTRYPOINT ["python","apps/g9-notification-delivery/runtime_entry.py"]

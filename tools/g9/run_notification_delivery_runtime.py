@@ -22,7 +22,12 @@ def main()->int:
         raise SystemExit("G9 retry budget drift")
     if contract["external_read_is_authoritative_native_view"] is not False:
         raise SystemExit("G9 view-authority drift")
-    print("g9_runtime=PASS domain=PASS callback=PASS worker=PASS read_ui=PASS pg_port=PASS sql_boundary=PASS")
+    run(sys.executable,"tools/g9/run_g9_postgres_conformance.py")
+    run(sys.executable,"tools/g9/run_g9_container_proof.py")
+    print(
+        "g9_runtime=PASS domain=PASS callback=PASS callback_http=PASS worker=PASS "
+        "read_ui=PASS pg_port=PASS sql_boundary=PASS http=PASS postgres=PASS container=PASS"
+    )
     return 0
 
 

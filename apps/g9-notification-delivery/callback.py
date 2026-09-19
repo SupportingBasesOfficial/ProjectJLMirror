@@ -49,6 +49,14 @@ class WhatsAppCallbackBoundary:
         payload=json.loads(body)
         if not isinstance(payload,dict):
             raise ValueError("callback payload must be object")
+        allowed_payload_keys={
+            "status","event_type","error_code","provider_timestamp"
+        }
+        minimized={
+            key:payload[key]
+            for key in allowed_payload_keys
+            if key in payload and isinstance(payload[key],(str,int,float,bool,type(None)))
+        }
         if evidence_kind not in {
             "provider_accepted","delivered","external_read_observed","failed","unknown"
         }:
@@ -67,6 +75,6 @@ class WhatsAppCallbackBoundary:
                 "timestamp_epoch":timestamp_epoch,
                 "signature_profile":"hmac-sha256@1",
             },
-            bounded_payload=payload,
+            bounded_payload=minimized,
             provider_observed_at=provider_observed_at,
         )

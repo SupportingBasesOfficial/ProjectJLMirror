@@ -33,7 +33,7 @@ BEGIN
 END;
 $$;
 
-DO $
+DO $$
 DECLARE
   v_executor_oid OID;
   v_unexpected TEXT;
@@ -54,9 +54,9 @@ BEGIN
     RAISE EXCEPTION 'g10.executor_unexpected_owned_object:%',v_unexpected;
   END IF;
 END;
-$;
+$$;
 
-DO $
+DO $$
 DECLARE
   v_row RECORD;
   v_oid OID;
@@ -91,7 +91,7 @@ BEGIN
     END IF;
   END LOOP;
 END;
-$;
+$$;
 
 GRANT USAGE ON SCHEMA itsm,alerting TO jlmirror_g10_itsm_executor;
 GRANT USAGE ON SCHEMA itsm TO jlmirror_g10_itsm_app_invoker,jlmirror_g10_itsm_worker_invoker;
@@ -267,11 +267,11 @@ CREATE OR REPLACE FUNCTION itsm.g10_reject_immutable_mutation()
 RETURNS trigger
 LANGUAGE plpgsql SECURITY INVOKER
 SET search_path=pg_catalog,itsm
-AS $
+AS $$
 BEGIN
   RAISE EXCEPTION 'g10.immutable_fact';
 END;
-$;
+$$;
 
 CREATE TRIGGER g10_transition_immutable
 BEFORE UPDATE OR DELETE ON itsm.incident_transition
@@ -613,7 +613,7 @@ CREATE OR REPLACE FUNCTION itsm.g10_schedule_sync_retry(
 ) RETURNS JSONB
 LANGUAGE plpgsql SECURITY DEFINER
 SET search_path=pg_catalog,itsm
-AS $
+AS $$
 DECLARE
   v_last itsm.incident_sync_outbox%ROWTYPE;
   v_next_id TEXT;
@@ -659,7 +659,7 @@ BEGIN
     'scheduled',TRUE,'sync_outbox_id',v_next_id,'attempt_number',v_last.attempt_number+1
   );
 END;
-$;
+$$;
 
 CREATE OR REPLACE FUNCTION itsm.g10_reconcile_sync(
  p_tenant_id TEXT,p_outbox_id TEXT
@@ -784,7 +784,7 @@ GRANT EXECUTE ON FUNCTION itsm.g10_schedule_sync_retry(TEXT,TEXT) TO jlmirror_g1
 GRANT EXECUTE ON FUNCTION itsm.g10_reconcile_sync(TEXT,TEXT) TO jlmirror_g10_itsm_worker_invoker;
 GRANT EXECUTE ON FUNCTION itsm.g10_get_incident(TEXT,TEXT) TO jlmirror_g10_itsm_worker_invoker;
 
-DO $
+DO $$
 DECLARE
   v_executor OID;
   v_app OID;
@@ -842,6 +842,6 @@ BEGIN
     END IF;
   END LOOP;
 END;
-$;
+$$;
 
 COMMIT;

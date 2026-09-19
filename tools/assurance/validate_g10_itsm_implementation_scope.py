@@ -37,39 +37,71 @@ def sql_errors(text,p):
     for m in ("incident_id","alert_id","incident_transition","incident_assignment","incident_comment","provider_link","sync_outbox","tenant_id"):
       if fold(m) not in f:out.append(f"G10 exact SQL missing marker: {m}")
 
-    if "opened_at" not in function_block(text,"g10_get_incident"):
-      out.append("G10 Incident detail must project Alert opened_at")
-    if re.search(r"SELECT\s+alert_id\s*,\s*lifecycle_state\s*,\s*created_at\s*,\s*resolved_at",function_block(text,"g10_get_incident"),re.I):
-      out.append("G10 Incident detail must not read nonexistent Alert created_at")
+    incident_read=function_block(text,"g10_get_incident")
+    alert_match=re.search(
+      r"SELECT\s+to_jsonb\s*\(\s*x\s*\)\s+INTO\s+v_alert\s+FROM\s*\((.*?)\)\s*x\s*;",
+      incident_read,re.I|re.S
+    )
+    if not alert_match:
+      out.append("G10 Incident detail must contain a bounded Alert-summary projection")
+    else:
+      alert_projection=alert_match.group(1)
+      if not re.search(r"(?<![A-Za-z0-9_])opened_at(?![A-Za-z0-9_])",alert_projection,re.I):
+        out.append("G10 Incident Alert summary must project opened_at")
+      if re.search(r"(?<![A-Za-z0-9_])(?:[A-Za-z_][A-Za-z0-9_]*\s*\.\s*)?created_at(?![A-Za-z0-9_])",alert_projection,re.I):
+        out.append("G10 Incident Alert summary must not reference nonexistent Alert created_at")
 
     discovery=function_block(text,"g10_next_sync_candidate")
-    if not (
-      re.search(r"sync_state\s*=\s*'dispatching'",discovery,re.I)
-      and re.search(r"claim_expires_at\s*<=\s*transaction_timestamp\s*\(\s*\)",discovery,re.I)
-    ):
-      out.append("G10 worker discovery must surface expired dispatching sync claims")
+    pending_branch=r"\(\s*o\.sync_state\s*=\s*'pending'\s+AND\s+o\.available_at\s*<=\s*transaction_timestamp\s*\(\s*\)\s*\)"
+    expired_branch=r"\(\s*o\.sync_state\s*=\s*'dispatching'\s+AND\s+o\.claim_expires_at\s*<=\s*transaction_timestamp\s*\(\s*\)\s*\)"
+    reachable_expired=(
+      re.search(pending_branch+r"\s*OR\s*"+expired_branch,discovery,re.I|re.S)
+      or re.search(expired_branch+r"\s*OR\s*"+pending_branch,discovery,re.I|re.S)
+    )
+    if not reachable_expired:
+      out.append("G10 worker discovery must contain a reachable OR branch for expired dispatching sync claims")
 
-    if not (
-      "pg_auth_members" in text
-      and re.search(r"roleid\s*=\s*v_role\.oid",text,re.I)
-      and re.search(r"member\s*=\s*v_role\.oid",text,re.I)
-    ):
-      out.append("G10 privileged roles must reject incoming and outgoing memberships")
+    membership_guard=re.search(
+      r"IF\s+EXISTS\s*\(\s*SELECT\s+1\s+FROM\s+pg_auth_members\s+WHERE\s+"
+      r"(?:roleid\s*=\s*v_role\.oid\s+OR\s+member\s*=\s*v_role\.oid|"
+      r"member\s*=\s*v_role\.oid\s+OR\s+roleid\s*=\s*v_role\.oid)"
+      r"\s*\)\s*THEN\s+RAISE\s+EXCEPTION\s+'g10\.role_unsafe_membership:%'",
+      text,re.I|re.S
+    )
+    if not membership_guard:
+      out.append("G10 privileged-role membership detection must fail closed with g10.role_unsafe_membership")
 
     create=function_block(text,"g10_create_incident")
-    if not (
-      "pg_advisory_xact_lock" in create
-      and re.search(r"hashtextextended\s*\([^)]*p_logical_action_id",create,re.I|re.S)
-    ):
-      out.append("G10 Incident create must serialize by logical action before equivalence")
+    lock_match=re.search(
+      r"pg_advisory_xact_lock\s*\(\s*hashtextextended\s*\([^;]*p_logical_action_id[^;]*\)\s*\)",
+      create,re.I|re.S
+    )
+    lookup_match=re.search(
+      r"SELECT\s+\*\s+INTO\s+v_existing\s+FROM\s+itsm\.incident\b[^;]*logical_action_id\s*=\s*p_logical_action_id",
+      create,re.I|re.S
+    )
+    if not lock_match or not lookup_match or lock_match.start()>=lookup_match.start():
+      out.append("G10 Incident create must acquire the logical-action advisory lock before equivalence lookup")
+    elif re.search(r"\bRETURN\b",create[:lock_match.start()],re.I):
+      out.append("G10 Incident create logical-action lock must be reachable before any return")
 
     transition=function_block(text,"g10_transition_incident")
-    if not (
-      "g10.transition_equivalence_conflict" in transition
-      and re.search(r"existing_transition\.to_state",transition,re.I)
-      and "p_target_state" in transition
-    ):
-      out.append("G10 transition replay must reject divergent target equivalence")
+    replay_guard=re.search(
+      r"IF\s+FOUND\s+THEN\s+"
+      r"IF\s+v_existing_transition\.to_state\s+IS\s+DISTINCT\s+FROM\s+p_target_state\s+THEN\s+"
+      r"RAISE\s+EXCEPTION\s+'g10\.transition_equivalence_conflict'\s*;\s*"
+      r"END\s+IF\s*;\s*"
+      r"RETURN\s+jsonb_build_object\s*\([^;]*'duplicate'\s*,\s*TRUE[^;]*\)\s*;\s*"
+      r"END\s+IF\s*;",
+      transition,re.I|re.S
+    )
+    if not replay_guard:
+      out.append("G10 transition replay must reject divergent target before duplicate success")
+    else:
+      conflict_pos=transition.find("g10.transition_equivalence_conflict")
+      duplicate_positions=[m.start() for m in re.finditer(r"'duplicate'\s*,\s*TRUE",transition,re.I)]
+      if any(pos<conflict_pos for pos in duplicate_positions):
+        out.append("G10 transition replay must not expose duplicate success before equivalence conflict check")
 
     allowed_rel={x.casefold() for x in p["exact_sql_allowed_relations"]}
     for schema,table in re.findall(r'\bcreate\s+table(?:\s+if\s+not\s+exists)?\s+"?([a-zA-Z_][\w]*)"?\s*\.\s*"?([a-zA-Z_][\w]*)"?',text,re.I):

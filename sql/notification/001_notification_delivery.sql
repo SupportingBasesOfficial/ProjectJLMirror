@@ -621,8 +621,6 @@ AS $$
 DECLARE
   v_outbox notification.notification_dispatch_outbox%ROWTYPE;
   v_attempt notification.notification_attempt%ROWTYPE;
-  v_intent notification.notification_intent%ROWTYPE;
-  v_next_outbox TEXT;
 BEGIN
   IF p_attempt_state NOT IN ('sent','provider_accepted','delivered','failed','unknown') THEN
     RAISE EXCEPTION 'g9.dispatch_completion_state_invalid';
@@ -662,22 +660,6 @@ BEGIN
      SET state=CASE WHEN p_attempt_state IN ('failed','unknown') THEN 'failed' ELSE 'succeeded' END,
          executor_id=NULL,claim_expires_at=NULL,updated_at=transaction_timestamp()
    WHERE tenant_id=p_tenant_id AND dispatch_outbox_id=p_outbox_id;
-
-  SELECT * INTO v_intent FROM notification.notification_intent
-   WHERE tenant_id=p_tenant_id AND notification_intent_id=v_outbox.notification_intent_id;
-
-  IF p_attempt_state='failed' AND v_outbox.attempt_number<v_intent.max_attempts THEN
-    v_next_outbox:='g9-outbox:'||md5(
-      p_tenant_id||chr(31)||v_outbox.notification_intent_id||chr(31)||(v_outbox.attempt_number+1)::TEXT
-    );
-    INSERT INTO notification.notification_dispatch_outbox(
-      tenant_id,dispatch_outbox_id,notification_intent_id,attempt_number,state,available_at
-    ) VALUES (
-      p_tenant_id,v_next_outbox,v_outbox.notification_intent_id,v_outbox.attempt_number+1,
-      'admitted',transaction_timestamp()+make_interval(secs=>LEAST(300,5*(2^v_outbox.attempt_number)::INTEGER))
-    )
-    ON CONFLICT (tenant_id,notification_intent_id,attempt_number) DO NOTHING;
-  END IF;
 
   PERFORM notification.g9_refresh_projection(p_tenant_id,v_outbox.notification_intent_id);
   RETURN jsonb_build_object(

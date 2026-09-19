@@ -62,6 +62,12 @@ class PgNotificationGateway:
             (tenant_id,),
         )
 
+    def reconcile_dispatch_claim(self,tenant_id:str,outbox_id:str)->dict:
+        return self._scalar(
+            "SELECT notification.g9_reconcile_dispatch_claim(%s,%s)",
+            (tenant_id,outbox_id),
+        )
+
     def schedule_retry(self,tenant_id:str,intent_id:str)->dict:
         return self._scalar(
             "SELECT notification.g9_schedule_retry(%s,%s)",

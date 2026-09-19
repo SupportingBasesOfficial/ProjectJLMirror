@@ -56,6 +56,18 @@ class PgNotificationGateway:
             (tenant_id,alert_id),
         ) or [])
 
+    def next_dispatch_candidate(self,tenant_id:str)->dict|None:
+        return self._scalar(
+            "SELECT notification.g9_next_dispatch_candidate(%s)",
+            (tenant_id,),
+        )
+
+    def schedule_retry(self,tenant_id:str,intent_id:str)->dict:
+        return self._scalar(
+            "SELECT notification.g9_schedule_retry(%s,%s)",
+            (tenant_id,intent_id),
+        )
+
     def claim_dispatch(
         self,*,tenant_id:str,outbox_id:str,executor_id:str,claim_seconds:int,
         adapter_version:str,request_evidence:dict

@@ -5,8 +5,10 @@ from typing import Protocol
 
 
 class DispatchPort(Protocol):
+    def next_dispatch_candidate(self,tenant_id:str)->dict|None: ...
     def claim_dispatch(self,**kwargs)->dict: ...
     def complete_dispatch(self,**kwargs)->dict: ...
+    def schedule_retry(self,tenant_id:str,intent_id:str)->dict: ...
 
 
 class WhatsAppAdapter(Protocol):
@@ -20,6 +22,19 @@ class NotificationDispatcher:
     adapter:WhatsAppAdapter
     executor_id:str
     claim_seconds:int=60
+
+    def dispatch_next(self,*,tenant_id:str)->dict:
+        candidate=self.port.next_dispatch_candidate(tenant_id)
+        if candidate is None:
+            return {"state":"idle"}
+        return self.dispatch(
+            tenant_id=tenant_id,
+            outbox_id=candidate["dispatch_outbox_id"],
+            intent=candidate,
+        )
+
+    def reconcile_retry(self,*,tenant_id:str,intent_id:str)->dict:
+        return self.port.schedule_retry(tenant_id,intent_id)
 
     def dispatch(self,*,tenant_id:str,outbox_id:str,intent:dict)->dict:
         claimed=self.port.claim_dispatch(

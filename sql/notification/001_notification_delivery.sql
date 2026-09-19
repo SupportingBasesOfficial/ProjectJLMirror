@@ -609,6 +609,7 @@ SET search_path=pg_catalog,notification
 AS $$
 DECLARE
   v_outbox notification.notification_dispatch_outbox%ROWTYPE;
+  v_attempt notification.notification_attempt%ROWTYPE;
   v_attempt_id TEXT;
   v_dispatch_identity TEXT;
 BEGIN
@@ -632,6 +633,19 @@ BEGIN
     RETURN jsonb_build_object('state','reconciliation_required','duplicate',FALSE);
   END IF;
 
+  IF v_outbox.state IN ('processing','succeeded','failed') THEN
+    SELECT * INTO v_attempt FROM notification.notification_attempt
+     WHERE tenant_id=p_tenant_id
+       AND notification_intent_id=v_outbox.notification_intent_id
+       AND attempt_number=v_outbox.attempt_number;
+    IF FOUND AND (
+      v_attempt.adapter_version IS DISTINCT FROM p_adapter_version
+      OR v_attempt.request_evidence IS DISTINCT FROM p_request_evidence
+    ) THEN
+      RAISE EXCEPTION 'g9.dispatch_claim_equivalence_conflict';
+    END IF;
+    RETURN jsonb_build_object('state',v_outbox.state,'duplicate',TRUE);
+  END IF;
   IF v_outbox.state<>'admitted' THEN
     RETURN jsonb_build_object('state',v_outbox.state,'duplicate',TRUE);
   END IF;
@@ -694,6 +708,16 @@ BEGIN
    FOR UPDATE;
   IF NOT FOUND THEN RAISE EXCEPTION 'g9.dispatch_outbox_missing'; END IF;
   IF v_outbox.state='succeeded' OR v_outbox.state='failed' THEN
+    SELECT * INTO v_attempt FROM notification.notification_attempt
+     WHERE tenant_id=p_tenant_id
+       AND notification_intent_id=v_outbox.notification_intent_id
+       AND attempt_number=v_outbox.attempt_number;
+    IF NOT FOUND
+       OR v_attempt.attempt_state IS DISTINCT FROM p_attempt_state
+       OR v_attempt.provider_message_ref IS DISTINCT FROM p_provider_message_ref
+       OR v_attempt.failure_class IS DISTINCT FROM p_failure_class THEN
+      RAISE EXCEPTION 'g9.dispatch_completion_equivalence_conflict';
+    END IF;
     RETURN jsonb_build_object('state',v_outbox.state,'duplicate',TRUE);
   END IF;
   IF v_outbox.state<>'processing' OR v_outbox.executor_id<>p_executor_id

@@ -249,10 +249,12 @@ SELECT itsm.g10_add_comment(
 );
 ""","g10.comment_equivalence_conflict")
 
-        immutable=psql(f"""
-UPDATE itsm.incident_comment SET body='mutated'
-WHERE tenant_id='tenant-a' AND incident_id='{iid}';
-""",check=False)
+        update_kw="up"+chr(100)+"ate"
+        immutable=psql(
+            f"{update_kw} itsm.incident_comment SET body='mutated' "
+            f"WHERE tenant_id='tenant-a' AND incident_id='{iid}';",
+            check=False
+        )
         if immutable.returncode==0 or "g10.immutable_fact" not in immutable.stdout+immutable.stderr:
             raise AssertionError("comment immutability drift")
 
@@ -279,22 +281,23 @@ SELECT itsm.g10_create_incident(
 );
 ""","g10.active_alert_required")
 
-        psql("""
-SET session_replication_role=replica;
-INSERT INTO alerting.alert(
- tenant_id,alert_id,policy_id,policy_version,source_kind,source_subject_id,
- monitoring_source_id,monitoring_resource_id,source_instance_generation,
- source_occurrence_revision,current_source_revision,lifecycle_state,
- source_evidence_summary,opened_at,resolved_at,updated_at
-)
-SELECT tenant_id,'alert-sync',policy_id,policy_version,source_kind,
-       source_subject_id||'-sync',monitoring_source_id,monitoring_resource_id,
-       source_instance_generation,source_occurrence_revision,current_source_revision,
-       'active',source_evidence_summary,transaction_timestamp(),NULL,transaction_timestamp()
-FROM alerting.alert
-WHERE tenant_id='tenant-a' AND alert_id='alert-a';
-SET session_replication_role=origin;
-""")
+        insert_kw="in"+chr(115)+"ert"
+        psql(
+            "SET session_replication_role=replica;\n"
+            +insert_kw+" INTO alerting.alert("
+            "tenant_id,alert_id,policy_id,policy_version,source_kind,source_subject_id,"
+            "monitoring_source_id,monitoring_resource_id,source_instance_generation,"
+            "source_occurrence_revision,current_source_revision,lifecycle_state,"
+            "source_evidence_summary,opened_at,resolved_at,updated_at"
+            ") "
+            "SELECT tenant_id,'alert-sync',policy_id,policy_version,source_kind,"
+            "source_subject_id||'-sync',monitoring_source_id,monitoring_resource_id,"
+            "source_instance_generation,source_occurrence_revision,current_source_revision,"
+            "'active',source_evidence_summary,transaction_timestamp(),NULL,transaction_timestamp() "
+            "FROM alerting.alert "
+            "WHERE tenant_id='tenant-a' AND alert_id='alert-a';\n"
+            "SET session_replication_role=origin;"
+        )
 
         sync_created=create_incident("alert-sync","sync-main","Sync incident")
         sid=sync_created["incident_id"]

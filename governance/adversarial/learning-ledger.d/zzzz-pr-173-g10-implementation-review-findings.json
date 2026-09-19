@@ -130,6 +130,136 @@
       ],
       "systemic_guardrail_updated": true,
       "guardrail_generation": 1000001
+    },
+    {
+      "id": "LEARN-PR174-001",
+      "pr": 174,
+      "source": "external_review",
+      "review_comment_id": 4055013573,
+      "class_id": "ADV-TRUST-CONTEXT-GAP",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "The first G10 membership guardrail validated only the presence of pg_auth_members lookup tokens, so a non-effectful query could satisfy the scope validator while leaving privileged membership escalation usable.",
+      "horizontal_audit": [
+        "role membership preflight",
+        "fail-closed authorization checks",
+        "scope-validator semantic effects",
+        "database role inheritance",
+        "SET ROLE attack paths"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_privileged_role_membership_fence"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000001
+    },
+    {
+      "id": "LEARN-PR174-002",
+      "pr": 174,
+      "source": "external_review",
+      "review_comment_id": 4055013575,
+      "class_id": "ADV-AUTHORITY-TOCTOU",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "The expired-sync discovery guardrail checked dispatching and expiry markers independently, allowing an impossible conjunction that mentioned both states without providing a reachable recovery branch.",
+      "horizontal_audit": [
+        "worker discovery reachability",
+        "state-machine predicates",
+        "expired lease recovery",
+        "scope-validator branch semantics",
+        "restart liveness"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_expired_sync_discovery"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000002
+    },
+    {
+      "id": "LEARN-PR174-003",
+      "pr": 174,
+      "source": "external_review",
+      "review_comment_id": 4055013576,
+      "class_id": "ADV-AUTHORITY-TOCTOU",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "The Incident-create serialization guardrail proved that an advisory lock existed but not that it executed before the idempotency lookup, so concurrent creators could still race before serialization.",
+      "horizontal_audit": [
+        "logical-action serialization order",
+        "idempotency lookup order",
+        "unreachable lock placement",
+        "concurrent create paths",
+        "TOCTOU scope validation"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_concurrent_incident_create_serialization"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000003
+    },
+    {
+      "id": "LEARN-PR174-004",
+      "pr": 174,
+      "source": "external_review",
+      "review_comment_id": 4055013580,
+      "class_id": "ADV-PROVENANCE-IDENTITY-DRIFT",
+      "invariant_ids": [
+        "INV-PROVENANCE-001"
+      ],
+      "root_cause": "The transition replay guardrail checked conflict and target markers without proving control-flow order, allowing duplicate success to occur before an unreachable contradictory-target rejection.",
+      "horizontal_audit": [
+        "transition replay ordering",
+        "duplicate-success branches",
+        "unreachable conflict checks",
+        "logical-action equivalence",
+        "immutable transition provenance"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_transition_replay_equivalence"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000002
+    },
+    {
+      "id": "LEARN-PR174-005",
+      "pr": 174,
+      "source": "external_review",
+      "review_comment_id": 4055013582,
+      "class_id": "ADV-PROVENANCE-IDENTITY-DRIFT",
+      "invariant_ids": [
+        "INV-PROVENANCE-001"
+      ],
+      "root_cause": "The Alert timestamp guardrail accepted opened_at anywhere and rejected only an exact unqualified created_at sequence, allowing a qualified nonexistent created_at reference to be aliased as opened_at.",
+      "horizontal_audit": [
+        "cross-domain column qualification",
+        "projection aliases",
+        "Alert schema references",
+        "scope-validator query sections",
+        "runtime projection compatibility"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_alert_opened_at_projection"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000003
     }
   ]
 }

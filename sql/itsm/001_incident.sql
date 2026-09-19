@@ -320,8 +320,9 @@ BEGIN
     RAISE EXCEPTION 'g10.incident_input_invalid';
   END IF;
   PERFORM set_config('jlmirror.tenant_id',p_tenant_id,true);
-  PERFORM 1 FROM alerting.alert WHERE tenant_id=p_tenant_id AND alert_id=p_alert_id;
-  IF NOT FOUND THEN RAISE EXCEPTION 'g10.alert_required'; END IF;
+  PERFORM 1 FROM alerting.alert
+   WHERE tenant_id=p_tenant_id AND alert_id=p_alert_id AND lifecycle_state='active';
+  IF NOT FOUND THEN RAISE EXCEPTION 'g10.active_alert_required'; END IF;
 
   v_hash:=md5(concat_ws(chr(31),p_alert_id,p_title,COALESCE(p_description,''),p_actor_principal_id));
   v_id:='g10-incident:'||md5(p_tenant_id||chr(31)||p_logical_action_id);

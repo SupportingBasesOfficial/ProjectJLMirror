@@ -1,0 +1,29 @@
+{
+  "name": "JLMIRROR G9 Notification Delivery Runtime",
+  "on": {
+    "pull_request": {
+      "paths": [
+        "apps/g9-notification-delivery/**",
+        "contracts/g9-notification-delivery/**",
+        "implementation/g9-notification-delivery/**",
+        "tests/g9/**",
+        "tools/g9/**",
+        "sql/notification/001_notification_delivery.sql",
+        ".github/workflows/g9-notification-delivery-runtime.yml"
+      ]
+    },
+    "workflow_dispatch": {}
+  },
+  "permissions": {},
+  "jobs": {
+    "g9-runtime": {
+      "runs-on": "ubuntu-24.04",
+      "steps": [
+        {"uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"},
+        {"uses": "actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1"},
+        {"uses": "actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38"},
+        {"run": "python tools/g9/run_notification_delivery_runtime.py"}
+      ]
+    }
+  }
+}

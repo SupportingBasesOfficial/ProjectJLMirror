@@ -8,6 +8,7 @@ class DispatchPort(Protocol):
     def next_dispatch_candidate(self,tenant_id:str)->dict|None: ...
     def claim_dispatch(self,**kwargs)->dict: ...
     def complete_dispatch(self,**kwargs)->dict: ...
+    def reconcile_dispatch_claim(self,tenant_id:str,outbox_id:str)->dict: ...
     def schedule_retry(self,tenant_id:str,intent_id:str)->dict: ...
 
 
@@ -32,6 +33,9 @@ class NotificationDispatcher:
             outbox_id=candidate["dispatch_outbox_id"],
             intent=candidate,
         )
+
+    def reconcile_expired_claim(self,*,tenant_id:str,outbox_id:str)->dict:
+        return self.port.reconcile_dispatch_claim(tenant_id,outbox_id)
 
     def reconcile_retry(self,*,tenant_id:str,intent_id:str)->dict:
         return self.port.schedule_retry(tenant_id,intent_id)

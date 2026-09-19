@@ -25,10 +25,52 @@ def semantic_errors(path,text,p):
       out.append(f"direct SQL/schema mutation is forbidden in G10 application executable artifact: {path}")
     return out
 
+def function_block(text,name):
+    marker=f"CREATE OR REPLACE FUNCTION itsm.{name}"
+    start=text.find(marker)
+    if start<0:return ""
+    next_start=text.find("CREATE OR REPLACE FUNCTION itsm.",start+len(marker))
+    return text[start:] if next_start<0 else text[start:next_start]
+
 def sql_errors(text,p):
     out=[]; f=fold(text)
     for m in ("incident_id","alert_id","incident_transition","incident_assignment","incident_comment","provider_link","sync_outbox","tenant_id"):
       if fold(m) not in f:out.append(f"G10 exact SQL missing marker: {m}")
+
+    if "opened_at" not in function_block(text,"g10_get_incident"):
+      out.append("G10 Incident detail must project Alert opened_at")
+    if re.search(r"SELECT\s+alert_id\s*,\s*lifecycle_state\s*,\s*created_at\s*,\s*resolved_at",function_block(text,"g10_get_incident"),re.I):
+      out.append("G10 Incident detail must not read nonexistent Alert created_at")
+
+    discovery=function_block(text,"g10_next_sync_candidate")
+    if not (
+      re.search(r"sync_state\s*=\s*'dispatching'",discovery,re.I)
+      and re.search(r"claim_expires_at\s*<=\s*transaction_timestamp\s*\(\s*\)",discovery,re.I)
+    ):
+      out.append("G10 worker discovery must surface expired dispatching sync claims")
+
+    if not (
+      "pg_auth_members" in text
+      and re.search(r"roleid\s*=\s*v_role\.oid",text,re.I)
+      and re.search(r"member\s*=\s*v_role\.oid",text,re.I)
+    ):
+      out.append("G10 privileged roles must reject incoming and outgoing memberships")
+
+    create=function_block(text,"g10_create_incident")
+    if not (
+      "pg_advisory_xact_lock" in create
+      and re.search(r"hashtextextended\s*\([^)]*p_logical_action_id",create,re.I|re.S)
+    ):
+      out.append("G10 Incident create must serialize by logical action before equivalence")
+
+    transition=function_block(text,"g10_transition_incident")
+    if not (
+      "g10.transition_equivalence_conflict" in transition
+      and re.search(r"existing_transition\.to_state",transition,re.I)
+      and "p_target_state" in transition
+    ):
+      out.append("G10 transition replay must reject divergent target equivalence")
+
     allowed_rel={x.casefold() for x in p["exact_sql_allowed_relations"]}
     for schema,table in re.findall(r'\bcreate\s+table(?:\s+if\s+not\s+exists)?\s+"?([a-zA-Z_][\w]*)"?\s*\.\s*"?([a-zA-Z_][\w]*)"?',text,re.I):
       rel=f"{schema}.{table}".casefold()

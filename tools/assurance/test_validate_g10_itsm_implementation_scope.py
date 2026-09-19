@@ -34,7 +34,12 @@ DO $$
 DECLARE v_role record;
 BEGIN
   SELECT * INTO v_role FROM pg_roles LIMIT 1;
-  PERFORM 1 FROM pg_auth_members WHERE roleid=v_role.oid OR member=v_role.oid;
+  IF EXISTS (
+    SELECT 1 FROM pg_auth_members
+    WHERE roleid=v_role.oid OR member=v_role.oid
+  ) THEN
+    RAISE EXCEPTION 'g10.role_unsafe_membership:%',v_role.rolname;
+  END IF;
 END;
 $$;
 
@@ -42,11 +47,14 @@ CREATE OR REPLACE FUNCTION itsm.g10_create_incident(
  p_tenant_id text,p_alert_id text,p_title text,p_description text,
  p_actor_principal_id text,p_logical_action_id text,p_authority_snapshot jsonb
 ) RETURNS jsonb LANGUAGE plpgsql AS $$
+DECLARE v_existing record;
 BEGIN
   PERFORM pg_advisory_xact_lock(hashtextextended(p_tenant_id||p_logical_action_id,10));
+  SELECT * INTO v_existing FROM itsm.incident
+   WHERE tenant_id=p_tenant_id AND logical_action_id=p_logical_action_id;
   RETURN '{}'::jsonb;
 END;
-$$;
+$;
 
 CREATE OR REPLACE FUNCTION itsm.g10_transition_incident(
  p_tenant_id text,p_incident_id text,p_target_state text,p_actor_principal_id text,
@@ -54,29 +62,39 @@ CREATE OR REPLACE FUNCTION itsm.g10_transition_incident(
 ) RETURNS jsonb LANGUAGE plpgsql AS $$
 DECLARE v_existing_transition record;
 BEGIN
-  IF v_existing_transition.to_state IS DISTINCT FROM p_target_state THEN
-    RAISE EXCEPTION 'g10.transition_equivalence_conflict';
+  IF FOUND THEN
+    IF v_existing_transition.to_state IS DISTINCT FROM p_target_state THEN
+      RAISE EXCEPTION 'g10.transition_equivalence_conflict';
+    END IF;
+    RETURN jsonb_build_object('incident_id',p_incident_id,'duplicate',TRUE);
   END IF;
   RETURN '{}'::jsonb;
 END;
-$$;
+$;
 
 CREATE OR REPLACE FUNCTION itsm.g10_next_sync_candidate(p_tenant_id text)
 RETURNS jsonb LANGUAGE plpgsql AS $$
 BEGIN
-  PERFORM 1 FROM itsm.incident_sync_outbox
-   WHERE sync_state='dispatching' AND claim_expires_at<=transaction_timestamp();
+  PERFORM 1 FROM itsm.incident_sync_outbox o
+   WHERE
+     (o.sync_state='pending' AND o.available_at<=transaction_timestamp())
+     OR
+     (o.sync_state='dispatching' AND o.claim_expires_at<=transaction_timestamp());
   RETURN '{}'::jsonb;
 END;
 $$;
 
 CREATE OR REPLACE FUNCTION itsm.g10_get_incident(p_tenant_id text,p_incident_id text)
 RETURNS jsonb LANGUAGE plpgsql AS $$
+DECLARE v_alert jsonb;
 BEGIN
-  PERFORM opened_at FROM alerting.alert;
+  SELECT to_jsonb(x) INTO v_alert FROM (
+    SELECT alert_id,lifecycle_state,opened_at,resolved_at
+    FROM alerting.alert
+  ) x;
   RETURN '{}'::jsonb;
 END;
-$$;
+$;
 COMMIT;
 """
 
@@ -115,19 +133,53 @@ def require_rejected(sql_text):
     case({"sql/itsm/001_incident.sql":sql_text},False)
 
 def falsify_g10_alert_opened_at_projection():
-    require_rejected(GOOD_SQL.replace("PERFORM opened_at FROM alerting.alert;","PERFORM created_at FROM alerting.alert;"))
+    require_rejected(GOOD_SQL.replace(
+      "SELECT alert_id,lifecycle_state,opened_at,resolved_at",
+      "SELECT alert_id,lifecycle_state,a.created_at AS opened_at,resolved_at"
+    ))
 
 def falsify_g10_expired_sync_discovery():
-    require_rejected(GOOD_SQL.replace("sync_state='dispatching' AND claim_expires_at<=transaction_timestamp()","sync_state='pending'"))
+    require_rejected(GOOD_SQL.replace(
+      ")\n     OR\n     (o.sync_state='dispatching'",
+      ")\n     AND\n     (o.sync_state='dispatching'"
+    ))
 
 def falsify_g10_privileged_role_membership_fence():
-    require_rejected(GOOD_SQL.replace("PERFORM 1 FROM pg_auth_members WHERE roleid=v_role.oid OR member=v_role.oid;","PERFORM 1;"))
+    require_rejected(GOOD_SQL.replace(
+      """  IF EXISTS (
+    SELECT 1 FROM pg_auth_members
+    WHERE roleid=v_role.oid OR member=v_role.oid
+  ) THEN
+    RAISE EXCEPTION 'g10.role_unsafe_membership:%',v_role.rolname;
+  END IF;""",
+      "  PERFORM 1 FROM pg_auth_members WHERE roleid=v_role.oid OR member=v_role.oid;"
+    ))
 
 def falsify_g10_concurrent_incident_create_serialization():
-    require_rejected(GOOD_SQL.replace("PERFORM pg_advisory_xact_lock(hashtextextended(p_tenant_id||p_logical_action_id,10));","PERFORM 1;"))
+    require_rejected(GOOD_SQL.replace(
+      """  PERFORM pg_advisory_xact_lock(hashtextextended(p_tenant_id||p_logical_action_id,10));
+  SELECT * INTO v_existing FROM itsm.incident
+   WHERE tenant_id=p_tenant_id AND logical_action_id=p_logical_action_id;""",
+      """  SELECT * INTO v_existing FROM itsm.incident
+   WHERE tenant_id=p_tenant_id AND logical_action_id=p_logical_action_id;
+  PERFORM pg_advisory_xact_lock(hashtextextended(p_tenant_id||p_logical_action_id,10));"""
+    ))
 
 def falsify_g10_transition_replay_equivalence():
-    require_rejected(GOOD_SQL.replace("RAISE EXCEPTION 'g10.transition_equivalence_conflict';","RETURN '{}'::jsonb;"))
+    require_rejected(GOOD_SQL.replace(
+      """  IF FOUND THEN
+    IF v_existing_transition.to_state IS DISTINCT FROM p_target_state THEN
+      RAISE EXCEPTION 'g10.transition_equivalence_conflict';
+    END IF;
+    RETURN jsonb_build_object('incident_id',p_incident_id,'duplicate',TRUE);
+  END IF;""",
+      """  IF FOUND THEN
+    RETURN jsonb_build_object('incident_id',p_incident_id,'duplicate',TRUE);
+    IF v_existing_transition.to_state IS DISTINCT FROM p_target_state THEN
+      RAISE EXCEPTION 'g10.transition_equivalence_conflict';
+    END IF;
+  END IF;"""
+    ))
 
 def falsify_g10_hidden_relation():
     require_rejected(GOOD_SQL+"\nCREATE TABLE itsm.hidden(id text);\n")

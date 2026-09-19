@@ -52,7 +52,54 @@ BEGIN
       END IF;
     END LOOP;
 END;
-$$;
+$;
+
+DO $
+DECLARE
+  v_executor_oid OID;
+  v_unexpected TEXT;
+BEGIN
+  SELECT oid INTO v_executor_oid
+  FROM pg_roles WHERE rolname='jlmirror_g9_notification_executor';
+
+  WITH allowed_proc_oids AS (
+    SELECT to_regprocedure(signature) AS proc_oid
+    FROM (VALUES
+      ('notification.g9_reject_immutable_mutation()'),
+      ('notification.g9_guard_attempt_terminal_transition()'),
+      ('notification.g9_validate_authority(text,text,jsonb)'),
+      ('notification.g9_refresh_projection(text,text)'),
+      ('notification.g9_create_intent(text,text,text,text,text,text,text,text,text,text,text,jsonb)'),
+      ('notification.g9_next_dispatch_candidate(text)'),
+      ('notification.g9_claim_dispatch(text,text,text,integer,text,jsonb)'),
+      ('notification.g9_complete_dispatch(text,text,text,text,text,text)'),
+      ('notification.g9_reconcile_dispatch_claim(text,text)'),
+      ('notification.g9_schedule_retry(text,text)'),
+      ('notification.g9_record_provider_callback(text,text,text,text,text,jsonb,jsonb,timestamp with time zone)'),
+      ('notification.g9_get_intent(text,text)'),
+      ('notification.g9_list_alert_intents(text,text)')
+    ) AS allowed(signature)
+  )
+  SELECT format('class=%s,objid=%s,dbid=%s',d.classid::regclass::TEXT,d.objid,d.dbid)
+    INTO v_unexpected
+    FROM pg_shdepend d
+   WHERE d.refclassid='pg_authid'::regclass
+     AND d.refobjid=v_executor_oid
+     AND d.deptype='o'
+     AND NOT (
+       d.classid='pg_proc'::regclass
+       AND d.objid IN (
+         SELECT proc_oid FROM allowed_proc_oids WHERE proc_oid IS NOT NULL
+       )
+     )
+   ORDER BY d.dbid,d.classid,d.objid
+   LIMIT 1;
+
+  IF v_unexpected IS NOT NULL THEN
+    RAISE EXCEPTION 'g9.executor_unexpected_owned_object:%',v_unexpected;
+  END IF;
+END;
+$;
 
 GRANT USAGE ON SCHEMA notification,alerting,human_operations TO jlmirror_g9_notification_executor;
 GRANT USAGE ON SCHEMA notification TO
@@ -758,6 +805,57 @@ BEGIN
 END;
 $$;
 
+CREATE OR REPLACE FUNCTION notification.g9_reconcile_dispatch_claim(
+  p_tenant_id TEXT,p_outbox_id TEXT
+) RETURNS JSONB
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path=pg_catalog,notification
+AS $
+DECLARE
+  v_outbox notification.notification_dispatch_outbox%ROWTYPE;
+  v_attempt notification.notification_attempt%ROWTYPE;
+BEGIN
+  PERFORM set_config('jlmirror.tenant_id',p_tenant_id,true);
+
+  SELECT * INTO v_outbox FROM notification.notification_dispatch_outbox
+   WHERE tenant_id=p_tenant_id AND dispatch_outbox_id=p_outbox_id
+   FOR UPDATE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'g9.dispatch_outbox_missing'; END IF;
+
+  IF v_outbox.state<>'reconciliation_required' THEN
+    RETURN jsonb_build_object('reconciled',FALSE,'state',v_outbox.state);
+  END IF;
+
+  SELECT * INTO v_attempt FROM notification.notification_attempt
+   WHERE tenant_id=p_tenant_id
+     AND notification_intent_id=v_outbox.notification_intent_id
+     AND attempt_number=v_outbox.attempt_number
+   FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'g9.reconciliation_attempt_missing';
+  END IF;
+
+  IF v_attempt.attempt_state='dispatching' THEN
+    UPDATE notification.notification_attempt
+       SET attempt_state='unknown',failure_class='lease_expired_outcome_unknown',
+           completed_at=transaction_timestamp()
+     WHERE tenant_id=p_tenant_id
+       AND notification_attempt_id=v_attempt.notification_attempt_id;
+  END IF;
+
+  UPDATE notification.notification_dispatch_outbox
+     SET state='failed',executor_id=NULL,claim_expires_at=NULL,
+         updated_at=transaction_timestamp()
+   WHERE tenant_id=p_tenant_id AND dispatch_outbox_id=p_outbox_id;
+
+  PERFORM notification.g9_refresh_projection(p_tenant_id,v_outbox.notification_intent_id);
+  RETURN jsonb_build_object(
+    'reconciled',TRUE,'state','unknown',
+    'notification_intent_id',v_outbox.notification_intent_id
+  );
+END;
+$;
+
 CREATE OR REPLACE FUNCTION notification.g9_schedule_retry(
   p_tenant_id TEXT,p_intent_id TEXT
 ) RETURNS JSONB
@@ -916,6 +1014,8 @@ ALTER FUNCTION notification.g9_complete_dispatch(TEXT,TEXT,TEXT,TEXT,TEXT,TEXT)
 OWNER TO jlmirror_g9_notification_executor;
 ALTER FUNCTION notification.g9_record_provider_callback(TEXT,TEXT,TEXT,TEXT,TEXT,JSONB,JSONB,TIMESTAMPTZ)
 OWNER TO jlmirror_g9_notification_executor;
+ALTER FUNCTION notification.g9_reconcile_dispatch_claim(TEXT,TEXT)
+OWNER TO jlmirror_g9_notification_executor;
 ALTER FUNCTION notification.g9_schedule_retry(TEXT,TEXT)
 OWNER TO jlmirror_g9_notification_executor;
 ALTER FUNCTION notification.g9_get_intent(TEXT,TEXT) OWNER TO jlmirror_g9_notification_executor;
@@ -935,6 +1035,8 @@ TO jlmirror_g9_notification_worker_invoker;
 GRANT EXECUTE ON FUNCTION notification.g9_claim_dispatch(TEXT,TEXT,TEXT,INTEGER,TEXT,JSONB)
 TO jlmirror_g9_notification_worker_invoker;
 GRANT EXECUTE ON FUNCTION notification.g9_complete_dispatch(TEXT,TEXT,TEXT,TEXT,TEXT,TEXT)
+TO jlmirror_g9_notification_worker_invoker;
+GRANT EXECUTE ON FUNCTION notification.g9_reconcile_dispatch_claim(TEXT,TEXT)
 TO jlmirror_g9_notification_worker_invoker;
 GRANT EXECUTE ON FUNCTION notification.g9_schedule_retry(TEXT,TEXT)
 TO jlmirror_g9_notification_worker_invoker;
@@ -969,6 +1071,7 @@ BEGIN
       ('notification.g9_next_dispatch_candidate(text)','worker'),
       ('notification.g9_claim_dispatch(text,text,text,integer,text,jsonb)','worker'),
       ('notification.g9_complete_dispatch(text,text,text,text,text,text)','worker'),
+      ('notification.g9_reconcile_dispatch_claim(text,text)','worker'),
       ('notification.g9_schedule_retry(text,text)','worker'),
       ('notification.g9_record_provider_callback(text,text,text,text,text,jsonb,jsonb,timestamp with time zone)','callback'),
       ('notification.g9_get_intent(text,text)','shared_read'),

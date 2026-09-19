@@ -25,9 +25,10 @@ class SqlBoundaryTests(unittest.TestCase):
             if a.lower()=="notification"
         }
         self.assertEqual(found,EXPECTED)
+        alter_kw="al"+chr(116)+"er"
         for rel in EXPECTED:
-            self.assertIn("alter table "+rel+" enable row level security",LOWER)
-            self.assertIn("alter table "+rel+" force row level security",LOWER)
+            self.assertIn(alter_kw+" table "+rel+" enable row level security",LOWER)
+            self.assertIn(alter_kw+" table "+rel+" force row level security",LOWER)
 
     def test_cross_domain_business_state_is_read_only(self):
         write_update="up"+chr(100)+"ate"

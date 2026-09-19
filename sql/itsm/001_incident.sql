@@ -203,6 +203,28 @@ GRANT SELECT,INSERT ON itsm.incident_provider_link TO jlmirror_g10_itsm_executor
 GRANT SELECT,INSERT,UPDATE ON itsm.incident_sync_outbox TO jlmirror_g10_itsm_executor;
 GRANT SELECT ON alerting.alert TO jlmirror_g10_itsm_executor;
 
+CREATE OR REPLACE FUNCTION itsm.g10_reject_immutable_mutation()
+RETURNS trigger
+LANGUAGE plpgsql SECURITY INVOKER
+SET search_path=pg_catalog,itsm
+AS $
+BEGIN
+  RAISE EXCEPTION 'g10.immutable_fact';
+END;
+$;
+
+CREATE TRIGGER g10_transition_immutable
+BEFORE UPDATE OR DELETE ON itsm.incident_transition
+FOR EACH ROW EXECUTE FUNCTION itsm.g10_reject_immutable_mutation();
+
+CREATE TRIGGER g10_comment_immutable
+BEFORE UPDATE OR DELETE ON itsm.incident_comment
+FOR EACH ROW EXECUTE FUNCTION itsm.g10_reject_immutable_mutation();
+
+CREATE TRIGGER g10_provider_link_immutable
+BEFORE UPDATE OR DELETE ON itsm.incident_provider_link
+FOR EACH ROW EXECUTE FUNCTION itsm.g10_reject_immutable_mutation();
+
 CREATE OR REPLACE FUNCTION itsm.g10_validate_authority(
  p_tenant_id TEXT,p_actor_principal_id TEXT,p_authority_snapshot JSONB
 ) RETURNS VOID
@@ -472,6 +494,17 @@ BEGIN
   IF NOT FOUND THEN RAISE EXCEPTION 'g10.sync_outbox_missing'; END IF;
 
   IF v_outbox.sync_state IN ('linked','failed','unknown') THEN
+    IF v_outbox.sync_state IS DISTINCT FROM p_result_state
+       OR v_outbox.last_failure_class IS DISTINCT FROM p_failure_class THEN
+      RAISE EXCEPTION 'g10.sync_completion_equivalence_conflict';
+    END IF;
+    IF p_result_state='linked' AND NOT EXISTS (
+      SELECT 1 FROM itsm.incident_provider_link
+      WHERE tenant_id=p_tenant_id AND incident_id=v_outbox.incident_id
+        AND provider_ticket_ref=p_provider_ticket_ref
+    ) THEN
+      RAISE EXCEPTION 'g10.sync_completion_equivalence_conflict';
+    END IF;
     RETURN jsonb_build_object('state',v_outbox.sync_state,'duplicate',TRUE);
   END IF;
   IF v_outbox.sync_state<>'dispatching' OR v_outbox.executor_id<>p_executor_id
@@ -482,14 +515,27 @@ BEGIN
   IF p_result_state='linked' THEN
     IF COALESCE(p_provider_ticket_ref,'')='' THEN RAISE EXCEPTION 'g10.provider_ticket_ref_required'; END IF;
     v_link_id:='g10-provider-link:'||md5(p_tenant_id||chr(31)||v_outbox.incident_id);
-    INSERT INTO itsm.incident_provider_link(
-      tenant_id,provider_link_id,incident_id,adapter_instance_ref,
-      provider_ticket_ref,provider_evidence
-    ) VALUES (
-      p_tenant_id,v_link_id,v_outbox.incident_id,v_outbox.adapter_instance_ref,
-      p_provider_ticket_ref,p_provider_evidence
-    )
-    ON CONFLICT (tenant_id,incident_id) DO NOTHING;
+    IF EXISTS (
+      SELECT 1 FROM itsm.incident_provider_link
+      WHERE tenant_id=p_tenant_id AND incident_id=v_outbox.incident_id
+    ) THEN
+      IF NOT EXISTS (
+        SELECT 1 FROM itsm.incident_provider_link
+        WHERE tenant_id=p_tenant_id AND incident_id=v_outbox.incident_id
+          AND adapter_instance_ref=v_outbox.adapter_instance_ref
+          AND provider_ticket_ref=p_provider_ticket_ref
+      ) THEN
+        RAISE EXCEPTION 'g10.provider_link_equivalence_conflict';
+      END IF;
+    ELSE
+      INSERT INTO itsm.incident_provider_link(
+        tenant_id,provider_link_id,incident_id,adapter_instance_ref,
+        provider_ticket_ref,provider_evidence
+      ) VALUES (
+        p_tenant_id,v_link_id,v_outbox.incident_id,v_outbox.adapter_instance_ref,
+        p_provider_ticket_ref,p_provider_evidence
+      );
+    END IF;
   END IF;
 
   UPDATE itsm.incident_sync_outbox
@@ -500,6 +546,59 @@ BEGIN
   RETURN jsonb_build_object('state',p_result_state,'duplicate',FALSE);
 END;
 $$;
+
+CREATE OR REPLACE FUNCTION itsm.g10_schedule_sync_retry(
+ p_tenant_id TEXT,p_incident_id TEXT
+) RETURNS JSONB
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path=pg_catalog,itsm
+AS $
+DECLARE
+  v_last itsm.incident_sync_outbox%ROWTYPE;
+  v_next_id TEXT;
+BEGIN
+  PERFORM set_config('jlmirror.tenant_id',p_tenant_id,true);
+  PERFORM pg_advisory_xact_lock(hashtextextended(p_tenant_id||chr(31)||p_incident_id,2));
+
+  SELECT * INTO v_last FROM itsm.incident_sync_outbox
+   WHERE tenant_id=p_tenant_id AND incident_id=p_incident_id
+   ORDER BY attempt_number DESC LIMIT 1;
+  IF NOT FOUND THEN RAISE EXCEPTION 'g10.sync_outbox_missing'; END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM itsm.incident_provider_link
+    WHERE tenant_id=p_tenant_id AND incident_id=p_incident_id
+  ) THEN
+    RETURN jsonb_build_object('scheduled',FALSE,'reason','provider_already_linked');
+  END IF;
+
+  IF v_last.sync_state NOT IN ('failed','unknown') THEN
+    RETURN jsonb_build_object('scheduled',FALSE,'reason','retry_not_required');
+  END IF;
+
+  IF v_last.attempt_number>=3 THEN
+    RETURN jsonb_build_object('scheduled',FALSE,'reason','retry_budget_exhausted');
+  END IF;
+
+  v_next_id:='g10-sync:'||md5(
+    p_tenant_id||chr(31)||p_incident_id||chr(31)||(v_last.attempt_number+1)::TEXT
+  );
+
+  INSERT INTO itsm.incident_sync_outbox(
+    tenant_id,sync_outbox_id,incident_id,sync_state,attempt_number,
+    adapter_instance_ref,sync_identity,available_at
+  ) VALUES (
+    p_tenant_id,v_next_id,p_incident_id,'pending',v_last.attempt_number+1,
+    v_last.adapter_instance_ref,v_last.sync_identity,
+    transaction_timestamp()+make_interval(secs=>LEAST(300,5*(2^v_last.attempt_number)::INTEGER))
+  )
+  ON CONFLICT (tenant_id,incident_id,attempt_number) DO NOTHING;
+
+  RETURN jsonb_build_object(
+    'scheduled',TRUE,'sync_outbox_id',v_next_id,'attempt_number',v_last.attempt_number+1
+  );
+END;
+$;
 
 CREATE OR REPLACE FUNCTION itsm.g10_reconcile_sync(
  p_tenant_id TEXT,p_outbox_id TEXT
@@ -594,6 +693,7 @@ BEGIN
 END;
 $$;
 
+ALTER FUNCTION itsm.g10_reject_immutable_mutation() OWNER TO jlmirror_g10_itsm_executor;
 ALTER FUNCTION itsm.g10_validate_authority(TEXT,TEXT,JSONB) OWNER TO jlmirror_g10_itsm_executor;
 ALTER FUNCTION itsm.g10_create_incident(TEXT,TEXT,TEXT,TEXT,TEXT,TEXT,JSONB) OWNER TO jlmirror_g10_itsm_executor;
 ALTER FUNCTION itsm.g10_transition_incident(TEXT,TEXT,TEXT,TEXT,TEXT,JSONB) OWNER TO jlmirror_g10_itsm_executor;
@@ -602,6 +702,7 @@ ALTER FUNCTION itsm.g10_add_comment(TEXT,TEXT,TEXT,TEXT,TEXT,JSONB) OWNER TO jlm
 ALTER FUNCTION itsm.g10_next_sync_candidate(TEXT) OWNER TO jlmirror_g10_itsm_executor;
 ALTER FUNCTION itsm.g10_claim_sync(TEXT,TEXT,TEXT,INTEGER) OWNER TO jlmirror_g10_itsm_executor;
 ALTER FUNCTION itsm.g10_complete_sync(TEXT,TEXT,TEXT,TEXT,TEXT,JSONB,TEXT) OWNER TO jlmirror_g10_itsm_executor;
+ALTER FUNCTION itsm.g10_schedule_sync_retry(TEXT,TEXT) OWNER TO jlmirror_g10_itsm_executor;
 ALTER FUNCTION itsm.g10_reconcile_sync(TEXT,TEXT) OWNER TO jlmirror_g10_itsm_executor;
 ALTER FUNCTION itsm.g10_get_incident(TEXT,TEXT) OWNER TO jlmirror_g10_itsm_executor;
 ALTER FUNCTION itsm.g10_list_alert_incidents(TEXT,TEXT) OWNER TO jlmirror_g10_itsm_executor;
@@ -618,7 +719,68 @@ GRANT EXECUTE ON FUNCTION itsm.g10_list_alert_incidents(TEXT,TEXT) TO jlmirror_g
 GRANT EXECUTE ON FUNCTION itsm.g10_next_sync_candidate(TEXT) TO jlmirror_g10_itsm_worker_invoker;
 GRANT EXECUTE ON FUNCTION itsm.g10_claim_sync(TEXT,TEXT,TEXT,INTEGER) TO jlmirror_g10_itsm_worker_invoker;
 GRANT EXECUTE ON FUNCTION itsm.g10_complete_sync(TEXT,TEXT,TEXT,TEXT,TEXT,JSONB,TEXT) TO jlmirror_g10_itsm_worker_invoker;
+GRANT EXECUTE ON FUNCTION itsm.g10_schedule_sync_retry(TEXT,TEXT) TO jlmirror_g10_itsm_worker_invoker;
 GRANT EXECUTE ON FUNCTION itsm.g10_reconcile_sync(TEXT,TEXT) TO jlmirror_g10_itsm_worker_invoker;
 GRANT EXECUTE ON FUNCTION itsm.g10_get_incident(TEXT,TEXT) TO jlmirror_g10_itsm_worker_invoker;
+
+DO $
+DECLARE
+  v_executor OID;
+  v_app OID;
+  v_worker OID;
+  v_row RECORD;
+  v_oid OID;
+BEGIN
+  SELECT oid INTO v_executor FROM pg_roles WHERE rolname='jlmirror_g10_itsm_executor';
+  SELECT oid INTO v_app FROM pg_roles WHERE rolname='jlmirror_g10_itsm_app_invoker';
+  SELECT oid INTO v_worker FROM pg_roles WHERE rolname='jlmirror_g10_itsm_worker_invoker';
+
+  FOR v_row IN
+    SELECT signature,exposure FROM (VALUES
+      ('itsm.g10_reject_immutable_mutation()','internal'),
+      ('itsm.g10_validate_authority(text,text,jsonb)','internal'),
+      ('itsm.g10_create_incident(text,text,text,text,text,text,jsonb)','app'),
+      ('itsm.g10_transition_incident(text,text,text,text,text,jsonb)','app'),
+      ('itsm.g10_assign_incident(text,text,text,text,text,jsonb)','app'),
+      ('itsm.g10_add_comment(text,text,text,text,text,jsonb)','app'),
+      ('itsm.g10_next_sync_candidate(text)','worker'),
+      ('itsm.g10_claim_sync(text,text,text,integer)','worker'),
+      ('itsm.g10_complete_sync(text,text,text,text,text,jsonb,text)','worker'),
+      ('itsm.g10_schedule_sync_retry(text,text)','worker'),
+      ('itsm.g10_reconcile_sync(text,text)','worker'),
+      ('itsm.g10_get_incident(text,text)','shared_read'),
+      ('itsm.g10_list_alert_incidents(text,text)','app')
+    ) AS x(signature,exposure)
+  LOOP
+    v_oid:=to_regprocedure(v_row.signature);
+    IF v_oid IS NULL THEN
+      RAISE EXCEPTION 'g10.function_missing:%',v_row.signature;
+    END IF;
+    IF EXISTS (SELECT 1 FROM pg_proc p WHERE p.oid=v_oid AND p.proowner<>v_executor) THEN
+      RAISE EXCEPTION 'g10.function_owner_unsafe:%',v_row.signature;
+    END IF;
+    IF v_row.exposure<>'internal' AND EXISTS (
+      SELECT 1 FROM pg_proc p WHERE p.oid=v_oid AND p.prosecdef IS NOT TRUE
+    ) THEN
+      RAISE EXCEPTION 'g10.exposed_function_not_security_definer:%',v_row.signature;
+    END IF;
+    IF EXISTS (
+      SELECT 1
+      FROM pg_proc p,
+           LATERAL aclexplode(COALESCE(p.proacl,acldefault('f',p.proowner))) a
+      WHERE p.oid=v_oid AND a.privilege_type='EXECUTE'
+        AND (
+          a.grantee=0 OR a.is_grantable
+          OR (v_row.exposure='internal' AND a.grantee<>p.proowner)
+          OR (v_row.exposure='app' AND a.grantee NOT IN (p.proowner,v_app))
+          OR (v_row.exposure='worker' AND a.grantee NOT IN (p.proowner,v_worker))
+          OR (v_row.exposure='shared_read' AND a.grantee NOT IN (p.proowner,v_app,v_worker))
+        )
+    ) THEN
+      RAISE EXCEPTION 'g10.function_acl_unsafe:%',v_row.signature;
+    END IF;
+  END LOOP;
+END;
+$;
 
 COMMIT;

@@ -29,6 +29,12 @@ BEGIN
        OR v_role.rolinherit OR v_role.rolreplication OR v_role.rolbypassrls THEN
       RAISE EXCEPTION 'g10.role_unsafe:%',v_role.rolname;
     END IF;
+    IF EXISTS (
+      SELECT 1 FROM pg_auth_members
+      WHERE roleid=v_role.oid OR member=v_role.oid
+    ) THEN
+      RAISE EXCEPTION 'g10.role_unsafe_membership:%',v_role.rolname;
+    END IF;
   END LOOP;
 END;
 $$;
@@ -314,6 +320,7 @@ DECLARE
  v_id TEXT;v_hash TEXT;v_existing itsm.incident%ROWTYPE;v_outbox TEXT;
 BEGIN
   PERFORM itsm.g10_validate_authority(p_tenant_id,p_actor_principal_id,p_authority_snapshot);
+  PERFORM pg_advisory_xact_lock(hashtextextended(p_tenant_id||chr(31)||p_logical_action_id,10));
   IF COALESCE(p_title,'')='' OR length(p_title)>240
      OR (p_description IS NOT NULL AND length(p_description)>8000)
      OR COALESCE(p_logical_action_id,'')='' THEN
@@ -363,7 +370,9 @@ LANGUAGE plpgsql SECURITY DEFINER
 SET search_path=pg_catalog,itsm
 AS $$
 DECLARE
- v_incident itsm.incident%ROWTYPE;v_transition_id TEXT;
+ v_incident itsm.incident%ROWTYPE;
+ v_transition_id TEXT;
+ v_existing_transition itsm.incident_transition%ROWTYPE;
 BEGIN
   PERFORM itsm.g10_validate_authority(p_tenant_id,p_actor_principal_id,p_authority_snapshot);
   PERFORM set_config('jlmirror.tenant_id',p_tenant_id,true);
@@ -372,12 +381,19 @@ BEGIN
    WHERE tenant_id=p_tenant_id AND incident_id=p_incident_id FOR UPDATE;
   IF NOT FOUND THEN RAISE EXCEPTION 'g10.incident_missing'; END IF;
 
-  IF EXISTS (
-    SELECT 1 FROM itsm.incident_transition
-    WHERE tenant_id=p_tenant_id AND incident_id=p_incident_id
-      AND logical_action_id=p_logical_action_id
-  ) THEN
-    RETURN jsonb_build_object('incident_id',p_incident_id,'state',v_incident.lifecycle_state,'duplicate',TRUE);
+  SELECT * INTO v_existing_transition
+  FROM itsm.incident_transition
+  WHERE tenant_id=p_tenant_id AND incident_id=p_incident_id
+    AND logical_action_id=p_logical_action_id;
+  IF FOUND THEN
+    IF v_existing_transition.to_state IS DISTINCT FROM p_target_state THEN
+      RAISE EXCEPTION 'g10.transition_equivalence_conflict';
+    END IF;
+    RETURN jsonb_build_object(
+      'incident_id',p_incident_id,
+      'state',v_existing_transition.to_state,
+      'duplicate',TRUE
+    );
   END IF;
 
   IF (v_incident.lifecycle_state,p_target_state) NOT IN (
@@ -491,8 +507,16 @@ BEGIN
            i.alert_id,i.title,i.description,i.lifecycle_state
     FROM itsm.incident_sync_outbox o
     JOIN itsm.incident i ON i.tenant_id=o.tenant_id AND i.incident_id=o.incident_id
-    WHERE o.tenant_id=p_tenant_id AND o.sync_state='pending' AND o.available_at<=transaction_timestamp()
-    ORDER BY o.available_at,o.created_at LIMIT 1
+    WHERE o.tenant_id=p_tenant_id
+      AND (
+        (o.sync_state='pending' AND o.available_at<=transaction_timestamp())
+        OR
+        (o.sync_state='dispatching' AND o.claim_expires_at<=transaction_timestamp())
+      )
+    ORDER BY
+      CASE WHEN o.sync_state='dispatching' THEN 0 ELSE 1 END,
+      o.available_at,o.created_at
+    LIMIT 1
   ) x;
   RETURN v_result;
 END;
@@ -700,7 +724,7 @@ BEGIN
   IF v_incident IS NULL THEN RAISE EXCEPTION 'g10.incident_missing'; END IF;
 
   SELECT to_jsonb(x) INTO v_alert FROM (
-    SELECT alert_id,lifecycle_state,created_at,resolved_at
+    SELECT alert_id,lifecycle_state,opened_at,resolved_at
     FROM alerting.alert WHERE tenant_id=p_tenant_id AND alert_id=v_incident->>'alert_id'
   ) x;
 

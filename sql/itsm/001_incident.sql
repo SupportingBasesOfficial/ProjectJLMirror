@@ -33,6 +33,66 @@ BEGIN
 END;
 $$;
 
+DO $
+DECLARE
+  v_executor_oid OID;
+  v_unexpected TEXT;
+BEGIN
+  SELECT oid INTO v_executor_oid
+  FROM pg_roles WHERE rolname='jlmirror_g10_itsm_executor';
+
+  SELECT format('class=%s,objid=%s,dbid=%s',d.classid::regclass::TEXT,d.objid,d.dbid)
+    INTO v_unexpected
+    FROM pg_shdepend d
+   WHERE d.refclassid='pg_authid'::regclass
+     AND d.refobjid=v_executor_oid
+     AND d.deptype='o'
+   ORDER BY d.dbid,d.classid,d.objid
+   LIMIT 1;
+
+  IF v_unexpected IS NOT NULL THEN
+    RAISE EXCEPTION 'g10.executor_unexpected_owned_object:%',v_unexpected;
+  END IF;
+END;
+$;
+
+DO $
+DECLARE
+  v_row RECORD;
+  v_oid OID;
+BEGIN
+  FOR v_row IN
+    SELECT signature FROM (VALUES
+      ('itsm.g10_reject_immutable_mutation()'),
+      ('itsm.g10_validate_authority(text,text,jsonb)'),
+      ('itsm.g10_create_incident(text,text,text,text,text,text,jsonb)'),
+      ('itsm.g10_transition_incident(text,text,text,text,text,jsonb)'),
+      ('itsm.g10_assign_incident(text,text,text,text,text,jsonb)'),
+      ('itsm.g10_add_comment(text,text,text,text,text,jsonb)'),
+      ('itsm.g10_next_sync_candidate(text)'),
+      ('itsm.g10_claim_sync(text,text,text,integer)'),
+      ('itsm.g10_complete_sync(text,text,text,text,text,jsonb,text)'),
+      ('itsm.g10_schedule_sync_retry(text,text)'),
+      ('itsm.g10_reconcile_sync(text,text)'),
+      ('itsm.g10_get_incident(text,text)'),
+      ('itsm.g10_list_alert_incidents(text,text)')
+    ) AS x(signature)
+  LOOP
+    v_oid:=to_regprocedure(v_row.signature);
+    IF v_oid IS NULL THEN CONTINUE; END IF;
+    IF EXISTS (
+      SELECT 1
+      FROM pg_proc p,
+           LATERAL aclexplode(COALESCE(p.proacl,acldefault('f',p.proowner))) a
+      WHERE p.oid=v_oid AND a.privilege_type='EXECUTE'
+        AND (a.grantee=0 OR a.grantee<>p.proowner)
+    ) THEN
+      RAISE EXCEPTION 'g10.existing_function_acl_unsafe:%',v_row.signature;
+    END IF;
+  END LOOP;
+END;
+$;
+
 GRANT USAGE ON SCHEMA itsm,alerting TO jlmirror_g10_itsm_executor;
 GRANT USAGE ON SCHEMA itsm TO jlmirror_g10_itsm_app_invoker,jlmirror_g10_itsm_worker_invoker;
 REVOKE CREATE ON SCHEMA itsm,alerting FROM jlmirror_g10_itsm_executor,jlmirror_g10_itsm_app_invoker,jlmirror_g10_itsm_worker_invoker;

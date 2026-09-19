@@ -392,7 +392,11 @@ BEGIN
       AND evidence_kind='provider_accepted'
   ) THEN
     v_state:='provider_accepted';
-  ELSIF FOUND AND v_attempt.attempt_state IN ('sent','provider_accepted','delivered','failed','unknown','dispatching') THEN
+  ELSIF v_evidence.evidence_kind='failed' THEN
+    v_state:='failed';
+  ELSIF v_evidence.evidence_kind='unknown' THEN
+    v_state:='unknown';
+  ELSIF v_attempt.attempt_state IN ('sent','provider_accepted','delivered','failed','unknown','dispatching') THEN
     v_state:=CASE WHEN v_attempt.attempt_state='unknown' THEN 'unknown' ELSE v_attempt.attempt_state END;
   END IF;
 
@@ -510,6 +514,33 @@ BEGIN
 END;
 $$;
 
+CREATE OR REPLACE FUNCTION notification.g9_next_dispatch_candidate(
+  p_tenant_id TEXT
+) RETURNS JSONB
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path=pg_catalog,notification
+AS $
+DECLARE v_result JSONB;
+BEGIN
+  PERFORM set_config('jlmirror.tenant_id',p_tenant_id,true);
+  SELECT to_jsonb(x) INTO v_result FROM (
+    SELECT o.dispatch_outbox_id,o.notification_intent_id,o.attempt_number,
+           i.alert_id,i.recipient_principal_id,i.destination_ref,i.channel_class,
+           i.reason,i.payload_ref,i.payload_hash,i.visibility_requirement_id
+    FROM notification.notification_dispatch_outbox o
+    JOIN notification.notification_intent i
+      ON i.tenant_id=o.tenant_id
+     AND i.notification_intent_id=o.notification_intent_id
+    WHERE o.tenant_id=p_tenant_id
+      AND o.state='admitted'
+      AND o.available_at<=transaction_timestamp()
+    ORDER BY o.available_at,o.created_at,o.dispatch_outbox_id
+    LIMIT 1
+  ) x;
+  RETURN v_result;
+END;
+$;
+
 CREATE OR REPLACE FUNCTION notification.g9_claim_dispatch(
   p_tenant_id TEXT,p_outbox_id TEXT,p_executor_id TEXT,p_claim_seconds INTEGER,
   p_adapter_version TEXT,p_request_evidence JSONB
@@ -544,6 +575,9 @@ BEGIN
 
   IF v_outbox.state<>'admitted' THEN
     RETURN jsonb_build_object('state',v_outbox.state,'duplicate',TRUE);
+  END IF;
+  IF v_outbox.available_at>transaction_timestamp() THEN
+    RETURN jsonb_build_object('state','not_ready','duplicate',TRUE);
   END IF;
 
   v_attempt_id:='g9-attempt:'||md5(
@@ -742,6 +776,67 @@ BEGIN
 END;
 $$;
 
+CREATE OR REPLACE FUNCTION notification.g9_schedule_retry(
+  p_tenant_id TEXT,p_intent_id TEXT
+) RETURNS JSONB
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path=pg_catalog,notification
+AS $
+DECLARE
+  v_intent notification.notification_intent%ROWTYPE;
+  v_attempt notification.notification_attempt%ROWTYPE;
+  v_projection notification.notification_projection%ROWTYPE;
+  v_outbox_id TEXT;
+BEGIN
+  PERFORM set_config('jlmirror.tenant_id',p_tenant_id,true);
+  PERFORM pg_advisory_xact_lock(hashtextextended(p_tenant_id||chr(31)||p_intent_id,0));
+
+  SELECT * INTO v_intent FROM notification.notification_intent
+   WHERE tenant_id=p_tenant_id AND notification_intent_id=p_intent_id;
+  IF NOT FOUND THEN RAISE EXCEPTION 'g9.intent_missing'; END IF;
+
+  SELECT * INTO v_attempt FROM notification.notification_attempt
+   WHERE tenant_id=p_tenant_id AND notification_intent_id=p_intent_id
+   ORDER BY attempt_number DESC LIMIT 1;
+  IF NOT FOUND THEN RAISE EXCEPTION 'g9.retry_attempt_missing'; END IF;
+
+  SELECT * INTO v_projection FROM notification.notification_projection
+   WHERE tenant_id=p_tenant_id AND notification_intent_id=p_intent_id;
+  IF NOT FOUND OR v_projection.retry_required IS NOT TRUE THEN
+    RETURN jsonb_build_object('scheduled',FALSE,'reason','retry_not_required');
+  END IF;
+
+  IF v_attempt.attempt_number>=v_intent.max_attempts THEN
+    RETURN jsonb_build_object('scheduled',FALSE,'reason','retry_budget_exhausted');
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM notification.notification_provider_evidence
+    WHERE tenant_id=p_tenant_id AND notification_intent_id=p_intent_id
+      AND evidence_kind='delivered'
+  ) THEN
+    PERFORM notification.g9_refresh_projection(p_tenant_id,p_intent_id);
+    RETURN jsonb_build_object('scheduled',FALSE,'reason','delivery_already_proven');
+  END IF;
+
+  v_outbox_id:='g9-outbox:'||md5(
+    p_tenant_id||chr(31)||p_intent_id||chr(31)||(v_attempt.attempt_number+1)::TEXT
+  );
+  INSERT INTO notification.notification_dispatch_outbox(
+    tenant_id,dispatch_outbox_id,notification_intent_id,attempt_number,state,available_at
+  ) VALUES (
+    p_tenant_id,v_outbox_id,p_intent_id,v_attempt.attempt_number+1,
+    'admitted',transaction_timestamp()+make_interval(secs=>LEAST(300,5*(2^v_attempt.attempt_number)::INTEGER))
+  )
+  ON CONFLICT (tenant_id,notification_intent_id,attempt_number) DO NOTHING;
+
+  RETURN jsonb_build_object(
+    'scheduled',TRUE,'dispatch_outbox_id',v_outbox_id,
+    'attempt_number',v_attempt.attempt_number+1
+  );
+END;
+$;
+
 CREATE OR REPLACE FUNCTION notification.g9_get_intent(
   p_tenant_id TEXT,p_intent_id TEXT
 ) RETURNS JSONB
@@ -831,11 +926,15 @@ ALTER FUNCTION notification.g9_validate_authority(TEXT,TEXT,JSONB) OWNER TO jlmi
 ALTER FUNCTION notification.g9_refresh_projection(TEXT,TEXT) OWNER TO jlmirror_g9_notification_executor;
 ALTER FUNCTION notification.g9_create_intent(TEXT,TEXT,TEXT,TEXT,TEXT,TEXT,TEXT,TEXT,TEXT,TEXT,TEXT,JSONB)
 OWNER TO jlmirror_g9_notification_executor;
+ALTER FUNCTION notification.g9_next_dispatch_candidate(TEXT)
+OWNER TO jlmirror_g9_notification_executor;
 ALTER FUNCTION notification.g9_claim_dispatch(TEXT,TEXT,TEXT,INTEGER,TEXT,JSONB)
 OWNER TO jlmirror_g9_notification_executor;
 ALTER FUNCTION notification.g9_complete_dispatch(TEXT,TEXT,TEXT,TEXT,TEXT,TEXT)
 OWNER TO jlmirror_g9_notification_executor;
 ALTER FUNCTION notification.g9_record_provider_callback(TEXT,TEXT,TEXT,TEXT,TEXT,JSONB,JSONB,TIMESTAMPTZ)
+OWNER TO jlmirror_g9_notification_executor;
+ALTER FUNCTION notification.g9_schedule_retry(TEXT,TEXT)
 OWNER TO jlmirror_g9_notification_executor;
 ALTER FUNCTION notification.g9_get_intent(TEXT,TEXT) OWNER TO jlmirror_g9_notification_executor;
 ALTER FUNCTION notification.g9_list_alert_intents(TEXT,TEXT) OWNER TO jlmirror_g9_notification_executor;
@@ -849,14 +948,110 @@ TO jlmirror_g9_notification_app_invoker;
 GRANT EXECUTE ON FUNCTION notification.g9_list_alert_intents(TEXT,TEXT)
 TO jlmirror_g9_notification_app_invoker;
 
+GRANT EXECUTE ON FUNCTION notification.g9_next_dispatch_candidate(TEXT)
+TO jlmirror_g9_notification_worker_invoker;
 GRANT EXECUTE ON FUNCTION notification.g9_claim_dispatch(TEXT,TEXT,TEXT,INTEGER,TEXT,JSONB)
 TO jlmirror_g9_notification_worker_invoker;
 GRANT EXECUTE ON FUNCTION notification.g9_complete_dispatch(TEXT,TEXT,TEXT,TEXT,TEXT,TEXT)
+TO jlmirror_g9_notification_worker_invoker;
+GRANT EXECUTE ON FUNCTION notification.g9_schedule_retry(TEXT,TEXT)
 TO jlmirror_g9_notification_worker_invoker;
 GRANT EXECUTE ON FUNCTION notification.g9_get_intent(TEXT,TEXT)
 TO jlmirror_g9_notification_worker_invoker;
 
 GRANT EXECUTE ON FUNCTION notification.g9_record_provider_callback(TEXT,TEXT,TEXT,TEXT,TEXT,JSONB,JSONB,TIMESTAMPTZ)
 TO jlmirror_g9_notification_callback_invoker;
+
+DO $
+DECLARE
+  v_executor OID;
+  v_app OID;
+  v_worker OID;
+  v_callback OID;
+  v_row RECORD;
+  v_oid OID;
+  v_expected_grantee OID;
+BEGIN
+  SELECT oid INTO v_executor FROM pg_roles WHERE rolname='jlmirror_g9_notification_executor';
+  SELECT oid INTO v_app FROM pg_roles WHERE rolname='jlmirror_g9_notification_app_invoker';
+  SELECT oid INTO v_worker FROM pg_roles WHERE rolname='jlmirror_g9_notification_worker_invoker';
+  SELECT oid INTO v_callback FROM pg_roles WHERE rolname='jlmirror_g9_notification_callback_invoker';
+
+  FOR v_row IN
+    SELECT signature,exposure FROM (VALUES
+      ('notification.g9_reject_immutable_mutation()','internal'),
+      ('notification.g9_guard_attempt_terminal_transition()','internal'),
+      ('notification.g9_validate_authority(text,text,jsonb)','internal'),
+      ('notification.g9_refresh_projection(text,text)','internal'),
+      ('notification.g9_create_intent(text,text,text,text,text,text,text,text,text,text,text,jsonb)','app'),
+      ('notification.g9_next_dispatch_candidate(text)','worker'),
+      ('notification.g9_claim_dispatch(text,text,text,integer,text,jsonb)','worker'),
+      ('notification.g9_complete_dispatch(text,text,text,text,text,text)','worker'),
+      ('notification.g9_schedule_retry(text,text)','worker'),
+      ('notification.g9_record_provider_callback(text,text,text,text,text,jsonb,jsonb,timestamp with time zone)','callback'),
+      ('notification.g9_get_intent(text,text)','shared_read'),
+      ('notification.g9_list_alert_intents(text,text)','app')
+    ) AS x(signature,exposure)
+  LOOP
+    v_oid:=to_regprocedure(v_row.signature);
+    IF v_oid IS NULL THEN
+      RAISE EXCEPTION 'g9.function_missing:%',v_row.signature;
+    END IF;
+
+    IF EXISTS (
+      SELECT 1 FROM pg_proc p
+      WHERE p.oid=v_oid AND p.proowner<>v_executor
+    ) THEN
+      RAISE EXCEPTION 'g9.function_owner_unsafe:%',v_row.signature;
+    END IF;
+
+    IF v_row.exposure<>'internal' AND EXISTS (
+      SELECT 1 FROM pg_proc p
+      WHERE p.oid=v_oid AND p.prosecdef IS NOT TRUE
+    ) THEN
+      RAISE EXCEPTION 'g9.exposed_function_not_security_definer:%',v_row.signature;
+    END IF;
+
+    FOR v_expected_grantee IN
+      SELECT CASE v_row.exposure
+        WHEN 'app' THEN v_app
+        WHEN 'worker' THEN v_worker
+        WHEN 'callback' THEN v_callback
+        ELSE NULL
+      END
+    LOOP
+      NULL;
+    END LOOP;
+
+    IF EXISTS (
+      SELECT 1
+      FROM pg_proc p,
+           LATERAL aclexplode(COALESCE(p.proacl,acldefault('f',p.proowner))) a
+      WHERE p.oid=v_oid
+        AND a.privilege_type='EXECUTE'
+        AND a.grantee<>p.proowner
+        AND (
+          v_row.exposure='internal'
+          OR (v_row.exposure='app' AND a.grantee<>v_app)
+          OR (v_row.exposure='worker' AND a.grantee<>v_worker)
+          OR (v_row.exposure='callback' AND a.grantee<>v_callback)
+          OR (v_row.exposure='shared_read' AND a.grantee NOT IN (v_app,v_worker))
+          OR a.is_grantable
+        )
+    ) THEN
+      RAISE EXCEPTION 'g9.function_acl_unsafe:%',v_row.signature;
+    END IF;
+
+    IF EXISTS (
+      SELECT 1
+      FROM pg_proc p,
+           LATERAL aclexplode(COALESCE(p.proacl,acldefault('f',p.proowner))) a
+      WHERE p.oid=v_oid AND a.privilege_type='EXECUTE' AND a.grantee=0
+    ) THEN
+      RAISE EXCEPTION 'g9.public_execute_unsafe:%',v_row.signature;
+    END IF;
+  END LOOP;
+END;
+$;
 
 COMMIT;

@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "object_type": "incident",
+  "lifecycle_states": ["open","in_progress","resolved","closed"],
+  "allowed_transitions": [
+    "open->in_progress",
+    "open->resolved",
+    "in_progress->resolved",
+    "resolved->closed"
+  ],
+  "provider_adapter_contract": "itsm_provider_neutral@1",
+  "sync_states": [
+    "pending","dispatching","linked","failed","unknown","reconciliation_required"
+  ]
+}

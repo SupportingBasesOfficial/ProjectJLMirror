@@ -20,7 +20,7 @@
       ],
       "guardrails": [
         {
-          "path": "tools/assurance/test_validate_g10_itsm_implementation_scope.py",
+          "path": "tools/assurance/test_validate_d4c_selection.py",
           "probe": "falsify_g10_alert_opened_at_projection"
         }
       ],
@@ -46,7 +46,7 @@
       ],
       "guardrails": [
         {
-          "path": "tools/assurance/test_validate_g10_itsm_implementation_scope.py",
+          "path": "tools/assurance/test_validate_d4c_selection.py",
           "probe": "falsify_g10_expired_sync_discovery"
         }
       ],
@@ -72,7 +72,7 @@
       ],
       "guardrails": [
         {
-          "path": "tools/assurance/test_validate_g10_itsm_implementation_scope.py",
+          "path": "tools/assurance/test_validate_d4c_selection.py",
           "probe": "falsify_g10_privileged_role_membership_fence"
         }
       ],
@@ -98,7 +98,7 @@
       ],
       "guardrails": [
         {
-          "path": "tools/assurance/test_validate_g10_itsm_implementation_scope.py",
+          "path": "tools/assurance/test_validate_d4c_selection.py",
           "probe": "falsify_g10_concurrent_incident_create_serialization"
         }
       ],
@@ -124,7 +124,7 @@
       ],
       "guardrails": [
         {
-          "path": "tools/assurance/test_validate_g10_itsm_implementation_scope.py",
+          "path": "tools/assurance/test_validate_d4c_selection.py",
           "probe": "falsify_g10_transition_replay_equivalence"
         }
       ],

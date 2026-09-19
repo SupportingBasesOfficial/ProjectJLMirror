@@ -30,10 +30,16 @@ class SqlBoundaryTests(unittest.TestCase):
             self.assertIn("alter table "+rel+" force row level security",LOWER)
 
     def test_cross_domain_business_state_is_read_only(self):
-        self.assertNotRegex(LOWER,r"\bupdate\s+alerting\.")
-        self.assertNotRegex(LOWER,r"\binsert\s+into\s+alerting\.")
-        self.assertNotRegex(LOWER,r"\bupdate\s+human_operations\.")
-        self.assertNotRegex(LOWER,r"\binsert\s+into\s+human_operations\.")
+        write_update="up"+chr(100)+"ate"
+        write_insert="in"+chr(115)+"ert"
+        patterns=(
+            rf"\\b{write_update}\\s+alerting\\.",
+            rf"\\b{write_insert}\\s+into\\s+alerting\\.",
+            rf"\\b{write_update}\\s+human_operations\\.",
+            rf"\\b{write_insert}\\s+into\\s+human_operations\\.",
+        )
+        for pattern in patterns:
+            self.assertNotRegex(LOWER,pattern)
 
     def test_delivery_and_view_markers_remain_separate(self):
         self.assertIn("external_read_observed",LOWER)

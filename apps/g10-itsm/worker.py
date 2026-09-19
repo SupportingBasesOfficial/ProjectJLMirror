@@ -9,6 +9,7 @@ class SyncPort(Protocol):
     def claim_sync(self,tenant_id:str,outbox_id:str,executor_id:str,claim_seconds:int)->dict: ...
     def complete_sync(self,tenant_id:str,outbox_id:str,executor_id:str,result_state:str,
                       provider_ticket_ref:str|None,provider_evidence:dict,failure_class:str|None)->dict: ...
+    def schedule_sync_retry(self,tenant_id:str,incident_id:str)->dict: ...
     def reconcile_sync(self,tenant_id:str,outbox_id:str)->dict: ...
 
 
@@ -23,6 +24,12 @@ class ITSMSyncWorker:
     adapter:ITSMAdapter
     executor_id:str
     claim_seconds:int=60
+
+    def schedule_retry(self,tenant_id:str,incident_id:str)->dict:
+        return self.port.schedule_sync_retry(tenant_id,incident_id)
+
+    def reconcile_expired(self,tenant_id:str,outbox_id:str)->dict:
+        return self.port.reconcile_sync(tenant_id,outbox_id)
 
     def sync_next(self,tenant_id:str)->dict:
         candidate=self.port.next_sync_candidate(tenant_id)

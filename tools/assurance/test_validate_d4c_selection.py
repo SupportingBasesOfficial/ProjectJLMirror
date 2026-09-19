@@ -6,6 +6,7 @@ ROOT=Path(__file__).resolve().parents[2]; sys.path.insert(0,str(ROOT/'tools'/'as
 import validate_d4c_selection as validator
 import validate_ai_e2e_delivery as delivery_validator
 import validate_project_memory as project_memory
+import test_validate_g10_itsm_implementation_scope as g10_itsm_scope
 def baseline(): return [validator.load(ROOT,p) for p in (validator.SELECTION,validator.LEDGER,validator.STATE,validator.EVALUATION)]
 def must_fail(mutator,fragment):
  if fragment.startswith('project_memory_'):
@@ -303,6 +304,17 @@ def falsify_project_memory_review_guardrails():
  must_fail(lambda: project_memory.validate_decision_history('\n'.join(rows),'\n'.join(prior)),'project_memory_prior_decision_missing:JLM-DEC-018')
  changed=list(prior); changed[-1]='| JLM-DEC-018 | rewritten appended decision | current | accepted-source |'
  must_fail(lambda: project_memory.validate_decision_history('\n'.join(changed),'\n'.join(prior)),'project_memory_prior_decision_meaning_changed:JLM-DEC-018')
+def falsify_g10_alert_opened_at_projection():
+ g10_itsm_scope.falsify_g10_alert_opened_at_projection()
+def falsify_g10_expired_sync_discovery():
+ g10_itsm_scope.falsify_g10_expired_sync_discovery()
+def falsify_g10_privileged_role_membership_fence():
+ g10_itsm_scope.falsify_g10_privileged_role_membership_fence()
+def falsify_g10_concurrent_incident_create_serialization():
+ g10_itsm_scope.falsify_g10_concurrent_incident_create_serialization()
+def falsify_g10_transition_replay_equivalence():
+ g10_itsm_scope.falsify_g10_transition_replay_equivalence()
+
 def main():
  values=baseline(); errors=validator.validate_records(*values)
  if errors: raise AssertionError(f'canonical D4-C selection failed validation: {errors!r}')
@@ -325,6 +337,11 @@ def main():
  falsify_monitoring_alerting_privileged_acl_preflight()
  falsify_ai_e2e_delivery_heading_binding()
  falsify_project_memory_review_guardrails()
+ falsify_g10_alert_opened_at_projection()
+ falsify_g10_expired_sync_discovery()
+ falsify_g10_privileged_role_membership_fence()
+ falsify_g10_concurrent_incident_create_serialization()
+ falsify_g10_transition_replay_equivalence()
  print('d4c_selection_falsification=PASS profile_drift=blocked historical_rewrite=blocked evidence_regression=blocked authority_escalation=blocked gate_acceptance_regression=blocked publication_composed_dependencies=bound publication_acl_preflight=recovery-admin-delegation+recovery-inherited-principal+acl+dependency-proxy+all-privileged-owner+dependency+pre+post-install-attested ai_e2e_governance=preserved project_memory_review_guardrails=prior-history+exact-step-chain+complete-decision-rows')
  return 0
 if __name__=='__main__': main()

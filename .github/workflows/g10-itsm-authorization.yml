@@ -1,0 +1,95 @@
+name: JLMIRROR G10 ITSM Authorization
+
+on:
+  pull_request:
+    paths:
+      - 'implementation/g10-itsm-authorization/**'
+      - 'tools/assurance/validate_g10_itsm_authorization.py'
+      - 'tools/assurance/validate_g10_itsm_implementation_scope.py'
+      - 'tools/assurance/test_validate_g10_itsm_authorization.py'
+      - 'tools/assurance/test_validate_g10_itsm_implementation_scope.py'
+      - 'tools/assurance/validate_g10_itsm_scope_readiness.py'
+      - 'tools/assurance/test_validate_g10_itsm_scope_readiness.py'
+      - '.github/workflows/g10-itsm-authorization.yml'
+      - '.github/workflows/g10-itsm-implementation-scope.yml'
+      - 'tools/assurance/validate_repository.py'
+      - 'implementation/g9-notification-delivery/**'
+      - 'sql/notification/001_notification_delivery.sql'
+      - 'docs/00-foundation/project-memory/HUMAN-OPERATIONS-MODEL.md'
+      - 'docs/00-foundation/project-memory/OPEN-QUESTIONS-AND-DEFERRED.md'
+      - 'docs/00-foundation/ai-e2e-delivery/**'
+  push:
+    branches:
+      - main
+      - governance/g10-itsm-authorization
+    paths:
+      - 'implementation/g10-itsm-authorization/**'
+      - 'tools/assurance/validate_g10_itsm_authorization.py'
+      - 'tools/assurance/validate_g10_itsm_implementation_scope.py'
+      - 'tools/assurance/test_validate_g10_itsm_authorization.py'
+      - 'tools/assurance/test_validate_g10_itsm_implementation_scope.py'
+      - 'tools/assurance/validate_g10_itsm_scope_readiness.py'
+      - 'tools/assurance/test_validate_g10_itsm_scope_readiness.py'
+      - '.github/workflows/g10-itsm-authorization.yml'
+      - '.github/workflows/g10-itsm-implementation-scope.yml'
+      - 'tools/assurance/validate_repository.py'
+      - 'implementation/g9-notification-delivery/**'
+      - 'sql/notification/001_notification_delivery.sql'
+      - 'docs/00-foundation/project-memory/HUMAN-OPERATIONS-MODEL.md'
+      - 'docs/00-foundation/project-memory/OPEN-QUESTIONS-AND-DEFERRED.md'
+      - 'docs/00-foundation/ai-e2e-delivery/**'
+
+permissions:
+  contents: read
+
+jobs:
+  g10-authorization:
+    runs-on: ubuntu-24.04
+    env:
+      EVENT_NAME: ${{ github.event_name }}
+      PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      EVENT_SHA: ${{ github.sha }}
+    steps:
+      - name: Resolve exact analyzed HEAD
+        id: target
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            resolved_sha="$PR_HEAD_SHA"
+          else
+            resolved_sha="$EVENT_SHA"
+          fi
+          test -n "$resolved_sha"
+          printf 'sha=%s\n' "$resolved_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout exact analyzed HEAD
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ steps.target.outputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+          allow-unsafe-pr-checkout: false
+
+      - name: Verify exact commit identity
+        env:
+          EXPECTED_SHA: ${{ steps.target.outputs.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+
+      - name: Validate G10 authorization
+        run: python3 tools/assurance/validate_g10_itsm_authorization.py
+
+      - name: Falsify G10 authorization boundaries
+        run: python3 tools/assurance/test_validate_g10_itsm_authorization.py
+
+      - name: Falsify future G10 implementation scope
+        run: python3 tools/assurance/test_validate_g10_itsm_implementation_scope.py
+
+      - name: Falsify trusted G10 readiness evidence
+        run: python3 tools/assurance/test_validate_g10_itsm_scope_readiness.py
+
+      - name: Validate repository structure and workflow safety
+        run: python3 tools/assurance/validate_repository.py

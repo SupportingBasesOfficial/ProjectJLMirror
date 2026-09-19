@@ -168,6 +168,10 @@ def main()->int:
         expect_migration_failure("g10.existing_function_acl_unsafe")
         apply(FIXTURES/"cleanup_existing_function_acl.sql")
 
+        apply(FIXTURES/"poison_role_membership.sql")
+        expect_migration_failure("g10.role_unsafe_membership")
+        apply(FIXTURES/"cleanup_role_membership.sql")
+
         apply(ROOT/"sql/itsm/001_incident.sql")
 
         roles=scalar("""
@@ -217,6 +221,16 @@ WHERE n.nspname='itsm' AND c.relname IN (
             raise AssertionError("Incident replay lost idempotency")
         if iid=="alert-a": raise AssertionError("Alert identity became Incident identity")
 
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            fs=[
+              pool.submit(create_incident,"alert-a","incident-race","Race incident"),
+              pool.submit(create_incident,"alert-a","incident-race","Race incident")
+            ]
+            race=[x.result() for x in fs]
+        race_ids={x["incident_id"] for x in race}
+        if len(race_ids)!=1 or sorted(x["duplicate"] for x in race)!=[False,True]:
+            raise AssertionError("concurrent logical create did not converge idempotently")
+
         auth=authority("tenant-a","actor-a","itsm:write").replace("'","''")
         expect_role_failure("jlmirror_g10_itsm_app_invoker",f"""
 SELECT itsm.g10_create_incident(
@@ -259,12 +273,22 @@ SELECT itsm.g10_add_comment(
             raise AssertionError("comment immutability drift")
 
         transition(iid,"in_progress","transition-a")
+        if not transition(iid,"in_progress","transition-a")["duplicate"]:
+            raise AssertionError("same transition replay was not idempotent")
+        expect_role_failure("jlmirror_g10_itsm_app_invoker",f"""
+SELECT itsm.g10_transition_incident(
+ 'tenant-a','{iid}','resolved','actor-a','transition-a','{auth}'::jsonb
+);
+""","g10.transition_equivalence_conflict")
+
         apply(FIXTURES/"resolve_alert_a.sql")
         state=get_incident(iid)
         if state["lifecycle_state"]!="in_progress":
             raise AssertionError("Alert resolution mutated Incident")
         if state["alert_summary"]["lifecycle_state"]!="resolved":
             raise AssertionError("Alert summary did not reflect independent Alert resolution")
+        if "opened_at" not in state["alert_summary"]:
+            raise AssertionError("Alert opening timestamp projection drift")
 
         transition(iid,"resolved","transition-b")
         transition(iid,"closed","transition-c")
@@ -339,6 +363,12 @@ SELECT itsm.g10_complete_sync(
         recovery=create_incident("alert-sync","sync-recovery","Recovery incident")
         rid=recovery["incident_id"];rout=outbox_for(rid,1)
         claim(rout,"worker-r",1);time.sleep(1.2)
+        discovered=role_call(
+            "jlmirror_g10_itsm_worker_invoker",
+            "SELECT itsm.g10_next_sync_candidate('tenant-a')::text;"
+        )
+        if discovered["sync_outbox_id"]!=rout:
+            raise AssertionError("expired dispatch was not surfaced for reconciliation")
         expired=claim(rout,"worker-r2",1)
         if expired["state"]!="reconciliation_required":
             raise AssertionError("expired lease did not require reconciliation")
@@ -357,13 +387,13 @@ SELECT itsm.g10_complete_sync(
 
         print(
           "g10_postgres_conformance=PASS "
-          "owner_poison=BLOCKED default_acl_poison=BLOCKED existing_acl_poison=BLOCKED "
-          "roles=PASS rls=PASS direct_acl=PASS incident_idempotency=PASS "
+          "owner_poison=BLOCKED default_acl_poison=BLOCKED existing_acl_poison=BLOCKED role_membership_poison=BLOCKED "
+          "roles=PASS rls=PASS direct_acl=PASS incident_idempotency=PASS create_concurrency=PASS "
           "identity_separation=PASS assignment_concurrency=PASS comments_immutable=PASS "
-          "lifecycle_independence=PASS reopen_blocked=PASS active_alert_admission=PASS "
+          "lifecycle_independence=PASS transition_equivalence=PASS opened_at_projection=PASS reopen_blocked=PASS active_alert_admission=PASS "
           "sync_concurrency=PASS sync_retry=PASS provider_link_dedup=PASS "
           "provider_identity_separation=PASS provider_status_no_lifecycle_authority=PASS "
-          "lease_recovery=PASS tenant_isolation=PASS"
+          "expired_discovery=PASS lease_recovery=PASS tenant_isolation=PASS"
         )
         return 0
     finally:

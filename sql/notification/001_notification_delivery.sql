@@ -52,9 +52,9 @@ BEGIN
       END IF;
     END LOOP;
 END;
-$;
+$$;
 
-DO $
+DO $$
 DECLARE
   v_executor_oid OID;
   v_unexpected TEXT;
@@ -99,7 +99,7 @@ BEGIN
     RAISE EXCEPTION 'g9.executor_unexpected_owned_object:%',v_unexpected;
   END IF;
 END;
-$;
+$$;
 
 GRANT USAGE ON SCHEMA notification,alerting,human_operations TO jlmirror_g9_notification_executor;
 GRANT USAGE ON SCHEMA notification TO
@@ -112,7 +112,7 @@ REVOKE CREATE ON SCHEMA notification,alerting,human_operations FROM
   jlmirror_g9_notification_worker_invoker,
   jlmirror_g9_notification_callback_invoker;
 
-DO $
+DO $$
 DECLARE
   v_row RECORD;
   v_oid OID;
@@ -148,7 +148,7 @@ BEGIN
     END IF;
   END LOOP;
 END;
-$;
+$$;
 
 CREATE TABLE notification.notification_intent (
     tenant_id TEXT NOT NULL,
@@ -636,7 +636,7 @@ BEGIN
   ) x;
   RETURN v_result;
 END;
-$;
+$$;
 
 CREATE OR REPLACE FUNCTION notification.g9_claim_dispatch(
   p_tenant_id TEXT,p_outbox_id TEXT,p_executor_id TEXT,p_claim_seconds INTEGER,
@@ -928,7 +928,7 @@ BEGIN
     'notification_intent_id',v_outbox.notification_intent_id
   );
 END;
-$;
+$$;
 
 CREATE OR REPLACE FUNCTION notification.g9_schedule_retry(
   p_tenant_id TEXT,p_intent_id TEXT
@@ -989,7 +989,7 @@ BEGIN
     'attempt_number',v_attempt.attempt_number+1
   );
 END;
-$;
+$$;
 
 CREATE OR REPLACE FUNCTION notification.g9_get_intent(
   p_tenant_id TEXT,p_intent_id TEXT
@@ -1128,7 +1128,7 @@ TO jlmirror_g9_notification_worker_invoker;
 GRANT EXECUTE ON FUNCTION notification.g9_record_provider_callback(TEXT,TEXT,TEXT,TEXT,TEXT,JSONB,JSONB,TIMESTAMPTZ)
 TO jlmirror_g9_notification_callback_invoker;
 
-DO $
+DO $$
 DECLARE
   v_executor OID;
   v_app OID;
@@ -1219,6 +1219,6 @@ BEGIN
     END IF;
   END LOOP;
 END;
-$;
+$$;
 
 COMMIT;

@@ -306,14 +306,24 @@ def falsify_project_memory_review_guardrails():
  must_fail(lambda: project_memory.validate_decision_history('\n'.join(changed),'\n'.join(prior)),'project_memory_prior_decision_meaning_changed:JLM-DEC-018')
 def falsify_g10_alert_opened_at_projection():
  g10_itsm_scope.falsify_g10_alert_opened_at_projection()
+ def deny(selection,ledger,state,evaluation): selection['canonical_product_implementation_authority']='granted'
+ must_fail(deny,'Product authority escalation')
 def falsify_g10_expired_sync_discovery():
  g10_itsm_scope.falsify_g10_expired_sync_discovery()
+ def deny(selection,ledger,state,evaluation): selection['canonical_product_implementation_authority']='granted'
+ must_fail(deny,'Product authority escalation')
 def falsify_g10_privileged_role_membership_fence():
  g10_itsm_scope.falsify_g10_privileged_role_membership_fence()
+ def deny(selection,ledger,state,evaluation): selection['canonical_product_implementation_authority']='granted'
+ must_fail(deny,'Product authority escalation')
 def falsify_g10_concurrent_incident_create_serialization():
  g10_itsm_scope.falsify_g10_concurrent_incident_create_serialization()
+ def deny(selection,ledger,state,evaluation): selection['canonical_product_implementation_authority']='granted'
+ must_fail(deny,'Product authority escalation')
 def falsify_g10_transition_replay_equivalence():
  g10_itsm_scope.falsify_g10_transition_replay_equivalence()
+ def deny(selection,ledger,state,evaluation): selection['canonical_product_implementation_authority']='granted'
+ must_fail(deny,'Product authority escalation')
 
 def main():
  values=baseline(); errors=validator.validate_records(*values)

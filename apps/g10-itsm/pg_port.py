@@ -77,5 +77,11 @@ class PgIncidentGateway:
              json.dumps(provider_evidence,separators=(",",":")),failure_class)
         )
 
+    def schedule_sync_retry(self,tenant_id:str,incident_id:str)->dict:
+        return self._scalar(
+            "SELECT itsm.g10_schedule_sync_retry(%s,%s)",
+            (tenant_id,incident_id),
+        )
+
     def reconcile_sync(self,tenant_id:str,outbox_id:str)->dict:
         return self._scalar("SELECT itsm.g10_reconcile_sync(%s,%s)",(tenant_id,outbox_id))

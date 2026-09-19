@@ -1,0 +1,135 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "id": "LEARN-PR173-001",
+      "pr": 173,
+      "source": "external_review",
+      "review_comment_id": 4054972969,
+      "class_id": "ADV-PROVENANCE-IDENTITY-DRIFT",
+      "invariant_ids": [
+        "INV-PROVENANCE-001"
+      ],
+      "root_cause": "The G10 Incident detail projection bound to an assumed Alert timestamp field instead of the accepted Alert schema, so a valid cross-domain read could pass static review while failing at runtime.",
+      "horizontal_audit": [
+        "Alert read projections",
+        "cross-domain schema field names",
+        "Incident detail API",
+        "HTML Incident UI",
+        "future ITSM Alert summaries"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_g10_itsm_implementation_scope.py",
+          "probe": "falsify_g10_alert_opened_at_projection"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000000
+    },
+    {
+      "id": "LEARN-PR173-002",
+      "pr": 173,
+      "source": "external_review",
+      "review_comment_id": 4054972971,
+      "class_id": "ADV-AUTHORITY-TOCTOU",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "The sync claim state machine contained expired-lease reconciliation logic but its worker discovery path excluded expired dispatching rows, making the recovery authority unreachable after a worker crash.",
+      "horizontal_audit": [
+        "worker discovery",
+        "expired leases",
+        "reconciliation entrypoints",
+        "restart recovery",
+        "outbox liveness"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_g10_itsm_implementation_scope.py",
+          "probe": "falsify_g10_expired_sync_discovery"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000000
+    },
+    {
+      "id": "LEARN-PR173-003",
+      "pr": 173,
+      "source": "external_review",
+      "review_comment_id": 4054972973,
+      "class_id": "ADV-TRUST-CONTEXT-GAP",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "G10 privileged database roles validated unsafe role attributes but omitted pre-existing membership edges, allowing another role to inherit or SET ROLE into direct table authority outside guarded capabilities.",
+      "horizontal_audit": [
+        "executor memberships",
+        "app invoker memberships",
+        "worker invoker memberships",
+        "SET ROLE paths",
+        "direct table grants"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_g10_itsm_implementation_scope.py",
+          "probe": "falsify_g10_privileged_role_membership_fence"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000000
+    },
+    {
+      "id": "LEARN-PR173-004",
+      "pr": 173,
+      "source": "external_review",
+      "review_comment_id": 4054972977,
+      "class_id": "ADV-AUTHORITY-TOCTOU",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "Incident idempotency checked for an existing logical action without serializing concurrent creators, allowing two equivalent retries to race and turn the second result into a uniqueness error instead of duplicate success.",
+      "horizontal_audit": [
+        "Incident create idempotency",
+        "logical action locks",
+        "concurrent retries",
+        "unique constraints",
+        "other G10 equivalence paths"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_g10_itsm_implementation_scope.py",
+          "probe": "falsify_g10_concurrent_incident_create_serialization"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000001
+    },
+    {
+      "id": "LEARN-PR173-005",
+      "pr": 173,
+      "source": "external_review",
+      "review_comment_id": 4054972978,
+      "class_id": "ADV-PROVENANCE-IDENTITY-DRIFT",
+      "invariant_ids": [
+        "INV-PROVENANCE-001"
+      ],
+      "root_cause": "Incident transition replay treated logical action identity alone as equivalence and returned duplicate success without comparing the stored target state to the requested target, hiding contradictory replay intent.",
+      "horizontal_audit": [
+        "transition idempotency",
+        "logical action equivalence",
+        "stored target state",
+        "retry semantics",
+        "immutable transition facts"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_g10_itsm_implementation_scope.py",
+          "probe": "falsify_g10_transition_replay_equivalence"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000001
+    }
+  ]
+}

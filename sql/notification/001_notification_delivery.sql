@@ -209,6 +209,11 @@ CREATE TABLE notification.notification_projection (
     retry_required BOOLEAN NOT NULL DEFAULT FALSE,
     reconciliation_required BOOLEAN NOT NULL DEFAULT FALSE,
     fallback_action_required BOOLEAN NOT NULL DEFAULT FALSE,
+    fallback_reason TEXT NULL CHECK (
+      fallback_reason IS NULL OR fallback_reason IN (
+        'retry_budget_exhausted','authoritative_awareness_missing'
+      )
+    ),
     projection_revision BIGINT NOT NULL CHECK (projection_revision>0),
     projected_at TIMESTAMPTZ NOT NULL DEFAULT transaction_timestamp(),
     PRIMARY KEY (tenant_id,notification_intent_id),
@@ -407,6 +412,7 @@ DECLARE
   v_retry BOOLEAN:=FALSE;
   v_reconcile BOOLEAN:=FALSE;
   v_fallback BOOLEAN:=FALSE;
+  v_fallback_reason TEXT:=NULL;
   v_revision BIGINT;
 BEGIN
   SELECT * INTO v_intent FROM notification.notification_intent
@@ -453,6 +459,9 @@ BEGIN
     v_fallback:=(
       v_state IN ('failed','unknown') AND v_attempt.attempt_number>=v_intent.max_attempts
     );
+    IF v_fallback THEN
+      v_fallback_reason:='retry_budget_exhausted';
+    END IF;
   END IF;
 
   IF v_intent.visibility_requirement_id IS NOT NULL
@@ -462,6 +471,7 @@ BEGIN
          AND vr.visibility_requirement_id=v_intent.visibility_requirement_id
      ) AND v_state='delivered' THEN
     v_fallback:=TRUE;
+    v_fallback_reason:='authoritative_awareness_missing';
   END IF;
 
   SELECT COALESCE(projection_revision,0)+1 INTO v_revision
@@ -472,11 +482,12 @@ BEGIN
   INSERT INTO notification.notification_projection(
     tenant_id,notification_intent_id,delivery_state,latest_attempt_id,
     latest_provider_evidence_id,external_read_observed,retry_required,
-    reconciliation_required,fallback_action_required,projection_revision,projected_at
+    reconciliation_required,fallback_action_required,fallback_reason,
+    projection_revision,projected_at
   ) VALUES (
     p_tenant_id,p_intent_id,v_state,v_attempt.notification_attempt_id,
     v_evidence.provider_evidence_id,v_external_read,v_retry,
-    v_reconcile,v_fallback,v_revision,transaction_timestamp()
+    v_reconcile,v_fallback,v_fallback_reason,v_revision,transaction_timestamp()
   )
   ON CONFLICT (tenant_id,notification_intent_id) DO UPDATE SET
     delivery_state=EXCLUDED.delivery_state,
@@ -486,6 +497,7 @@ BEGIN
     retry_required=EXCLUDED.retry_required,
     reconciliation_required=EXCLUDED.reconciliation_required,
     fallback_action_required=EXCLUDED.fallback_action_required,
+    fallback_reason=EXCLUDED.fallback_reason,
     projection_revision=EXCLUDED.projection_revision,
     projected_at=EXCLUDED.projected_at;
 END;
@@ -929,6 +941,7 @@ DECLARE
   v_attempts JSONB;
   v_evidence JSONB;
   v_native_state TEXT:='not_linked';
+  v_fallback_reason TEXT;
 BEGIN
   PERFORM set_config('jlmirror.tenant_id',p_tenant_id,true);
   SELECT to_jsonb(x) INTO v_intent FROM (
@@ -952,10 +965,17 @@ BEGIN
   SELECT COALESCE(to_jsonb(x),'{}'::jsonb) INTO v_projection FROM (
     SELECT delivery_state,latest_attempt_id,latest_provider_evidence_id,
            external_read_observed,retry_required,reconciliation_required,
-           fallback_action_required,projection_revision,projected_at
+           fallback_action_required,fallback_reason,projection_revision,projected_at
     FROM notification.notification_projection
     WHERE tenant_id=p_tenant_id AND notification_intent_id=p_intent_id
   ) x;
+  v_fallback_reason:=v_projection->>'fallback_reason';
+  IF v_fallback_reason='authoritative_awareness_missing' AND v_native_state='viewed' THEN
+    v_projection:=v_projection||jsonb_build_object(
+      'fallback_action_required',FALSE,
+      'fallback_reason',NULL
+    );
+  END IF;
   v_projection:=v_projection||jsonb_build_object('native_visibility_state',v_native_state);
 
   SELECT COALESCE(jsonb_agg(to_jsonb(x) ORDER BY attempt_number),'[]'::jsonb) INTO v_attempts FROM (
@@ -990,7 +1010,7 @@ BEGIN
   SELECT COALESCE(jsonb_agg(to_jsonb(x) ORDER BY created_at DESC),'[]'::jsonb) INTO v_result FROM (
     SELECT i.notification_intent_id,i.recipient_principal_id,i.destination_ref,i.channel_class,
            i.reason,i.created_at,p.delivery_state,p.external_read_observed,
-           p.retry_required,p.reconciliation_required,p.fallback_action_required
+           p.retry_required,p.reconciliation_required,p.fallback_action_required,p.fallback_reason
     FROM notification.notification_intent i
     LEFT JOIN notification.notification_projection p
       ON p.tenant_id=i.tenant_id AND p.notification_intent_id=i.notification_intent_id

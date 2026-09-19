@@ -616,7 +616,7 @@ CREATE OR REPLACE FUNCTION notification.g9_next_dispatch_candidate(
 ) RETURNS JSONB
 LANGUAGE plpgsql SECURITY DEFINER
 SET search_path=pg_catalog,notification
-AS $
+AS $$
 DECLARE v_result JSONB;
 BEGIN
   PERFORM set_config('jlmirror.tenant_id',p_tenant_id,true);
@@ -884,7 +884,7 @@ CREATE OR REPLACE FUNCTION notification.g9_reconcile_dispatch_claim(
 ) RETURNS JSONB
 LANGUAGE plpgsql SECURITY DEFINER
 SET search_path=pg_catalog,notification
-AS $
+AS $$
 DECLARE
   v_outbox notification.notification_dispatch_outbox%ROWTYPE;
   v_attempt notification.notification_attempt%ROWTYPE;
@@ -935,7 +935,7 @@ CREATE OR REPLACE FUNCTION notification.g9_schedule_retry(
 ) RETURNS JSONB
 LANGUAGE plpgsql SECURITY DEFINER
 SET search_path=pg_catalog,notification
-AS $
+AS $$
 DECLARE
   v_intent notification.notification_intent%ROWTYPE;
   v_attempt notification.notification_attempt%ROWTYPE;

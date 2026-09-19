@@ -112,6 +112,44 @@ REVOKE CREATE ON SCHEMA notification,alerting,human_operations FROM
   jlmirror_g9_notification_worker_invoker,
   jlmirror_g9_notification_callback_invoker;
 
+DO $
+DECLARE
+  v_row RECORD;
+  v_oid OID;
+BEGIN
+  FOR v_row IN
+    SELECT signature FROM (VALUES
+      ('notification.g9_reject_immutable_mutation()'),
+      ('notification.g9_guard_attempt_terminal_transition()'),
+      ('notification.g9_validate_authority(text,text,jsonb)'),
+      ('notification.g9_refresh_projection(text,text)'),
+      ('notification.g9_create_intent(text,text,text,text,text,text,text,text,text,text,text,jsonb)'),
+      ('notification.g9_next_dispatch_candidate(text)'),
+      ('notification.g9_claim_dispatch(text,text,text,integer,text,jsonb)'),
+      ('notification.g9_complete_dispatch(text,text,text,text,text,text)'),
+      ('notification.g9_reconcile_dispatch_claim(text,text)'),
+      ('notification.g9_schedule_retry(text,text)'),
+      ('notification.g9_record_provider_callback(text,text,text,text,text,jsonb,jsonb,timestamp with time zone)'),
+      ('notification.g9_get_intent(text,text)'),
+      ('notification.g9_list_alert_intents(text,text)')
+    ) AS x(signature)
+  LOOP
+    v_oid:=to_regprocedure(v_row.signature);
+    IF v_oid IS NULL THEN CONTINUE; END IF;
+    IF EXISTS (
+      SELECT 1
+      FROM pg_proc p,
+           LATERAL aclexplode(COALESCE(p.proacl,acldefault('f',p.proowner))) a
+      WHERE p.oid=v_oid
+        AND a.privilege_type='EXECUTE'
+        AND (a.grantee=0 OR a.grantee<>p.proowner)
+    ) THEN
+      RAISE EXCEPTION 'g9.existing_function_acl_unsafe:%',v_row.signature;
+    END IF;
+  END LOOP;
+END;
+$;
+
 CREATE TABLE notification.notification_intent (
     tenant_id TEXT NOT NULL,
     notification_intent_id TEXT NOT NULL,

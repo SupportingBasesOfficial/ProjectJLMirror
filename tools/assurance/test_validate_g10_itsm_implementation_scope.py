@@ -163,4 +163,5 @@ def main():
  falsify_sync_retry_idempotency_identity_reuse()
  print("g10_scope_falsification=PASS incident=allowed change_vendor=blocked hidden_relation=blocked cross_domain_mutation=blocked runtime_review_findings=guarded")
  return 0
-if __name__=="__main__":raise SystemExit(main())
+if __name__=="__main__":
+ main()

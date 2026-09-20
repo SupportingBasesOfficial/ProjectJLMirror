@@ -1,0 +1,171 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "id": "LEARN-PR173-001",
+      "pr": 173,
+      "source": "external_review",
+      "review_comment_id": 4054972969,
+      "class_id": "ADV-PROVENANCE-IDENTITY-DRIFT",
+      "invariant_ids": [
+        "INV-PROVENANCE-001",
+        "INV-AUTH-001"
+      ],
+      "root_cause": "The Incident read projection copied an Alert timestamp column name from a neighboring domain model instead of validating the exact accepted Alert schema, so a valid Incident detail lookup failed at runtime.",
+      "horizontal_audit": [
+        "Alert summary projection columns",
+        "cross-domain read-only joins",
+        "canonical schema column names",
+        "Incident detail API",
+        "HTML Incident view"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_g10_itsm_implementation_scope.py",
+          "probe": "falsify_incident_alert_timestamp_contract"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 23
+    },
+    {
+      "id": "LEARN-PR173-002",
+      "pr": 173,
+      "source": "external_review",
+      "review_comment_id": 4054972971,
+      "class_id": "ADV-PROVENANCE-IDENTITY-DRIFT",
+      "invariant_ids": [
+        "INV-PROVENANCE-001",
+        "INV-AUTH-001"
+      ],
+      "root_cause": "The worker discovery projection exposed only pending sync work, while lease-expiry reconciliation was reachable only after the caller already knew the stranded outbox identity, making crash recovery non-discoverable after restart.",
+      "horizontal_audit": [
+        "pending sync discovery",
+        "expired dispatch discovery",
+        "worker restart recovery",
+        "lease ownership",
+        "reconciliation-required transition",
+        "future durable outbox workers"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_g10_itsm_implementation_scope.py",
+          "probe": "falsify_expired_sync_discovery_contract"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 24
+    },
+    {
+      "id": "LEARN-PR173-003",
+      "pr": 173,
+      "source": "external_review",
+      "review_comment_id": 4054972973,
+      "class_id": "ADV-AUTHORITY-TOCTOU",
+      "invariant_ids": [
+        "INV-AUTH-001",
+        "INV-PROVENANCE-001"
+      ],
+      "root_cause": "Privileged G10 database roles were validated only for role attributes; pre-existing pg_auth_members edges could grant SET ROLE access to executor mutation authority without passing the guarded application capabilities.",
+      "horizontal_audit": [
+        "executor role memberships",
+        "app invoker memberships",
+        "worker invoker memberships",
+        "incoming role edges",
+        "outgoing role edges",
+        "future privileged domain roles"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_g10_itsm_implementation_scope.py",
+          "probe": "falsify_privileged_role_membership_guard"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 38
+    },
+    {
+      "id": "LEARN-PR173-004",
+      "pr": 173,
+      "source": "external_review",
+      "review_comment_id": 4054972977,
+      "class_id": "ADV-PROVENANCE-IDENTITY-DRIFT",
+      "invariant_ids": [
+        "INV-PROVENANCE-001",
+        "INV-AUTH-001"
+      ],
+      "root_cause": "Incident creation checked logical-action replay before serializing concurrent creators, so identical simultaneous requests could race through the empty read and surface a uniqueness error instead of one canonical Incident identity.",
+      "horizontal_audit": [
+        "logical create action concurrency",
+        "Incident deterministic identity",
+        "unique logical-action constraint",
+        "duplicate replay response",
+        "provider create identity",
+        "future create-once domain commands"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_g10_itsm_implementation_scope.py",
+          "probe": "falsify_incident_create_serialization"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 25
+    },
+    {
+      "id": "LEARN-PR173-005",
+      "pr": 173,
+      "source": "external_review",
+      "review_comment_id": 4054972978,
+      "class_id": "ADV-PROVENANCE-IDENTITY-DRIFT",
+      "invariant_ids": [
+        "INV-PROVENANCE-001",
+        "INV-AUTH-001"
+      ],
+      "root_cause": "Transition replay treated logical-action identity alone as sufficient duplicate evidence and failed to compare the stored target state with the retried command, allowing contradictory commands to be silently accepted.",
+      "horizontal_audit": [
+        "Incident transition target equivalence",
+        "logical action replay",
+        "stored transition facts",
+        "current lifecycle state",
+        "comment equivalence",
+        "assignment equivalence"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_g10_itsm_implementation_scope.py",
+          "probe": "falsify_transition_replay_equivalence"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 26
+    },
+    {
+      "id": "LEARN-PR173-006",
+      "pr": 173,
+      "source": "internal_audit",
+      "class_id": "ADV-PROVENANCE-IDENTITY-DRIFT",
+      "invariant_ids": [
+        "INV-PROVENANCE-001",
+        "INV-AUTH-001"
+      ],
+      "root_cause": "The sync outbox made the provider idempotency identity unique across rows even though bounded retries intentionally create new immutable attempt rows that must reuse one external create identity.",
+      "horizontal_audit": [
+        "provider idempotency identity",
+        "immutable retry attempts",
+        "sync outbox uniqueness",
+        "external ticket deduplication",
+        "retry budget",
+        "future provider-neutral adapters"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_g10_itsm_implementation_scope.py",
+          "probe": "falsify_sync_retry_idempotency_identity_reuse"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 27
+    }
+  ]
+}

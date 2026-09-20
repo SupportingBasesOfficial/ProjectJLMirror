@@ -30,13 +30,74 @@ def init():
 
 def sql():
  return """BEGIN;
+DO $$
+DECLARE v_role RECORD;
+BEGIN
+  FOR v_role IN SELECT * FROM pg_roles LOOP
+    IF EXISTS (
+      SELECT 1 FROM pg_auth_members
+      WHERE roleid=v_role.oid OR member=v_role.oid
+    ) THEN
+      RAISE EXCEPTION 'g10.role_unsafe_membership';
+    END IF;
+  END LOOP;
+END;
+$$;
 CREATE SCHEMA IF NOT EXISTS itsm;
 CREATE TABLE itsm.incident(tenant_id text,incident_id text,alert_id text);
 CREATE TABLE itsm.incident_transition(tenant_id text,incident_transition_id text,incident_id text);
 CREATE TABLE itsm.incident_assignment(tenant_id text,incident_assignment_id text,incident_id text);
 CREATE TABLE itsm.incident_comment(tenant_id text,incident_comment_id text,incident_id text);
 CREATE TABLE itsm.incident_provider_link(tenant_id text,incident_id text,provider_link_id text);
-CREATE TABLE itsm.incident_sync_outbox(tenant_id text,incident_id text,sync_outbox_id text);
+CREATE TABLE itsm.incident_sync_outbox(
+  tenant_id text,incident_id text,sync_outbox_id text,sync_identity text,
+  sync_state text,claim_expires_at timestamptz,available_at timestamptz
+);
+
+CREATE OR REPLACE FUNCTION itsm.g10_create_incident(
+  p_tenant_id text,p_alert_id text,p_title text,p_description text,
+  p_actor_principal_id text,p_logical_action_id text,p_authority_snapshot jsonb
+) RETURNS jsonb LANGUAGE plpgsql AS $$
+BEGIN
+  PERFORM pg_advisory_xact_lock(
+    hashtextextended(p_tenant_id||chr(31)||p_logical_action_id,10)
+  );
+  RETURN '{}'::jsonb;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION itsm.g10_transition_incident(
+  p_tenant_id text,p_incident_id text,p_target_state text,
+  p_actor_principal_id text,p_logical_action_id text,p_authority_snapshot jsonb
+) RETURNS jsonb LANGUAGE plpgsql AS $$
+BEGIN
+  RAISE EXCEPTION 'g10.transition_equivalence_conflict';
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION itsm.g10_next_sync_candidate(p_tenant_id text)
+RETURNS jsonb LANGUAGE plpgsql AS $$
+DECLARE v_result jsonb;
+BEGIN
+  SELECT '{}'::jsonb INTO v_result
+  FROM itsm.incident_sync_outbox o
+  WHERE (o.sync_state='pending' AND o.available_at<=transaction_timestamp())
+     OR (o.sync_state='dispatching' AND o.claim_expires_at<=transaction_timestamp());
+  RETURN v_result;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION itsm.g10_get_incident(p_tenant_id text,p_incident_id text)
+RETURNS jsonb LANGUAGE plpgsql AS $$
+DECLARE v_alert jsonb;
+BEGIN
+  SELECT to_jsonb(x) INTO v_alert FROM (
+    SELECT alert_id,lifecycle_state,opened_at,resolved_at
+    FROM alerting.alert
+  ) x;
+  RETURN v_alert;
+END;
+$$;
 COMMIT;
 """
 
@@ -59,12 +120,47 @@ def case(files,ok):
   if (cp.returncode==0)!=ok:raise AssertionError(cp.stdout+"\n"+cp.stderr)
  finally:td.cleanup()
 
+def falsify_incident_alert_timestamp_contract():
+ case({"sql/itsm/001_incident.sql":sql().replace("opened_at","created_at",1)},False)
+
+def falsify_expired_sync_discovery_contract():
+ case({"sql/itsm/001_incident.sql":sql().replace(
+   "OR (o.sync_state='dispatching' AND o.claim_expires_at<=transaction_timestamp())",""
+ )},False)
+
+def falsify_privileged_role_membership_guard():
+ case({"sql/itsm/001_incident.sql":sql().replace(
+   "SELECT 1 FROM pg_auth_members","SELECT 1 FROM pg_roles",1
+ )},False)
+
+def falsify_incident_create_serialization():
+ case({"sql/itsm/001_incident.sql":sql().replace(
+   "  PERFORM pg_advisory_xact_lock(\n    hashtextextended(p_tenant_id||chr(31)||p_logical_action_id,10)\n  );\n",""
+ )},False)
+
+def falsify_transition_replay_equivalence():
+ case({"sql/itsm/001_incident.sql":sql().replace(
+   "g10.transition_equivalence_conflict","g10.transition_duplicate",1
+ )},False)
+
+def falsify_sync_retry_idempotency_identity_reuse():
+ case({"sql/itsm/001_incident.sql":sql().replace(
+   "  sync_state text,claim_expires_at timestamptz,available_at timestamptz\n);",
+   "  sync_state text,claim_expires_at timestamptz,available_at timestamptz,\n  UNIQUE (tenant_id,sync_identity)\n);"
+ )},False)
+
 def main():
  case({"apps/g10-itsm/model.py":"kind='incident'\nstate='open'\n"},True)
  case({"apps/g10-itsm/change_request.py":"x=1\n"},False)
  case({"apps/g10-itsm/jira_adapter.py":"x=1\n"},False)
  case({"sql/itsm/001_incident.sql":sql()+"\nCREATE TABLE itsm.hidden(id text);\n"},False)
  case({"sql/itsm/001_incident.sql":sql()+"\nUPDATE alerting.alert SET lifecycle_state='resolved';\n"},False)
- print("g10_scope_falsification=PASS incident=allowed change_vendor=blocked hidden_relation=blocked cross_domain_mutation=blocked")
+ falsify_incident_alert_timestamp_contract()
+ falsify_expired_sync_discovery_contract()
+ falsify_privileged_role_membership_guard()
+ falsify_incident_create_serialization()
+ falsify_transition_replay_equivalence()
+ falsify_sync_retry_idempotency_identity_reuse()
+ print("g10_scope_falsification=PASS incident=allowed change_vendor=blocked hidden_relation=blocked cross_domain_mutation=blocked runtime_review_findings=guarded")
  return 0
 if __name__=="__main__":raise SystemExit(main())

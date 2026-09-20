@@ -27,6 +27,7 @@ FALSIFICATION_PATHS = {
     Path("tools/assurance/test_validate_d4d_trace_context_source.py"),
     Path("tools/assurance/test_validate_adversarial_learning.py"),
     Path("tools/assurance/test_validate_g1_identity_tenant_shell_authorization.py"),
+    Path("tools/assurance/test_validate_g10_itsm_implementation_scope.py"),
 }
 MATERIAL_BADGE = re.compile(r"(?:\bP[012]\s+Badge\b|\[P[012]\])")
 

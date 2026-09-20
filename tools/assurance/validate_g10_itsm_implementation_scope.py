@@ -41,6 +41,50 @@ def sql_errors(text,p):
       r"\bcreate\s+(?:table|schema)\s+(?:alerting|human_operations|notification|monitoring)\."
     ):
       if re.search(pattern,text,re.I):out.append(f"G10 SQL contains forbidden cross-domain mutation: {pattern}")
+
+    if not re.search(
+      r"\bselect\s+alert_id\s*,\s*lifecycle_state\s*,\s*opened_at\s*,\s*resolved_at\s+from\s+alerting\.alert\b",
+      text,re.I|re.S
+    ):
+      out.append("G10 incident read must use alerting.alert.opened_at as the canonical Alert opening timestamp")
+
+    if not (
+      re.search(r"\bpg_auth_members\b",text,re.I)
+      and re.search(r"\broleid\s*=\s*v_role\.oid\s+or\s+member\s*=\s*v_role\.oid\b",text,re.I)
+    ):
+      out.append("G10 privileged roles must reject incoming and outgoing pg_auth_members edges")
+
+    create_match=re.search(
+      r"create\s+or\s+replace\s+function\s+itsm\.g10_create_incident\b(?P<body>.*?)(?=\ncreate\s+or\s+replace\s+function|\nalter\s+function|\ncommit;|\Z)",
+      text,re.I|re.S
+    )
+    if not create_match or not re.search(
+      r"pg_advisory_xact_lock\s*\([^;]*p_logical_action_id",
+      create_match.group("body"),re.I|re.S
+    ):
+      out.append("G10 incident creation must serialize on the tenant/logical action before replay admission")
+
+    transition_match=re.search(
+      r"create\s+or\s+replace\s+function\s+itsm\.g10_transition_incident\b(?P<body>.*?)(?=\ncreate\s+or\s+replace\s+function|\nalter\s+function|\ncommit;|\Z)",
+      text,re.I|re.S
+    )
+    if not transition_match or "g10.transition_equivalence_conflict" not in transition_match.group("body"):
+      out.append("G10 transition replay must reject divergent target-state equivalence")
+
+    discovery_match=re.search(
+      r"create\s+or\s+replace\s+function\s+itsm\.g10_next_sync_candidate\b(?P<body>.*?)(?=\ncreate\s+or\s+replace\s+function|\nalter\s+function|\ncommit;|\Z)",
+      text,re.I|re.S
+    )
+    discovery_body=discovery_match.group("body") if discovery_match else ""
+    if not (
+      re.search(r"sync_state\s*=\s*'dispatching'",discovery_body,re.I)
+      and re.search(r"claim_expires_at\s*<=\s*transaction_timestamp\s*\(\s*\)",discovery_body,re.I)
+    ):
+      out.append("G10 worker discovery must surface expired dispatching sync rows for reconciliation")
+
+    if re.search(r"\bunique\s*\(\s*tenant_id\s*,\s*sync_identity\s*\)",text,re.I):
+      out.append("G10 sync_identity must be reusable across bounded retry attempts")
+
     return out
 
 def workflow_errors(text,p):

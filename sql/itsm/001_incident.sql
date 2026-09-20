@@ -214,7 +214,6 @@ CREATE TABLE itsm.incident_sync_outbox (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT transaction_timestamp(),
   PRIMARY KEY (tenant_id,sync_outbox_id),
   UNIQUE (tenant_id,incident_id,attempt_number),
-  UNIQUE (tenant_id,sync_identity),
   FOREIGN KEY (tenant_id,incident_id) REFERENCES itsm.incident(tenant_id,incident_id),
   CHECK (adapter_instance_ref<>'' AND sync_identity<>''),
   CHECK (

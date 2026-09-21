@@ -47,3 +47,11 @@ Comments are immutable actor-attributed facts.
 
 Exactly six `itsm.*` relations are created. All tenant-owned relations use RLS + FORCE RLS.
 Application and worker invokers receive no direct table mutation privileges.
+
+## Canonical adversarial learning provenance
+
+The PR #173 review findings and the related PR #176 assurance finding are now
+canonical on `main` through the repository adversarial-learning ledger and
+registered falsifiers. This implementation consumes those guardrails; it does
+not redefine or bypass them.
+

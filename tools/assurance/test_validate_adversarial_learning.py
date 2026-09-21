@@ -402,7 +402,7 @@ def falsify_g10_alert_timestamp_contract() -> None:
         lambda r: mutate_text(
             r,
             Path("tools/assurance/test_validate_adversarial_learning.py"),
-            "    falsify_g10_alert_timestamp_contract()\\n",
+            "    falsify_g10_alert_timestamp_contract()\n",
             "",
         )
     )
@@ -426,7 +426,7 @@ def falsify_g10_expired_sync_discovery() -> None:
         lambda r: mutate_text(
             r,
             Path("tools/assurance/test_validate_adversarial_learning.py"),
-            "    falsify_g10_expired_sync_discovery()\\n",
+            "    falsify_g10_expired_sync_discovery()\n",
             "",
         )
     )
@@ -447,7 +447,7 @@ def falsify_g10_privileged_role_membership() -> None:
         lambda r: mutate_text(
             r,
             Path("tools/assurance/test_validate_adversarial_learning.py"),
-            "    falsify_g10_privileged_role_membership()\\n",
+            "    falsify_g10_privileged_role_membership()\n",
             "",
         )
     )
@@ -468,7 +468,7 @@ def falsify_g10_concurrent_create_idempotency() -> None:
         lambda r: mutate_text(
             r,
             Path("tools/assurance/test_validate_adversarial_learning.py"),
-            "    falsify_g10_concurrent_create_idempotency()\\n",
+            "    falsify_g10_concurrent_create_idempotency()\n",
             "",
         )
     )
@@ -489,7 +489,7 @@ def falsify_g10_transition_replay_equivalence() -> None:
         lambda r: mutate_text(
             r,
             Path("tools/assurance/test_validate_adversarial_learning.py"),
-            "    falsify_g10_transition_replay_equivalence()\\n",
+            "    falsify_g10_transition_replay_equivalence()\n",
             "",
         )
     )
@@ -510,7 +510,7 @@ def falsify_g10_provider_sync_identity_stability() -> None:
         lambda r: mutate_text(
             r,
             Path("tools/assurance/test_validate_adversarial_learning.py"),
-            "    falsify_g10_provider_sync_identity_stability()\\n",
+            "    falsify_g10_provider_sync_identity_stability()\n",
             "",
         )
     )

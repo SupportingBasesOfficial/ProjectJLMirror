@@ -398,6 +398,14 @@ VALUES (v_last.adapter_instance_ref,v_last.sync_identity);
 
 
 def falsify_g10_alert_timestamp_contract() -> None:
+    expect_failure(
+        lambda r: mutate_text(
+            r,
+            Path("tools/assurance/test_validate_adversarial_learning.py"),
+            "    falsify_g10_alert_timestamp_contract()\\n",
+            "",
+        )
+    )
     safe = _g10_safe_guardrail_sql()
     unsafe = safe.replace(
         "SELECT alert_id,lifecycle_state,opened_at,resolved_at",
@@ -414,6 +422,14 @@ def falsify_g10_alert_timestamp_contract() -> None:
 
 
 def falsify_g10_expired_sync_discovery() -> None:
+    expect_failure(
+        lambda r: mutate_text(
+            r,
+            Path("tools/assurance/test_validate_adversarial_learning.py"),
+            "    falsify_g10_expired_sync_discovery()\\n",
+            "",
+        )
+    )
     safe = _g10_safe_guardrail_sql()
     unsafe = safe.replace(
         "(o.sync_state='dispatching' AND o.claim_expires_at<=transaction_timestamp())",
@@ -427,6 +443,14 @@ def falsify_g10_expired_sync_discovery() -> None:
 
 
 def falsify_g10_privileged_role_membership() -> None:
+    expect_failure(
+        lambda r: mutate_text(
+            r,
+            Path("tools/assurance/test_validate_adversarial_learning.py"),
+            "    falsify_g10_privileged_role_membership()\\n",
+            "",
+        )
+    )
     safe = _g10_safe_guardrail_sql()
     unsafe = safe.replace(
         "SELECT 1 FROM pg_auth_members WHERE roleid=v_role.oid OR member=v_role.oid;",
@@ -440,6 +464,14 @@ def falsify_g10_privileged_role_membership() -> None:
 
 
 def falsify_g10_concurrent_create_idempotency() -> None:
+    expect_failure(
+        lambda r: mutate_text(
+            r,
+            Path("tools/assurance/test_validate_adversarial_learning.py"),
+            "    falsify_g10_concurrent_create_idempotency()\\n",
+            "",
+        )
+    )
     safe = _g10_safe_guardrail_sql()
     unsafe = safe.replace(
         "SELECT hashtextextended(p_tenant_id||chr(31)||p_logical_action_id,10);",
@@ -453,6 +485,14 @@ def falsify_g10_concurrent_create_idempotency() -> None:
 
 
 def falsify_g10_transition_replay_equivalence() -> None:
+    expect_failure(
+        lambda r: mutate_text(
+            r,
+            Path("tools/assurance/test_validate_adversarial_learning.py"),
+            "    falsify_g10_transition_replay_equivalence()\\n",
+            "",
+        )
+    )
     safe = _g10_safe_guardrail_sql()
     unsafe = safe.replace(
         "IF v_existing_transition.to_state IS DISTINCT FROM p_target_state THEN\n  RAISE EXCEPTION 'g10.transition_equivalence_conflict';\nEND IF;",
@@ -466,6 +506,14 @@ def falsify_g10_transition_replay_equivalence() -> None:
 
 
 def falsify_g10_provider_sync_identity_stability() -> None:
+    expect_failure(
+        lambda r: mutate_text(
+            r,
+            Path("tools/assurance/test_validate_adversarial_learning.py"),
+            "    falsify_g10_provider_sync_identity_stability()\\n",
+            "",
+        )
+    )
     safe = _g10_safe_guardrail_sql()
     unsafe = safe.replace(
         "INSERT INTO x(adapter_instance_ref,sync_identity)\nVALUES (v_last.adapter_instance_ref,v_last.sync_identity);",

@@ -79,8 +79,6 @@ G1_AUTHORIZATION_SURFACE = {
     "implementation/g1-identity-tenant-shell-authorization/AUTHORIZATION.md",
     "implementation/g1-identity-tenant-shell-authorization/AUTHORIZATION_MANIFEST.json",
     "implementation/g1-identity-tenant-shell-authorization/TASK_PACKET.md",
-    "tools/assurance/validate_g1_identity_tenant_shell_authorization.py",
-    "tools/assurance/test_validate_g1_identity_tenant_shell_authorization.py",
     IMPLEMENTATION_SCOPE_VALIDATOR,
     IMPLEMENTATION_SCOPE_FALSIFIER,
     READINESS_VALIDATOR,

@@ -351,6 +351,131 @@ def falsify_wave4_metric_definition_claimed_input_liveness_guardrail() -> None:
     )
 
 
+
+def _g10_review_guardrail_errors(sql: str) -> list[str]:
+    errors: list[str] = []
+    if "SELECT alert_id,lifecycle_state,opened_at,resolved_at" not in sql:
+        errors.append("G10 Alert summary must use canonical opened_at")
+    if "SELECT alert_id,lifecycle_state,created_at,resolved_at" in sql:
+        errors.append("G10 Alert summary must not reference non-canonical created_at")
+    if "(o.sync_state='dispatching' AND o.claim_expires_at<=transaction_timestamp())" not in sql:
+        errors.append("G10 sync discovery must surface expired dispatching leases")
+    if "FROM pg_auth_members" not in sql or "roleid=v_role.oid OR member=v_role.oid" not in sql:
+        errors.append("G10 privileged roles must reject incoming and outgoing memberships")
+    if "hashtextextended(p_tenant_id||chr(31)||p_logical_action_id,10)" not in sql:
+        errors.append("G10 Incident creation must serialize same logical action")
+    if "g10.transition_equivalence_conflict" not in sql or "v_existing_transition.to_state IS DISTINCT FROM p_target_state" not in sql:
+        errors.append("G10 transition replay must reject divergent target state")
+    if "UNIQUE (tenant_id,sync_identity)" in sql:
+        errors.append("G10 retries must reuse provider idempotency identity across attempts")
+    if "v_last.adapter_instance_ref,v_last.sync_identity" not in sql:
+        errors.append("G10 retry must carry forward provider idempotency identity")
+    return errors
+
+
+def _assert_g10_guardrail_case(*, unsafe: str, safe: str, expected_fragment: str) -> None:
+    unsafe_errors = _g10_review_guardrail_errors(unsafe)
+    assert any(expected_fragment in e for e in unsafe_errors), unsafe_errors
+    safe_errors = _g10_review_guardrail_errors(safe)
+    assert not safe_errors, safe_errors
+
+
+def _g10_safe_guardrail_sql() -> str:
+    return """
+SELECT alert_id,lifecycle_state,opened_at,resolved_at
+FROM alerting.alert;
+SELECT 1
+FROM q o
+WHERE (o.sync_state='dispatching' AND o.claim_expires_at<=transaction_timestamp());
+SELECT 1 FROM pg_auth_members WHERE roleid=v_role.oid OR member=v_role.oid;
+SELECT hashtextextended(p_tenant_id||chr(31)||p_logical_action_id,10);
+IF v_existing_transition.to_state IS DISTINCT FROM p_target_state THEN
+  RAISE EXCEPTION 'g10.transition_equivalence_conflict';
+END IF;
+INSERT INTO x(adapter_instance_ref,sync_identity)
+VALUES (v_last.adapter_instance_ref,v_last.sync_identity);
+"""
+
+
+def falsify_g10_alert_timestamp_contract() -> None:
+    safe = _g10_safe_guardrail_sql()
+    unsafe = safe.replace(
+        "SELECT alert_id,lifecycle_state,opened_at,resolved_at",
+        "SELECT alert_id,lifecycle_state,created_at,resolved_at",
+    )
+    _assert_g10_guardrail_case(
+        unsafe=unsafe,
+        safe=safe,
+        expected_fragment="canonical opened_at",
+    )
+    actual = ROOT / "sql/itsm/001_incident.sql"
+    if actual.is_file():
+        assert not _g10_review_guardrail_errors(actual.read_text(encoding="utf-8"))
+
+
+def falsify_g10_expired_sync_discovery() -> None:
+    safe = _g10_safe_guardrail_sql()
+    unsafe = safe.replace(
+        "(o.sync_state='dispatching' AND o.claim_expires_at<=transaction_timestamp())",
+        "(o.sync_state='pending' AND o.available_at<=transaction_timestamp())",
+    )
+    _assert_g10_guardrail_case(
+        unsafe=unsafe,
+        safe=safe,
+        expected_fragment="expired dispatching leases",
+    )
+
+
+def falsify_g10_privileged_role_membership() -> None:
+    safe = _g10_safe_guardrail_sql()
+    unsafe = safe.replace(
+        "SELECT 1 FROM pg_auth_members WHERE roleid=v_role.oid OR member=v_role.oid;",
+        "SELECT 1 FROM pg_roles WHERE oid=v_role.oid;",
+    )
+    _assert_g10_guardrail_case(
+        unsafe=unsafe,
+        safe=safe,
+        expected_fragment="incoming and outgoing memberships",
+    )
+
+
+def falsify_g10_concurrent_create_idempotency() -> None:
+    safe = _g10_safe_guardrail_sql()
+    unsafe = safe.replace(
+        "SELECT hashtextextended(p_tenant_id||chr(31)||p_logical_action_id,10);",
+        "SELECT 1;",
+    )
+    _assert_g10_guardrail_case(
+        unsafe=unsafe,
+        safe=safe,
+        expected_fragment="serialize same logical action",
+    )
+
+
+def falsify_g10_transition_replay_equivalence() -> None:
+    safe = _g10_safe_guardrail_sql()
+    unsafe = safe.replace(
+        "IF v_existing_transition.to_state IS DISTINCT FROM p_target_state THEN\n  RAISE EXCEPTION 'g10.transition_equivalence_conflict';\nEND IF;",
+        "IF FOUND THEN RETURN; END IF;",
+    )
+    _assert_g10_guardrail_case(
+        unsafe=unsafe,
+        safe=safe,
+        expected_fragment="reject divergent target state",
+    )
+
+
+def falsify_g10_provider_sync_identity_stability() -> None:
+    safe = _g10_safe_guardrail_sql()
+    unsafe = safe.replace(
+        "INSERT INTO x(adapter_instance_ref,sync_identity)\nVALUES (v_last.adapter_instance_ref,v_last.sync_identity);",
+        "UNIQUE (tenant_id,sync_identity);",
+    )
+    errors = _g10_review_guardrail_errors(unsafe)
+    assert any("provider idempotency identity" in e for e in errors), errors
+    assert not _g10_review_guardrail_errors(safe)
+
+
 def main() -> None:
     baseline_errors = s.validate(ROOT)
     assert not baseline_errors, "strict baseline errors:\n" + "\n".join(baseline_errors)
@@ -382,6 +507,12 @@ def main() -> None:
     falsify_wave4_authority_toctou_guardrail()
     falsify_wave4_host_inventory_authority_transition()
     falsify_wave4_metric_definition_claimed_input_liveness_guardrail()
+    falsify_g10_provider_sync_identity_stability()
+    falsify_g10_transition_replay_equivalence()
+    falsify_g10_concurrent_create_idempotency()
+    falsify_g10_privileged_role_membership()
+    falsify_g10_expired_sync_discovery()
+    falsify_g10_alert_timestamp_contract()
     expect_failure(lambda r: mutate_json(r, v.LEDGER, lambda d: d["entries"][1].__setitem__("review_comment_id", 3961647090)))
     expect_failure(lambda r: mutate_json(r, v.LEDGER, lambda d: d["entries"][6].__setitem__("guardrail_generation", 1)))
     expect_failure(lambda r: mutate_json(r, v.LEDGER, lambda d: d["entries"][0].__setitem__("systemic_guardrail_updated", False)))

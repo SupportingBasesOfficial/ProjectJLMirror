@@ -199,6 +199,30 @@ def must_fail(mutator, fragment: str) -> None:
     raise AssertionError(f"mutation unexpectedly accepted: {fragment}")
 
 
+def must_fail_changed_paths(changed_paths: str, fragment: str) -> None:
+    import validate_g1_identity_tenant_shell_authorization as validator
+
+    original_git = validator.git
+    try:
+        def fake_git(*args: str) -> str:
+            if args[:2] == ("merge-base", "origin/main"):
+                return "base"
+            if args[:2] == ("diff", "--name-only"):
+                return changed_paths
+            return original_git(*args)
+
+        validator.git = fake_git
+        try:
+            validator.validate_changed_paths()
+        except AssertionError as exc:
+            if fragment not in str(exc):
+                raise AssertionError(f"expected {fragment!r}, got {exc!r}") from exc
+            return
+        raise AssertionError(f"changed-path mutation unexpectedly accepted: {fragment}")
+    finally:
+        validator.git = original_git
+
+
 def _isolated_readiness_permissive_rejection_child() -> int:
     sys.argv = [str(Path(__file__).resolve())]
     import test_validate_g1_identity_tenant_shell_scope_readiness as readiness_falsifier
@@ -267,26 +291,14 @@ def falsify_global_revalidation_changed_path_scope() -> None:
 
         validator.git = global_only_git
         validator.validate_changed_paths()
-
-        def mixed_git(*args: str) -> str:
-            if args[:2] == ("merge-base", "origin/main"):
-                return "base"
-            if args[:2] == ("diff", "--name-only"):
-                return (
-                    "implementation/g1-identity-tenant-shell-authorization/AUTHORIZATION.md\n"
-                    "forbidden-unrelated-path.txt"
-                )
-            return original_git(*args)
-
-        validator.git = mixed_git
-        try:
-            validator.validate_changed_paths()
-        except AssertionError as exc:
-            assert "authorization PR touched forbidden path" in str(exc)
-        else:
-            raise AssertionError("mixed G1 authorization plus unrelated path unexpectedly accepted")
     finally:
         validator.git = original_git
+
+    must_fail_changed_paths(
+        "implementation/g1-identity-tenant-shell-authorization/AUTHORIZATION.md\n"
+        "forbidden-unrelated-path.txt",
+        "authorization PR touched forbidden path",
+    )
 
 
 def falsify_successor_authority_transition() -> None:

@@ -1,0 +1,29 @@
+{
+  "name": "JLMIRROR G10 ITSM Runtime",
+  "on": {
+    "pull_request": {
+      "paths": [
+        "apps/g10-itsm/**",
+        "contracts/g10-itsm/**",
+        "implementation/g10-itsm/**",
+        "tests/g10/**",
+        "tools/g10/**",
+        "sql/itsm/001_incident.sql",
+        ".github/workflows/g10-itsm-runtime.yml"
+      ]
+    },
+    "workflow_dispatch": {}
+  },
+  "permissions": {},
+  "jobs": {
+    "g10-runtime": {
+      "runs-on": "ubuntu-24.04",
+      "steps": [
+        {"uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"},
+        {"uses": "actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1"},
+        {"uses": "actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38"},
+        {"run": "python tools/g10/run_itsm_runtime.py"}
+      ]
+    }
+  }
+}

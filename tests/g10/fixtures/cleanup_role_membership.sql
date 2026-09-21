@@ -1,0 +1,3 @@
+REVOKE jlmirror_g10_itsm_executor FROM g10_membership_poison;
+DROP ROLE g10_membership_poison;
+DROP ROLE jlmirror_g10_itsm_executor;

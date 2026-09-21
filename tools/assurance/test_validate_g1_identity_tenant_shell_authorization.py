@@ -253,6 +253,42 @@ def _assert_isolated_readiness_permissive_rejection() -> None:
         raise AssertionError(f"isolated G1 readiness child missing authenticated PASS marker: {completed.stdout!r}")
 
 
+def falsify_global_revalidation_changed_path_scope() -> None:
+    import validate_g1_identity_tenant_shell_authorization as validator
+
+    original_git = validator.git
+    try:
+        def global_only_git(*args: str) -> str:
+            if args[:2] == ("merge-base", "origin/main"):
+                return "base"
+            if args[:2] == ("diff", "--name-only"):
+                return "tools/assurance/test_validate_adversarial_learning.py"
+            return original_git(*args)
+
+        validator.git = global_only_git
+        validator.validate_changed_paths()
+
+        def mixed_git(*args: str) -> str:
+            if args[:2] == ("merge-base", "origin/main"):
+                return "base"
+            if args[:2] == ("diff", "--name-only"):
+                return (
+                    "implementation/g1-identity-tenant-shell-authorization/AUTHORIZATION.md\n"
+                    "forbidden-unrelated-path.txt"
+                )
+            return original_git(*args)
+
+        validator.git = mixed_git
+        try:
+            validator.validate_changed_paths()
+        except AssertionError as exc:
+            assert "authorization PR touched forbidden path" in str(exc)
+        else:
+            raise AssertionError("mixed G1 authorization plus unrelated path unexpectedly accepted")
+    finally:
+        validator.git = original_git
+
+
 def falsify_successor_authority_transition() -> None:
     must_fail(lambda d: d.__setitem__("implementation_authority_before_merge", "granted"), "pre-merge implementation authority drift")
     must_fail(lambda d: d.__setitem__("implementation_authority_after_merge", "granted_global_product"), "post-merge implementation authority drift")
@@ -364,6 +400,7 @@ def main() -> int:
     import validate_g1_identity_tenant_shell_authorization as validator
 
     validator.validate()
+    falsify_global_revalidation_changed_path_scope()
     falsify_successor_authority_transition()
     falsify_effective_rule()
     falsify_exact_exclusion_set()

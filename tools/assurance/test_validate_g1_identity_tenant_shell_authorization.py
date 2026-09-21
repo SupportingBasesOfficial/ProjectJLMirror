@@ -199,6 +199,30 @@ def must_fail(mutator, fragment: str) -> None:
     raise AssertionError(f"mutation unexpectedly accepted: {fragment}")
 
 
+def must_fail_changed_paths(changed_paths: str, fragment: str) -> None:
+    import validate_g1_identity_tenant_shell_authorization as validator
+
+    original_git = validator.git
+    try:
+        def fake_git(*args: str) -> str:
+            if args[:2] == ("merge-base", "origin/main"):
+                return "base"
+            if args[:2] == ("diff", "--name-only"):
+                return changed_paths
+            return original_git(*args)
+
+        validator.git = fake_git
+        try:
+            validator.validate_changed_paths()
+        except AssertionError as exc:
+            if fragment not in str(exc):
+                raise AssertionError(f"expected {fragment!r}, got {exc!r}") from exc
+            return
+        raise AssertionError(f"changed-path mutation unexpectedly accepted: {fragment}")
+    finally:
+        validator.git = original_git
+
+
 def _isolated_readiness_permissive_rejection_child() -> int:
     sys.argv = [str(Path(__file__).resolve())]
     import test_validate_g1_identity_tenant_shell_scope_readiness as readiness_falsifier
@@ -251,6 +275,30 @@ def _assert_isolated_readiness_permissive_rejection() -> None:
         raise AssertionError(f"isolated G1 readiness child failed: rc={completed.returncode}: {detail}")
     if ISOLATED_READINESS_PASS not in completed.stdout.splitlines():
         raise AssertionError(f"isolated G1 readiness child missing authenticated PASS marker: {completed.stdout!r}")
+
+
+def falsify_global_revalidation_changed_path_scope() -> None:
+    import validate_g1_identity_tenant_shell_authorization as validator
+
+    original_git = validator.git
+    try:
+        def global_only_git(*args: str) -> str:
+            if args[:2] == ("merge-base", "origin/main"):
+                return "base"
+            if args[:2] == ("diff", "--name-only"):
+                return "tools/assurance/test_validate_adversarial_learning.py"
+            return original_git(*args)
+
+        validator.git = global_only_git
+        validator.validate_changed_paths()
+    finally:
+        validator.git = original_git
+
+    must_fail_changed_paths(
+        "implementation/g1-identity-tenant-shell-authorization/AUTHORIZATION.md\n"
+        "forbidden-unrelated-path.txt",
+        "authorization PR touched forbidden path",
+    )
 
 
 def falsify_successor_authority_transition() -> None:
@@ -364,6 +412,7 @@ def main() -> int:
     import validate_g1_identity_tenant_shell_authorization as validator
 
     validator.validate()
+    falsify_global_revalidation_changed_path_scope()
     falsify_successor_authority_transition()
     falsify_effective_rule()
     falsify_exact_exclusion_set()

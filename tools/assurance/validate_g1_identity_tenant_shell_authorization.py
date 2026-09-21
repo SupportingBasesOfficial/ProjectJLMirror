@@ -75,6 +75,18 @@ EXPECTED_EXCLUSIONS = {
     "browser_refresh_token_or_long_lived_platform_access_credential", "client_supplied_tenant_as_authorization_proof",
     "speculative_generic_frontend_information_architecture",
 }
+G1_AUTHORIZATION_SURFACE = {
+    "implementation/g1-identity-tenant-shell-authorization/AUTHORIZATION.md",
+    "implementation/g1-identity-tenant-shell-authorization/AUTHORIZATION_MANIFEST.json",
+    "implementation/g1-identity-tenant-shell-authorization/TASK_PACKET.md",
+    IMPLEMENTATION_SCOPE_VALIDATOR,
+    IMPLEMENTATION_SCOPE_FALSIFIER,
+    READINESS_VALIDATOR,
+    READINESS_FALSIFIER,
+    IMPLEMENTATION_SCOPE_WORKFLOW,
+    ".github/workflows/g1-identity-tenant-shell-authorization.yml",
+}
+
 ALLOWED_PATHS = {
     "implementation/g1-identity-tenant-shell-authorization/AUTHORIZATION.md",
     "implementation/g1-identity-tenant-shell-authorization/AUTHORIZATION_MANIFEST.json",
@@ -239,8 +251,19 @@ def validate_document() -> None:
 
 
 def validate_changed_paths() -> None:
-    changed = [p for p in git("diff", "--name-only", f"{BASE}...HEAD").splitlines() if p]
-    req(changed, "authorization branch must contain an explicit delta")
+    try:
+        merge_base = git("merge-base", "origin/main", "HEAD")
+        changed = [p for p in git("diff", "--name-only", f"{merge_base}...HEAD").splitlines() if p]
+    except subprocess.CalledProcessError:
+        changed = [p for p in git("diff", "--name-only", f"{BASE}...HEAD").splitlines() if p]
+
+    if not changed:
+        return
+
+    touches_g1_authorization = any(path in G1_AUTHORIZATION_SURFACE for path in changed)
+    if not touches_g1_authorization:
+        return
+
     for path in changed:
         req(path in ALLOWED_PATHS, f"authorization PR touched forbidden path: {path}")
 

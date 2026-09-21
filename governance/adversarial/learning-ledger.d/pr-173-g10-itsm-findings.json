@@ -1,0 +1,161 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "id": "LEARN-PR173-001",
+      "pr": 173,
+      "source": "external_review",
+      "review_comment_id": 4054972969,
+      "class_id": "ADV-SCHEMA-CONTRACT-DRIFT",
+      "invariant_ids": [
+        "INV-PROVENANCE-001"
+      ],
+      "root_cause": "The G10 composed Incident detail read used an assumed Alert timestamp field instead of the canonical Alert schema, so a valid cross-domain read could fail at runtime despite correct persisted Alert state.",
+      "horizontal_audit": [
+        "all cross-domain composed SELECT field names",
+        "Alert summary projection",
+        "future ITSM read models",
+        "accepted schema-to-read contracts"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_adversarial_learning.py",
+          "probe": "falsify_g10_alert_timestamp_contract"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1
+    },
+    {
+      "id": "LEARN-PR173-002",
+      "pr": 173,
+      "source": "external_review",
+      "review_comment_id": 4054972971,
+      "class_id": "ADV-DURABLE-WORK-RECOVERY-GAP",
+      "invariant_ids": [
+        "INV-LIVENESS-001"
+      ],
+      "root_cause": "G10 worker discovery selected only pending sync rows, so a process crash after claim left an expired dispatching row durable but undiscoverable and therefore impossible for a restarted worker to reconcile.",
+      "horizontal_audit": [
+        "pending work discovery",
+        "expired dispatch leases",
+        "restart recovery",
+        "reconciliation entry points",
+        "future durable worker queues"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_adversarial_learning.py",
+          "probe": "falsify_g10_expired_sync_discovery"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1
+    },
+    {
+      "id": "LEARN-PR173-003",
+      "pr": 173,
+      "source": "external_review",
+      "review_comment_id": 4054972973,
+      "class_id": "ADV-PRIVILEGED-ROLE-MEMBERSHIP-GAP",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "The G10 privileged-role preflight originally validated role attributes without proving membership closure, allowing a separate role to inherit or SET ROLE into direct storage capabilities granted to the executor.",
+      "horizontal_audit": [
+        "incoming role memberships",
+        "outgoing role memberships",
+        "executor roles",
+        "app invokers",
+        "worker invokers",
+        "future privileged database roles"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_adversarial_learning.py",
+          "probe": "falsify_g10_privileged_role_membership"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1
+    },
+    {
+      "id": "LEARN-PR173-004",
+      "pr": 173,
+      "source": "external_review",
+      "review_comment_id": 4054972977,
+      "class_id": "ADV-IDEMPOTENCY-EQUIVALENCE-GAP",
+      "invariant_ids": [
+        "INV-IDEMPOTENCY-001"
+      ],
+      "root_cause": "G10 Incident creation checked for an existing logical action before serializing that identity, so concurrent equivalent requests could race into uniqueness errors instead of converging on one Incident result.",
+      "horizontal_audit": [
+        "same logical-action concurrency",
+        "create idempotency",
+        "unique-key races",
+        "retry convergence",
+        "future logical command admission"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_adversarial_learning.py",
+          "probe": "falsify_g10_concurrent_create_idempotency"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1
+    },
+    {
+      "id": "LEARN-PR173-005",
+      "pr": 173,
+      "source": "external_review",
+      "review_comment_id": 4054972978,
+      "class_id": "ADV-IDEMPOTENCY-EQUIVALENCE-GAP",
+      "invariant_ids": [
+        "INV-IDEMPOTENCY-001"
+      ],
+      "root_cause": "G10 transition replay detected prior use of a logical action but did not compare the stored target with the replayed target, silently accepting contradictory intent under one idempotency identity.",
+      "horizontal_audit": [
+        "transition replay targets",
+        "assignment replay payloads",
+        "comment replay bodies",
+        "completion replay outcomes",
+        "logical action equivalence"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_adversarial_learning.py",
+          "probe": "falsify_g10_transition_replay_equivalence"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 2
+    },
+    {
+      "id": "LEARN-PR173-006",
+      "pr": 173,
+      "source": "internal_audit",
+      "review_comment_id": null,
+      "class_id": "ADV-IDEMPOTENCY-EQUIVALENCE-GAP",
+      "invariant_ids": [
+        "INV-IDEMPOTENCY-001"
+      ],
+      "root_cause": "The initial G10 sync outbox made provider sync_identity unique per row while retries intentionally reuse the same logical provider idempotency identity, causing retry scheduling to fail instead of preserving at-least-once convergence.",
+      "horizontal_audit": [
+        "provider idempotency identity",
+        "retry attempt identity",
+        "outbox uniqueness",
+        "external create-or-link semantics",
+        "future provider adapters"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_adversarial_learning.py",
+          "probe": "falsify_g10_provider_sync_identity_stability"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 3
+    }
+  ]
+}

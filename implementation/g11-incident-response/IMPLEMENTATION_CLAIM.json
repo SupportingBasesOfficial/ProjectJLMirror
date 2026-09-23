@@ -1,0 +1,36 @@
+{
+  "gate": "g11-incident-response",
+  "status": "implemented",
+  "description": "ApplicationErrorEvent push ingest API + IncidentResponsePolicy per-tenant auto-response configuration + response action worker",
+  "authorization_record": "docs/16-implementation-readiness/66-alert-evaluation-incident-response-decision-record.md",
+  "deliverables": [
+    "apps/g11-incident-response/domain.py",
+    "apps/g11-incident-response/service.py",
+    "apps/g11-incident-response/pg_port.py",
+    "apps/g11-incident-response/http_app.py",
+    "apps/g11-incident-response/worker.py",
+    "apps/g11-incident-response/runtime_entry.py",
+    "sql/incident_response/001_incident_response.sql",
+    "tests/g11/__init__.py",
+    "tests/g11/test_domain.py",
+    "tests/g11/test_http_e2e.py",
+    "tests/g11/test_worker.py",
+    "tools/g11/validate_g11_incident_response_scope.py",
+    "implementation/g11-incident-response/IMPLEMENTATION_CLAIM.json"
+  ],
+  "test_results": {
+    "total": 41,
+    "passed": 41,
+    "failed": 0
+  },
+  "scope_constraints": [
+    "ApplicationErrorEvent push API authenticates via machine principal (X-Tenant-Id, X-Principal-Id, X-Scopes headers)",
+    "Deduplication: (tenant_id, application_id, error_code, minute_bucket) — 5-minute window",
+    "IncidentResponsePolicy is per-tenant; one policy per tenant_id",
+    "manual_override_only=true suppresses all automated actions regardless of severity",
+    "Actions evaluated: open_ticket, notify, automation",
+    "Worker dispatches open_ticket actions via TicketBridgeAdapter (injectable, currently FixtureNeutralTicketAdapter)",
+    "No direct modification of alerting, itsm, or notification schemas from g11 domain logic",
+    "All DB access through incident_response schema SECURITY DEFINER functions"
+  ]
+}

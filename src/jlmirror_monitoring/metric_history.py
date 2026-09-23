@@ -4,9 +4,9 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Protocol, Sequence
 
-from .metric_current_state import CanonicalMetricValue
+from .metric_current_state import CanonicalMetricValue, parse_canonical_value
 from .metric_definitions import MetricValueKind
-from .source import OperationalEvidenceState, SyncOperationState, ZabbixProviderConfiguration
+from .source import OperationalEvidenceState, SyncOperationState, ZabbixProviderConfiguration, opaque_token
 from .validation_worker import (
     AdmittedProviderEndpoint,
     CredentialResolutionError,
@@ -200,6 +200,7 @@ def read_metric_history_window(
         )
 
     by_type: dict[int, list[HistoryMetricTarget]] = {}
+    target_by_itemid: dict[str, HistoryMetricTarget] = {}
     identities: set[tuple[str, int]] = set()
     for target in claim.targets:
         identity = (target.provider_external_ref, target.history_value_type)
@@ -210,6 +211,7 @@ def read_metric_history_window(
             )
         identities.add(identity)
         by_type.setdefault(target.history_value_type, []).append(target)
+        target_by_itemid[target.provider_external_ref] = target
 
     try:
         credential = credential_resolver.resolve_zabbix_api_token(claim.credential_binding_ref)
@@ -280,15 +282,37 @@ def read_metric_history_window(
             credential_generation_ref=credential.credential_generation_ref,
         )
 
-    # Durable acceptance identity and canonical value parsing are repository-bound so
-    # Current-first and History-first discovery converge under one authoritative tuple.
+    observations: list[AcceptedHistoryObservation] = []
+    try:
+        for evidence in returned:
+            target = target_by_itemid[evidence.itemid]
+            canonical_value = parse_canonical_value(target.value_kind, evidence.raw_value)
+            observations.append(AcceptedHistoryObservation(
+                observation_id=opaque_token("hist-obs"),
+                metric_definition_id=target.metric_definition_id,
+                monitoring_resource_id=target.monitoring_resource_id,
+                provider_external_ref=evidence.itemid,
+                provider_clock=evidence.clock,
+                provider_ns=evidence.ns,
+                value_kind=target.value_kind,
+                canonical_value=canonical_value,
+            ))
+    except (TypeError, ValueError):
+        return _degraded(
+            MetricHistoryFailureClass.PROVIDER_PROTOCOL_INVALID,
+            evidence_state=OperationalEvidenceState.UNAVAILABLE,
+            egress_decision_ref=endpoint.egress_decision_ref,
+            credential_generation_ref=credential.credential_generation_ref,
+        )
+
+    request_exhausted = len(returned) >= MAX_HISTORY_ROWS_PER_REQUEST
     return MetricHistoryResult(
         SyncOperationState.SUCCEEDED,
         OperationalEvidenceState.CURRENT,
-        HistoryCoverageState.OPEN,
-        (),
+        HistoryCoverageState.FINALIZED if not request_exhausted else HistoryCoverageState.GAP,
+        tuple(observations),
         None,
-        True,
+        not request_exhausted,
         endpoint.egress_decision_ref,
         credential.credential_generation_ref,
     )

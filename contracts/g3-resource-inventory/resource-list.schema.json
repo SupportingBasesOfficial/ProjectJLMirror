@@ -1,0 +1,125 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "G3ResourceInventoryList",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "generation_state",
+    "items",
+    "next_cursor"
+  ],
+  "properties": {
+    "generation_state": {
+      "const": "active_generation"
+    },
+    "items": {
+      "type": "array",
+      "maxItems": 500,
+      "items": {
+        "$ref": "#/$defs/resource"
+      }
+    },
+    "next_cursor": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 1024
+    }
+  },
+  "$defs": {
+    "resource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "monitoring_resource_id",
+        "monitoring_source_id",
+        "source_instance_generation",
+        "generation_state",
+        "display_name",
+        "resource_kind",
+        "scope_state",
+        "scope_projection_revision",
+        "scope_evidence_state",
+        "presence_state",
+        "presence_evidence_state",
+        "last_observed_at",
+        "last_confirmed_present_at",
+        "created_at",
+        "updated_at"
+      ],
+      "properties": {
+        "monitoring_resource_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "monitoring_source_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "source_instance_generation": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "generation_state": {
+          "const": "active_generation"
+        },
+        "display_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "resource_kind": {
+          "const": "host"
+        },
+        "scope_state": {
+          "enum": [
+            "in_scope",
+            "out_of_scope"
+          ]
+        },
+        "scope_projection_revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "scope_evidence_state": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "presence_state": {
+          "enum": [
+            "present",
+            "removed"
+          ]
+        },
+        "presence_evidence_state": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "last_observed_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "last_confirmed_present_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "updated_at": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

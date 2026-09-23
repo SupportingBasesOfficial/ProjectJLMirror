@@ -1,0 +1,28 @@
+{
+  "name": "JLMIRROR G7 Alert Policy Lifecycle Runtime",
+  "on": {
+    "pull_request": {
+      "paths": [
+        "apps/g7-alert-policy-lifecycle/**",
+        "contracts/g7-alert-policy-lifecycle/**",
+        "implementation/g7-alert-policy-lifecycle/**",
+        "tests/g7/**",
+        "tools/g7/**",
+        "sql/alerting/001_alert_policy_lifecycle.sql",
+        ".github/workflows/g7-alert-policy-lifecycle-runtime.yml"
+      ]
+    },
+    "workflow_dispatch": {}
+  },
+  "permissions": {},
+  "jobs": {
+    "g7-runtime": {
+      "runs-on": "ubuntu-24.04",
+      "steps": [
+        {"uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"},
+        {"uses": "actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1"},
+        {"run": "python tools/g7/run_alert_policy_lifecycle_runtime.py"}
+      ]
+    }
+  }
+}

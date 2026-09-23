@@ -1,0 +1,120 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "G5ProblemList",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "items",
+    "next_cursor"
+  ],
+  "properties": {
+    "items": {
+      "type": "array",
+      "maxItems": 500,
+      "items": {
+        "$ref": "#/$defs/item"
+      }
+    },
+    "next_cursor": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 512
+    }
+  },
+  "$defs": {
+    "item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "problem_id",
+        "monitoring_source_id",
+        "source_instance_generation",
+        "generation_state",
+        "monitoring_resource_ids",
+        "summary",
+        "problem_state",
+        "severity_class",
+        "opened_at",
+        "resolved_at",
+        "last_confirmed_at",
+        "evidence_state"
+      ],
+      "properties": {
+        "problem_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "monitoring_source_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "source_instance_generation": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "generation_state": {
+          "enum": [
+            "active_generation",
+            "historical_generation"
+          ]
+        },
+        "monitoring_resource_ids": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          }
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192
+        },
+        "problem_state": {
+          "enum": [
+            "active",
+            "resolved"
+          ]
+        },
+        "severity_class": {
+          "enum": [
+            "unknown",
+            "informational",
+            "warning",
+            "degraded",
+            "critical"
+          ]
+        },
+        "opened_at": {
+          "type": "string"
+        },
+        "resolved_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "last_confirmed_at": {
+          "type": "string"
+        },
+        "evidence_state": {
+          "enum": [
+            "current",
+            "stale",
+            "incomplete",
+            "reconciliation_required",
+            "unavailable"
+          ]
+        }
+      }
+    }
+  }
+}

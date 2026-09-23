@@ -1,0 +1,85 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+import json, sys
+from pathlib import Path
+
+ROOT=Path(__file__).resolve().parents[2]
+BASE_SHA="fa5dcd48c87d6776b1e77e2bd643aecad8c47553"
+AUTH_ID="g7.alert-policy-lifecycle@1"
+MANIFEST=ROOT/"implementation/g7-alert-policy-lifecycle-authorization/AUTHORIZATION_MANIFEST.json"
+AUTH=ROOT/"implementation/g7-alert-policy-lifecycle-authorization/AUTHORIZATION.md"
+TASK=ROOT/"implementation/g7-alert-policy-lifecycle-authorization/TASK_PACKET.md"
+
+def req(ok,msg,errors):
+    if not ok: errors.append(msg)
+
+def main()->int:
+    errors=[]
+    data=json.loads(MANIFEST.read_text(encoding="utf-8"))
+    auth=AUTH.read_text(encoding="utf-8")
+    task=TASK.read_text(encoding="utf-8")
+    req(data.get("authorization_id")==AUTH_ID,"authorization id drift",errors)
+    req(data.get("canonical_base")==f"main@{BASE_SHA}","canonical base drift",errors)
+    req(data.get("implementation_authority_before_merge")=="blocked","pre-merge authority drift",errors)
+    req(data.get("implementation_authority_after_merge")=="granted_for_exact_g7_alert_policy_lifecycle_only","post-merge authority drift",errors)
+    req(data.get("merge_authorization")=="not_granted","self-merge authority forbidden",errors)
+    req(data.get("alert_business_authority")=="policy_evaluation_and_active_resolved_lifecycle_only","G7 alert authority drift",errors)
+
+    policy=data["implementation_path_policy"]
+    req(policy["implementation_pr_head_prefix"]=="impl/g7-alert-policy-lifecycle","branch prefix drift",errors)
+    req(policy["implementation_pr_required_label"]=="jlmirror-slice:g7-alert-policy-lifecycle","label drift",errors)
+    req(policy["implementation_claim_authorization_id"]==AUTH_ID,"claim identity drift",errors)
+    req(policy["exact_sql_path"]=="sql/alerting/001_alert_policy_lifecycle.sql","exact SQL path drift",errors)
+    req(set(policy.get("exact_sql_allowed_relations") or [])=={
+        "alerting.alert_policy",
+        "alerting.alert_policy_version",
+        "alerting.alert_policy_effective_version",
+        "alerting.alert",
+        "alerting.alert_transition",
+        "alerting.alert_decision",
+    },"exact SQL relation allowlist drift",errors)
+    req(policy["runtime_workflow"]==".github/workflows/g7-alert-policy-lifecycle-runtime.yml","runtime path drift",errors)
+    req(policy["runtime_workflow_name"]=="JLMIRROR G7 Alert Policy Lifecycle Runtime","runtime name drift",errors)
+    req(policy["runtime_entrypoint"]=="python tools/g7/run_alert_policy_lifecycle_runtime.py","runtime entrypoint drift",errors)
+
+    for marker in (
+        "EVENT != ALERT",
+        "CURRENT_REREAD_REQUIRED_BEFORE_POLICY_EVALUATION",
+        "RESOLVED_ALERT_ID != REOPENABLE_ALERT_ID",
+        "ACKNOWLEDGEMENT != ALERT_LIFECYCLE",
+        "G7_AUTHORIZED != G8_AUTHORIZED",
+        "READY_FOR_MERGE != AUTHORIZED_TO_MERGE",
+    ):
+        req(marker in auth,f"authorization missing marker: {marker}",errors)
+
+    for marker in (
+        "Event != Alert",
+        "current reread required before policy evaluation",
+        "resolved Alert ID != reopenable Alert ID",
+        "ACK != Alert lifecycle",
+        "G7 != G8",
+    ):
+        req(marker in task,f"task packet missing marker: {marker}",errors)
+
+    forbidden=set(data.get("explicitly_not_authorized") or [])
+    for item in (
+        "acknowledgement_or_unacknowledgement",
+        "responsibility_or_assignment",
+        "notification_intent",
+        "delivery_attempt_or_state",
+        "itsm_incident_ticket_task_behavior",
+        "arbitrary_or_unbounded_policy_dsl",
+    ):
+        req(item in forbidden,f"critical non-authority missing: {item}",errors)
+
+    for p in data.get("authority_source_paths") or []:
+        req((ROOT/p).is_file(),f"authority source missing: {p}",errors)
+
+    for e in errors:
+        print(f"G7_AUTHORIZATION_ERROR: {e}",file=sys.stderr)
+    if errors: return 1
+    print("g7_authorization=PASS exact_scope=alert-policy-lifecycle merge_authorization=not-granted")
+    return 0
+
+if __name__=="__main__":
+    raise SystemExit(main())

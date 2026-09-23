@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "G5HealthDetail",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "monitoring_resource_id",
+    "monitoring_source_id",
+    "source_instance_generation",
+    "generation_state",
+    "scope_state",
+    "scope_evidence_state",
+    "health_class",
+    "evidence_state",
+    "projection_revision",
+    "last_changed_at",
+    "last_evidence_at",
+    "problem_refs"
+  ],
+  "properties": {
+    "monitoring_resource_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "monitoring_source_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "source_instance_generation": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "generation_state": {
+      "enum": [
+        "active_generation",
+        "historical_generation"
+      ]
+    },
+    "scope_state": {
+      "enum": [
+        "in_scope",
+        "out_of_scope"
+      ]
+    },
+    "scope_evidence_state": {
+      "enum": [
+        "current",
+        "reconciliation_required"
+      ]
+    },
+    "health_class": {
+      "enum": [
+        "unknown",
+        "healthy",
+        "degraded",
+        "unhealthy"
+      ]
+    },
+    "evidence_state": {
+      "enum": [
+        "current",
+        "stale",
+        "incomplete",
+        "reconciliation_required",
+        "unavailable"
+      ]
+    },
+    "projection_revision": {
+      "type": [
+        "integer",
+        "string"
+      ]
+    },
+    "last_changed_at": {
+      "type": "string"
+    },
+    "last_evidence_at": {
+      "type": "string"
+    },
+    "problem_refs": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 512
+      }
+    }
+  }
+}

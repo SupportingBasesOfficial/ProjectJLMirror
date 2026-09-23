@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "id": "LEARN-PR176-001",
+      "pr": 176,
+      "source": "external_review",
+      "review_comment_id": 4058819162,
+      "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP",
+      "invariant_ids": [
+        "INV-LEARNING-002"
+      ],
+      "root_cause": "The first PR173 learning package credited six new G10 falsifiers whose bodies used custom assertions without directly invoking a strict-resolver registered negative helper, so the ledger could name apparently executable guardrails that the deterministic learning gate could not prove performed a guaranteed rejection check.",
+      "horizontal_audit": [
+        "all six credited G10 falsifiers",
+        "registered negative-helper identity",
+        "expect_failure reachability from credited probes",
+        "strict resolver executable-check registry",
+        "domain-specific future learning probes",
+        "no-op or assertion-only guardrail regressions"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_adversarial_learning.py",
+          "probe": "falsify_g10_alert_timestamp_contract"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 274
+    }
+  ]
+}

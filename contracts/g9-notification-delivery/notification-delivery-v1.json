@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "channel": "whatsapp_business@1",
+  "intent_reasons": [
+    "alert_requires_attention",
+    "alert_action_requested",
+    "customer_awareness_required"
+  ],
+  "attempt_states": [
+    "dispatching",
+    "sent",
+    "provider_accepted",
+    "delivered",
+    "failed",
+    "unknown"
+  ],
+  "provider_evidence_kinds": [
+    "provider_accepted",
+    "delivered",
+    "external_read_observed",
+    "failed",
+    "unknown"
+  ],
+  "max_attempts": 3,
+  "external_read_is_authoritative_native_view": false
+}

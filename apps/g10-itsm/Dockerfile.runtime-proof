@@ -1,0 +1,8 @@
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PYTHONPATH=/opt/jlmirror/apps/g10-itsm
+WORKDIR /opt/jlmirror
+COPY apps/g10-itsm/ ./apps/g10-itsm/
+COPY contracts/g10-itsm/ ./contracts/g10-itsm/
+USER 65532:65532
+ENTRYPOINT ["python","apps/g10-itsm/runtime_entry.py"]

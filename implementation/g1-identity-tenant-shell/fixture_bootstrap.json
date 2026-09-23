@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "principal_id": "principal-a",
+  "tenant_id": "tenant-a",
+  "forbidden_tenant_id": "tenant-b",
+  "cell_id": "cell-a",
+  "membership_action": "organization.memberships.read",
+  "authentication_strength_policy_id": "shell-access-v1"
+}

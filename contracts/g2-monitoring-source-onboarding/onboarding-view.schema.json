@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "G2MonitoringSourceOnboardingView",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["monitoring_source_id","monitoring_sync_operation_id","state","provider_connection_confirmed","can_recheck"],
+  "properties": {
+    "monitoring_source_id": {"type": "string", "minLength": 1, "maxLength": 512},
+    "monitoring_sync_operation_id": {"type": "string", "minLength": 1, "maxLength": 512},
+    "state": {"enum": ["validation_pending","current","incomplete","reconciliation_required","unavailable"]},
+    "provider_connection_confirmed": {"type": "boolean"},
+    "can_recheck": {"type": "boolean"}
+  }
+}

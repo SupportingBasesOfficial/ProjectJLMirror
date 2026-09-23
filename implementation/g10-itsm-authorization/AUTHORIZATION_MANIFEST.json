@@ -1,0 +1,147 @@
+{
+  "schema_version": 1,
+  "authorization_id": "g10.itsm-incident@1",
+  "canonical_base": "main@a701498188867e9b6e5e98a74716f755bf673fc5",
+  "implementation_authority_before_merge": "blocked",
+  "implementation_authority_after_merge": "granted_for_exact_g10_itsm_incident_only",
+  "merge_authorization": "not_granted",
+  "itsm_authority": "incident_lifecycle_assignment_comments_provider_sync_only",
+  "authority_source_paths": [
+    "docs/00-foundation/ai-e2e-delivery/PRODUCT-EXECUTION-ROADMAP.md",
+    "docs/00-foundation/project-memory/HUMAN-OPERATIONS-MODEL.md",
+    "docs/00-foundation/project-memory/DOMAIN-AUTHORITY-MAP.md",
+    "docs/00-foundation/project-memory/OPEN-QUESTIONS-AND-DEFERRED.md",
+    "docs/03-domains/bounded-contexts.md",
+    "docs/02-requirements/functional-requirements.md",
+    "implementation/g9-notification-delivery/IMPLEMENTATION_CLAIM.json",
+    "implementation/g9-notification-delivery/DESIGN.md"
+  ],
+  "issue_authority": [
+    "#149"
+  ],
+  "incident_v1": {
+    "object_type": "incident",
+    "lifecycle_states": [
+      "open",
+      "in_progress",
+      "resolved",
+      "closed"
+    ],
+    "allowed_transitions": [
+      "open->in_progress",
+      "open->resolved",
+      "in_progress->resolved",
+      "resolved->closed"
+    ],
+    "reopen_authorized": false,
+    "one_originating_alert": true,
+    "automatic_alert_to_incident": false,
+    "one_current_assignee": true,
+    "comments_immutable": true,
+    "external_provider_selected": false,
+    "provider_adapter_contract": "itsm_provider_neutral@1",
+    "sync_states": [
+      "pending",
+      "dispatching",
+      "linked",
+      "failed",
+      "unknown",
+      "reconciliation_required"
+    ]
+  },
+  "implementation_path_policy": {
+    "implementation_pr_head_prefix": "impl/g10-itsm",
+    "implementation_pr_required_label": "jlmirror-slice:g10-itsm",
+    "implementation_claim_path": "implementation/g10-itsm/IMPLEMENTATION_CLAIM.json",
+    "implementation_claim_authorization_id": "g10.itsm-incident@1",
+    "allowed_prefixes": [
+      "apps/g10-itsm/",
+      "contracts/g10-itsm/",
+      "implementation/g10-itsm/",
+      "tests/g10/",
+      "tools/g10/"
+    ],
+    "allowed_exact_paths": [
+      "sql/itsm/001_incident.sql",
+      ".github/workflows/g10-itsm-runtime.yml"
+    ],
+    "exact_sql_path": "sql/itsm/001_incident.sql",
+    "exact_sql_allowed_relations": [
+      "itsm.incident",
+      "itsm.incident_transition",
+      "itsm.incident_assignment",
+      "itsm.incident_comment",
+      "itsm.incident_provider_link",
+      "itsm.incident_sync_outbox"
+    ],
+    "runtime_workflow": ".github/workflows/g10-itsm-runtime.yml",
+    "runtime_workflow_name": "JLMIRROR G10 ITSM Runtime",
+    "runtime_entrypoint": "python tools/g10/run_itsm_runtime.py",
+    "runtime_allowed_actions": [
+      "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+      "actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1",
+      "actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38"
+    ],
+    "semantic_scan_prefixes": [
+      "apps/g10-itsm/",
+      "contracts/g10-itsm/",
+      "implementation/g10-itsm/",
+      "tests/g10/",
+      "tools/g10/"
+    ],
+    "forbidden_path_tokens": [
+      "change",
+      "rfc",
+      "approval",
+      "budget",
+      "quote",
+      "knowledge",
+      "maintenance",
+      "automation",
+      "aiops",
+      "servicenow",
+      "jira",
+      "zendesk"
+    ],
+    "forbidden_code_markers": [
+      "alert_reopen",
+      "alert_resolve",
+      "notification_delivery_mutation",
+      "approval_state",
+      "awaiting_budget_approval",
+      "change_request",
+      "knowledge_article",
+      "maintenance_window",
+      "automation_execute",
+      "aiops_mutation"
+    ]
+  },
+  "identity_laws": [
+    "ALERT_ID != INCIDENT_ID",
+    "ALERT_STATE != INCIDENT_STATE",
+    "INCIDENT_OWNER != ALERT_CURRENT_ACTION_OWNER",
+    "INCIDENT_ASSIGNEE != RESPONSIBLE_PERSON",
+    "PROVIDER_TICKET_ID != INCIDENT_ID",
+    "PROVIDER_STATUS != INCIDENT_STATUS",
+    "INCIDENT_COMMENT != ALERT_NOTE",
+    "ITSM_SYNC_STATE != INCIDENT_LIFECYCLE",
+    "TIMELINE != MUTABLE_BUSINESS_TRUTH"
+  ],
+  "explicitly_not_authorized": [
+    "alert_lifecycle_or_policy_mutation",
+    "g8_responsibility_current_action_or_ack_mutation",
+    "g9_notification_delivery_mutation",
+    "automatic_alert_to_incident_creation",
+    "incident_reopen",
+    "sla_timer_or_escalation",
+    "service_catalog",
+    "change_rfc",
+    "approval_budget_quote",
+    "task_subtask",
+    "maintenance",
+    "knowledge_base",
+    "automation_or_aiops",
+    "named_external_itsm_vendor",
+    "production_activation"
+  ]
+}

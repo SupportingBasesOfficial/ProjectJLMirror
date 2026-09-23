@@ -22,7 +22,28 @@ WORKFLOW_SUFFIXES = {".yml", ".yaml"}
 TEXT_SUFFIXES = {".md", ".yml", ".yaml", ".py", ".json", ".toml", ".txt"}
 STATUS_PUBLISHER_WORKFLOW = ".github/workflows/adversarial-learning-reconciliation.yml"
 G1_STATUS_PUBLISHER_WORKFLOW = ".github/workflows/g1-identity-tenant-shell-implementation-scope.yml"
-STATUS_PUBLISHER_WORKFLOWS = {STATUS_PUBLISHER_WORKFLOW, G1_STATUS_PUBLISHER_WORKFLOW}
+G2_STATUS_PUBLISHER_WORKFLOW = ".github/workflows/g2-monitoring-source-onboarding-implementation-scope.yml"
+G3_STATUS_PUBLISHER_WORKFLOW = ".github/workflows/g3-resource-inventory-implementation-scope.yml"
+G4_STATUS_PUBLISHER_WORKFLOW = ".github/workflows/g4-metrics-implementation-scope.yml"
+G5_STATUS_PUBLISHER_WORKFLOW = ".github/workflows/g5-problem-health-implementation-scope.yml"
+G6_STATUS_PUBLISHER_WORKFLOW = ".github/workflows/g6-monitoring-alerting-transport-implementation-scope.yml"
+G7_STATUS_PUBLISHER_WORKFLOW = ".github/workflows/g7-alert-policy-lifecycle-implementation-scope.yml"
+G8_STATUS_PUBLISHER_WORKFLOW = ".github/workflows/g8-human-operations-implementation-scope.yml"
+G9_STATUS_PUBLISHER_WORKFLOW = ".github/workflows/g9-notification-delivery-implementation-scope.yml"
+G10_STATUS_PUBLISHER_WORKFLOW = ".github/workflows/g10-itsm-implementation-scope.yml"
+STATUS_PUBLISHER_WORKFLOWS = {
+    STATUS_PUBLISHER_WORKFLOW,
+    G1_STATUS_PUBLISHER_WORKFLOW,
+    G2_STATUS_PUBLISHER_WORKFLOW,
+    G3_STATUS_PUBLISHER_WORKFLOW,
+    G4_STATUS_PUBLISHER_WORKFLOW,
+    G5_STATUS_PUBLISHER_WORKFLOW,
+    G6_STATUS_PUBLISHER_WORKFLOW,
+    G7_STATUS_PUBLISHER_WORKFLOW,
+    G8_STATUS_PUBLISHER_WORKFLOW,
+    G9_STATUS_PUBLISHER_WORKFLOW,
+    G10_STATUS_PUBLISHER_WORKFLOW,
+}
 EXPECTED_STATUS_ENDPOINT = "repos/${GITHUB_REPOSITORY}/statuses/${PR_HEAD_SHA}"
 
 ACTION_USE_RE = re.compile(r"^\s*(?:-\s*)?uses:\s*([^\s#]+)\s*(?:#.*)?$", re.MULTILINE)
@@ -259,6 +280,412 @@ def _g1_status_publisher_policy_errors(text: str) -> list[str]:
     return errors
 
 
+def _g2_status_publisher_policy_errors(text: str) -> list[str]:
+    errors = _publisher_common_errors(
+        text,
+        group_marker="group: g2-monitoring-source-onboarding-scope-${{ github.event.issue.number }}",
+        head_output="needs.resolve.outputs.head_sha",
+    )
+    required_markers = (
+        "github.event.comment.body == '/jlmirror-g2-scope-attest'",
+        "github.event.comment.body == '/jlmirror-g2-scope-ready'",
+        'test "$PR_BASE_REF" = "$DEFAULT_BRANCH"',
+        'test "$PR_BASE_REPO" = "$GITHUB_REPOSITORY"',
+        'test "$PR_HEAD_REPO" = "$GITHUB_REPOSITORY"',
+        'test "$PR_BASE_SHA" = "$DEFAULT_BRANCH_SHA"',
+        "branches/${DEFAULT_BRANCH}",
+        "G2_REQUIRED_LABEL",
+        'git show "${PR_BASE_SHA}:${G2_SCOPE_VALIDATOR}" > "$trusted_validator"',
+        "contents/${G2_READINESS_VALIDATOR}?ref=${PR_BASE_SHA}",
+        'python3 "$TRUSTED_READINESS_VALIDATOR"',
+        'test "$(git rev-parse HEAD)" != "$PR_HEAD_SHA"',
+        "CURRENT_HEAD_SHA",
+        "CURRENT_BASE_SHA",
+        "CURRENT_BASE_REF",
+        "CURRENT_DEFAULT_SHA",
+        "CURRENT_LABELS_JSON",
+        "JLMIRROR / g2-monitoring-source-onboarding-implementation-scope",
+        "JLMIRROR / g2-monitoring-source-onboarding-merge-readiness",
+        "G2 scope PASS base=${PR_BASE_SHA} head=${PR_HEAD_SHA}",
+        "G2 ready PASS base=${PR_BASE_SHA} head=${PR_HEAD_SHA}",
+        'test "$state" = success',
+    )
+    for marker in required_markers:
+        if marker not in text:
+            errors.append(f"G2 status reconciliation missing trusted marker: {marker}")
+    if re.search(r"^\s+push:\s*$", text, re.MULTILINE):
+        errors.append("G2 status reconciliation must not depend on skippable push invalidation")
+    if text.count("uses: actions/checkout@") != 1:
+        errors.append("G2 status reconciliation must checkout code only once in read-only scope analysis")
+    ready = _job_block(text, "verify-ready")
+    if ready is None:
+        errors.append("G2 status reconciliation missing source-authenticated live readiness job")
+    elif "statuses: write" in ready:
+        errors.append("G2 live readiness verification must remain read-only")
+    return errors
+
+
+def _g3_status_publisher_policy_errors(text: str) -> list[str]:
+    errors = _publisher_common_errors(
+        text,
+        group_marker="group: g3-resource-inventory-scope-${{ github.event.issue.number }}",
+        head_output="needs.resolve.outputs.head_sha",
+    )
+    required_markers = (
+        "github.event.comment.body == '/jlmirror-g3-scope-attest'",
+        "github.event.comment.body == '/jlmirror-g3-scope-ready'",
+        'test "$PR_BASE_REF" = "$DEFAULT_BRANCH"',
+        'test "$PR_BASE_REPO" = "$GITHUB_REPOSITORY"',
+        'test "$PR_HEAD_REPO" = "$GITHUB_REPOSITORY"',
+        'test "$PR_BASE_SHA" = "$DEFAULT_BRANCH_SHA"',
+        "branches/${DEFAULT_BRANCH}",
+        "G3_REQUIRED_LABEL",
+        'git show "${PR_BASE_SHA}:${G3_SCOPE_VALIDATOR}" > "$trusted_validator"',
+        "contents/${G3_READINESS_VALIDATOR}?ref=${PR_BASE_SHA}",
+        'python3 "$TRUSTED_READINESS_VALIDATOR"',
+        'test "$(git rev-parse HEAD)" != "$PR_HEAD_SHA"',
+        "CURRENT_HEAD_SHA",
+        "CURRENT_BASE_SHA",
+        "CURRENT_BASE_REF",
+        "CURRENT_DEFAULT_SHA",
+        "CURRENT_LABELS_JSON",
+        "JLMIRROR / g3-resource-inventory-implementation-scope",
+        "JLMIRROR / g3-resource-inventory-merge-readiness",
+        "G3 scope PASS base=${PR_BASE_SHA} head=${PR_HEAD_SHA}",
+        "G3 ready PASS base=${PR_BASE_SHA} head=${PR_HEAD_SHA}",
+        'test "$state" = success',
+    )
+    for marker in required_markers:
+        if marker not in text:
+            errors.append(f"G3 status reconciliation missing trusted marker: {marker}")
+    if re.search(r"^\s+push:\s*$", text, re.MULTILINE):
+        errors.append("G3 status reconciliation must not depend on skippable push invalidation")
+    if text.count("uses: actions/checkout@") != 1:
+        errors.append("G3 status reconciliation must checkout code only once in read-only scope analysis")
+    ready = _job_block(text, "verify-ready")
+    if ready is None:
+        errors.append("G3 status reconciliation missing source-authenticated live readiness job")
+    elif "statuses: write" in ready:
+        errors.append("G3 live readiness verification must remain read-only")
+    return errors
+
+def _g4_status_publisher_policy_errors(text: str) -> list[str]:
+    errors = _publisher_common_errors(
+        text,
+        group_marker="group: g4-metrics-scope-${{ github.event.issue.number }}",
+        head_output="needs.resolve.outputs.head_sha",
+    )
+    required_markers = (
+        "github.event.comment.body == '/jlmirror-g4-scope-attest'",
+        "github.event.comment.body == '/jlmirror-g4-scope-ready'",
+        'test "$PR_BASE_REF" = "$DEFAULT_BRANCH"',
+        'test "$PR_BASE_REPO" = "$GITHUB_REPOSITORY"',
+        'test "$PR_HEAD_REPO" = "$GITHUB_REPOSITORY"',
+        'test "$PR_BASE_SHA" = "$DEFAULT_BRANCH_SHA"',
+        "branches/${DEFAULT_BRANCH}",
+        "G4_REQUIRED_LABEL",
+        'git show "${PR_BASE_SHA}:${G4_SCOPE_VALIDATOR}" > "$trusted_validator"',
+        "contents/${G4_READINESS_VALIDATOR}?ref=${PR_BASE_SHA}",
+        'python3 "$TRUSTED_READINESS_VALIDATOR"',
+        'test "$(git rev-parse HEAD)" != "$PR_HEAD_SHA"',
+        "CURRENT_HEAD_SHA",
+        "CURRENT_BASE_SHA",
+        "CURRENT_BASE_REF",
+        "CURRENT_DEFAULT_SHA",
+        "CURRENT_LABELS_JSON",
+        "JLMIRROR / g4-metrics-implementation-scope",
+        "JLMIRROR / g4-metrics-merge-readiness",
+        "G4 scope PASS base=${PR_BASE_SHA} head=${PR_HEAD_SHA}",
+        "G4 ready PASS base=${PR_BASE_SHA} head=${PR_HEAD_SHA}",
+        'test "$state" = success',
+    )
+    for marker in required_markers:
+        if marker not in text:
+            errors.append(f"G4 status reconciliation missing trusted marker: {marker}")
+    if re.search(r"^\s+push:\s*$", text, re.MULTILINE):
+        errors.append("G4 status reconciliation must not depend on skippable push invalidation")
+    if text.count("uses: actions/checkout@") != 1:
+        errors.append("G4 status reconciliation must checkout code only once in read-only scope analysis")
+    ready = _job_block(text, "verify-ready")
+    if ready is None:
+        errors.append("G4 status reconciliation missing source-authenticated live readiness job")
+    elif "statuses: write" in ready:
+        errors.append("G4 live readiness verification must remain read-only")
+    return errors
+
+def _g5_status_publisher_policy_errors(text: str) -> list[str]:
+    errors = _publisher_common_errors(
+        text,
+        group_marker="group: g5-problem-health-scope-${{ github.event.issue.number }}",
+        head_output="needs.resolve.outputs.head_sha",
+    )
+    required_markers = (
+        "github.event.comment.body == '/jlmirror-g5-scope-attest'",
+        "github.event.comment.body == '/jlmirror-g5-scope-ready'",
+        'test "$PR_BASE_REF" = "$DEFAULT_BRANCH"',
+        'test "$PR_BASE_REPO" = "$GITHUB_REPOSITORY"',
+        'test "$PR_HEAD_REPO" = "$GITHUB_REPOSITORY"',
+        'test "$PR_BASE_SHA" = "$DEFAULT_BRANCH_SHA"',
+        "branches/${DEFAULT_BRANCH}",
+        "G5_REQUIRED_LABEL",
+        'git show "${PR_BASE_SHA}:${G5_SCOPE_VALIDATOR}" > "$trusted_validator"',
+        "contents/${G5_READINESS_VALIDATOR}?ref=${PR_BASE_SHA}",
+        'python3 "$TRUSTED_READINESS_VALIDATOR"',
+        'test "$(git rev-parse HEAD)" != "$PR_HEAD_SHA"',
+        "CURRENT_HEAD_SHA",
+        "CURRENT_BASE_SHA",
+        "CURRENT_BASE_REF",
+        "CURRENT_DEFAULT_SHA",
+        "CURRENT_LABELS_JSON",
+        "JLMIRROR / g5-problem-health-implementation-scope",
+        "JLMIRROR / g5-problem-health-merge-readiness",
+        "G5 scope PASS base=${PR_BASE_SHA} head=${PR_HEAD_SHA}",
+        "G5 ready PASS base=${PR_BASE_SHA} head=${PR_HEAD_SHA}",
+        'test "$state" = success',
+    )
+    for marker in required_markers:
+        if marker not in text:
+            errors.append(f"G5 status reconciliation missing trusted marker: {marker}")
+    if re.search(r"^\s+push:\s*$", text, re.MULTILINE):
+        errors.append("G5 status reconciliation must not depend on skippable push invalidation")
+    if text.count("uses: actions/checkout@") != 1:
+        errors.append("G5 status reconciliation must checkout code only once in read-only scope analysis")
+    ready = _job_block(text, "verify-ready")
+    if ready is None:
+        errors.append("G5 status reconciliation missing source-authenticated live readiness job")
+    elif "statuses: write" in ready:
+        errors.append("G5 live readiness verification must remain read-only")
+    return errors
+
+def _g6_status_publisher_policy_errors(text: str) -> list[str]:
+    errors = _publisher_common_errors(
+        text,
+        group_marker="group: g6-monitoring-alerting-transport-scope-${{ github.event.issue.number }}",
+        head_output="needs.resolve.outputs.head_sha",
+    )
+    required_markers = (
+        "github.event.comment.body == '/jlmirror-g6-scope-attest'",
+        "github.event.comment.body == '/jlmirror-g6-scope-ready'",
+        'test "$PR_BASE_REF" = "$DEFAULT_BRANCH"',
+        'test "$PR_BASE_REPO" = "$GITHUB_REPOSITORY"',
+        'test "$PR_HEAD_REPO" = "$GITHUB_REPOSITORY"',
+        'test "$PR_BASE_SHA" = "$DEFAULT_BRANCH_SHA"',
+        "branches/${DEFAULT_BRANCH}",
+        "G6_REQUIRED_LABEL",
+        'git show "${PR_BASE_SHA}:${G6_SCOPE_VALIDATOR}" > "$trusted_validator"',
+        "contents/${G6_READINESS_VALIDATOR}?ref=${PR_BASE_SHA}",
+        'python3 "$TRUSTED_READINESS_VALIDATOR"',
+        'test "$(git rev-parse HEAD)" != "$PR_HEAD_SHA"',
+        "CURRENT_HEAD_SHA",
+        "CURRENT_BASE_SHA",
+        "CURRENT_BASE_REF",
+        "CURRENT_DEFAULT_SHA",
+        "CURRENT_LABELS_JSON",
+        "JLMIRROR / g6-monitoring-alerting-transport-implementation-scope",
+        "JLMIRROR / g6-monitoring-alerting-transport-merge-readiness",
+        "G6 scope PASS base=${PR_BASE_SHA} head=${PR_HEAD_SHA}",
+        "G6 ready PASS base=${PR_BASE_SHA} head=${PR_HEAD_SHA}",
+        'test "$state" = success',
+    )
+    for marker in required_markers:
+        if marker not in text:
+            errors.append(f"G6 status reconciliation missing trusted marker: {marker}")
+    if re.search(r"^\s+push:\s*$", text, re.MULTILINE):
+        errors.append("G6 status reconciliation must not depend on skippable push invalidation")
+    if text.count("uses: actions/checkout@") != 1:
+        errors.append("G6 status reconciliation must checkout code only once in read-only scope analysis")
+    ready = _job_block(text, "verify-ready")
+    if ready is None:
+        errors.append("G6 status reconciliation missing source-authenticated live readiness job")
+    elif "statuses: write" in ready:
+        errors.append("G6 live readiness verification must remain read-only")
+    return errors
+
+
+
+def _g7_status_publisher_policy_errors(text: str) -> list[str]:
+    errors = _publisher_common_errors(
+        text,
+        group_marker="group: g7-alert-policy-lifecycle-scope-${{ github.event.issue.number }}",
+        head_output="needs.resolve.outputs.head_sha",
+    )
+    required_markers = (
+        "github.event.comment.body == '/jlmirror-g7-scope-attest'",
+        "github.event.comment.body == '/jlmirror-g7-scope-ready'",
+        'test "$PR_BASE_REF" = "$DEFAULT_BRANCH"',
+        'test "$PR_BASE_REPO" = "$GITHUB_REPOSITORY"',
+        'test "$PR_HEAD_REPO" = "$GITHUB_REPOSITORY"',
+        'test "$PR_BASE_SHA" = "$DEFAULT_BRANCH_SHA"',
+        "branches/${DEFAULT_BRANCH}",
+        "G7_REQUIRED_LABEL",
+        'git show "${PR_BASE_SHA}:${G7_SCOPE_VALIDATOR}" > "$trusted_validator"',
+        "contents/${G7_READINESS_VALIDATOR}?ref=${PR_BASE_SHA}",
+        'python3 "$TRUSTED_READINESS_VALIDATOR"',
+        'test "$(git rev-parse HEAD)" != "$PR_HEAD_SHA"',
+        "CURRENT_HEAD_SHA",
+        "CURRENT_BASE_SHA",
+        "CURRENT_BASE_REF",
+        "CURRENT_DEFAULT_SHA",
+        "CURRENT_LABELS_JSON",
+        "JLMIRROR / g7-alert-policy-lifecycle-implementation-scope",
+        "JLMIRROR / g7-alert-policy-lifecycle-merge-readiness",
+        "G7 scope PASS base=${PR_BASE_SHA} head=${PR_HEAD_SHA}",
+        "G7 ready PASS base=${PR_BASE_SHA} head=${PR_HEAD_SHA}",
+        'test "$state" = success',
+    )
+    for marker in required_markers:
+        if marker not in text:
+            errors.append(f"G7 status reconciliation missing trusted marker: {marker}")
+    if re.search(r"^\s+push:\s*$", text, re.MULTILINE):
+        errors.append("G7 status reconciliation must not depend on skippable push invalidation")
+    if text.count("uses: actions/checkout@") != 1:
+        errors.append("G7 status reconciliation must checkout code only once in read-only scope analysis")
+    ready = _job_block(text, "verify-ready")
+    if ready is None:
+        errors.append("G7 status reconciliation missing source-authenticated live readiness job")
+    elif "statuses: write" in ready:
+        errors.append("G7 live readiness verification must remain read-only")
+    return errors
+
+
+
+def _g8_status_publisher_policy_errors(text: str) -> list[str]:
+    errors = _publisher_common_errors(
+        text,
+        group_marker="group: g8-human-operations-scope-${{ github.event.issue.number }}",
+        head_output="needs.resolve.outputs.head_sha",
+    )
+    required_markers = (
+        "github.event.comment.body == '/jlmirror-g8-scope-attest'",
+        "github.event.comment.body == '/jlmirror-g8-scope-ready'",
+        'test "$PR_BASE_REF" = "$DEFAULT_BRANCH"',
+        'test "$PR_BASE_REPO" = "$GITHUB_REPOSITORY"',
+        'test "$PR_HEAD_REPO" = "$GITHUB_REPOSITORY"',
+        'test "$PR_BASE_SHA" = "$DEFAULT_BRANCH_SHA"',
+        "branches/${DEFAULT_BRANCH}",
+        "G8_REQUIRED_LABEL",
+        'git show "${PR_BASE_SHA}:${G8_SCOPE_VALIDATOR}" > "$trusted_validator"',
+        "contents/${G8_READINESS_VALIDATOR}?ref=${PR_BASE_SHA}",
+        'python3 "$TRUSTED_READINESS_VALIDATOR"',
+        'test "$(git rev-parse HEAD)" != "$PR_HEAD_SHA"',
+        "CURRENT_HEAD_SHA",
+        "CURRENT_BASE_SHA",
+        "CURRENT_BASE_REF",
+        "CURRENT_DEFAULT_SHA",
+        "CURRENT_LABELS_JSON",
+        "JLMIRROR / g8-human-operations-implementation-scope",
+        "JLMIRROR / g8-human-operations-merge-readiness",
+        "G8 scope PASS base=${PR_BASE_SHA} head=${PR_HEAD_SHA}",
+        "G8 ready PASS base=${PR_BASE_SHA} head=${PR_HEAD_SHA}",
+        'test "$state" = success',
+    )
+    for marker in required_markers:
+        if marker not in text:
+            errors.append(f"G8 status reconciliation missing trusted marker: {marker}")
+    if re.search(r"^\s+push:\s*$", text, re.MULTILINE):
+        errors.append("G8 status reconciliation must not depend on skippable push invalidation")
+    if text.count("uses: actions/checkout@") != 1:
+        errors.append("G8 status reconciliation must checkout code only once in read-only scope analysis")
+    ready = _job_block(text, "verify-ready")
+    if ready is None:
+        errors.append("G8 status reconciliation missing source-authenticated live readiness job")
+    elif "statuses: write" in ready:
+        errors.append("G8 live readiness verification must remain read-only")
+    return errors
+
+
+
+def _g9_status_publisher_policy_errors(text: str) -> list[str]:
+    errors = _publisher_common_errors(
+        text,
+        group_marker="group: g9-notification-delivery-scope-${{ github.event.issue.number }}",
+        head_output="needs.resolve.outputs.head_sha",
+    )
+    required_markers = (
+        "github.event.comment.body == '/jlmirror-g9-scope-attest'",
+        "github.event.comment.body == '/jlmirror-g9-scope-ready'",
+        'test "$PR_BASE_REF" = "$DEFAULT_BRANCH"',
+        'test "$PR_BASE_REPO" = "$GITHUB_REPOSITORY"',
+        'test "$PR_HEAD_REPO" = "$GITHUB_REPOSITORY"',
+        'test "$PR_BASE_SHA" = "$DEFAULT_BRANCH_SHA"',
+        "branches/${DEFAULT_BRANCH}",
+        "G9_REQUIRED_LABEL",
+        'git show "${PR_BASE_SHA}:${G9_SCOPE_VALIDATOR}" > "$trusted_validator"',
+        "contents/${G9_READINESS_VALIDATOR}?ref=${PR_BASE_SHA}",
+        'python3 "$TRUSTED_READINESS_VALIDATOR"',
+        'test "$(git rev-parse HEAD)" != "$PR_HEAD_SHA"',
+        "CURRENT_HEAD_SHA",
+        "CURRENT_BASE_SHA",
+        "CURRENT_BASE_REF",
+        "CURRENT_DEFAULT_SHA",
+        "CURRENT_LABELS_JSON",
+        "JLMIRROR / g9-notification-delivery-implementation-scope",
+        "JLMIRROR / g9-notification-delivery-merge-readiness",
+        "G9 scope PASS base=${PR_BASE_SHA} head=${PR_HEAD_SHA}",
+        "G9 ready PASS base=${PR_BASE_SHA} head=${PR_HEAD_SHA}",
+        'test "$state" = success',
+    )
+    for marker in required_markers:
+        if marker not in text:
+            errors.append(f"G9 status reconciliation missing trusted marker: {marker}")
+    if re.search(r"^\s+push:\s*$", text, re.MULTILINE):
+        errors.append("G9 status reconciliation must not depend on skippable push invalidation")
+    if text.count("uses: actions/checkout@") != 1:
+        errors.append("G9 status reconciliation must checkout code only once in read-only scope analysis")
+    ready = _job_block(text, "verify-ready")
+    if ready is None:
+        errors.append("G9 status reconciliation missing source-authenticated live readiness job")
+    elif "statuses: write" in ready:
+        errors.append("G9 live readiness verification must remain read-only")
+    return errors
+
+
+
+def _g10_status_publisher_policy_errors(text: str) -> list[str]:
+    errors = _publisher_common_errors(
+        text,
+        group_marker="group: g10-itsm-scope-${{ github.event.issue.number }}",
+        head_output="needs.resolve.outputs.head_sha",
+    )
+    required_markers = (
+        "github.event.comment.body == '/jlmirror-g10-scope-attest'",
+        "github.event.comment.body == '/jlmirror-g10-scope-ready'",
+        'test "$PR_BASE_REF" = "$DEFAULT_BRANCH"',
+        'test "$PR_BASE_REPO" = "$GITHUB_REPOSITORY"',
+        'test "$PR_HEAD_REPO" = "$GITHUB_REPOSITORY"',
+        'test "$PR_BASE_SHA" = "$DEFAULT_BRANCH_SHA"',
+        "branches/${DEFAULT_BRANCH}",
+        "G10_REQUIRED_LABEL",
+        'git show "${PR_BASE_SHA}:${G10_SCOPE_VALIDATOR}" > "$trusted_validator"',
+        "contents/${G10_READINESS_VALIDATOR}?ref=${PR_BASE_SHA}",
+        'python3 "$TRUSTED_READINESS_VALIDATOR"',
+        'test "$(git rev-parse HEAD)" != "$PR_HEAD_SHA"',
+        "CURRENT_HEAD_SHA",
+        "CURRENT_BASE_SHA",
+        "CURRENT_BASE_REF",
+        "CURRENT_DEFAULT_SHA",
+        "CURRENT_LABELS_JSON",
+        "JLMIRROR / g10-itsm-implementation-scope",
+        "JLMIRROR / g10-itsm-merge-readiness",
+        "G10 scope PASS base=${PR_BASE_SHA} head=${PR_HEAD_SHA}",
+        "G10 ready PASS base=${PR_BASE_SHA} head=${PR_HEAD_SHA}",
+        'test "$state" = success',
+    )
+    for marker in required_markers:
+        if marker not in text:
+            errors.append(f"G10 status reconciliation missing trusted marker: {marker}")
+    if re.search(r"^\s+push:\s*$", text, re.MULTILINE):
+        errors.append("G10 status reconciliation must not depend on skippable push invalidation")
+    if text.count("uses: actions/checkout@") != 1:
+        errors.append("G10 status reconciliation must checkout code only once in read-only scope analysis")
+    ready = _job_block(text, "verify-ready")
+    if ready is None:
+        errors.append("G10 status reconciliation missing source-authenticated live readiness job")
+    elif "statuses: write" in ready:
+        errors.append("G10 live readiness verification must remain read-only")
+    return errors
+
+
 def _check_workflow_policy(root: Path) -> list[Finding]:
     findings: list[Finding] = []
     for path in _workflow_files(root):
@@ -270,6 +697,24 @@ def _check_workflow_policy(root: Path) -> list[Finding]:
             findings.extend(Finding(rel, message) for message in _status_publisher_policy_errors(text))
         elif rel == G1_STATUS_PUBLISHER_WORKFLOW:
             findings.extend(Finding(rel, message) for message in _g1_status_publisher_policy_errors(text))
+        elif rel == G2_STATUS_PUBLISHER_WORKFLOW:
+            findings.extend(Finding(rel, message) for message in _g2_status_publisher_policy_errors(text))
+        elif rel == G3_STATUS_PUBLISHER_WORKFLOW:
+            findings.extend(Finding(rel, message) for message in _g3_status_publisher_policy_errors(text))
+        elif rel == G4_STATUS_PUBLISHER_WORKFLOW:
+            findings.extend(Finding(rel, message) for message in _g4_status_publisher_policy_errors(text))
+        elif rel == G5_STATUS_PUBLISHER_WORKFLOW:
+            findings.extend(Finding(rel, message) for message in _g5_status_publisher_policy_errors(text))
+        elif rel == G6_STATUS_PUBLISHER_WORKFLOW:
+            findings.extend(Finding(rel, message) for message in _g6_status_publisher_policy_errors(text))
+        elif rel == G7_STATUS_PUBLISHER_WORKFLOW:
+            findings.extend(Finding(rel, message) for message in _g7_status_publisher_policy_errors(text))
+        elif rel == G8_STATUS_PUBLISHER_WORKFLOW:
+            findings.extend(Finding(rel, message) for message in _g8_status_publisher_policy_errors(text))
+        elif rel == G9_STATUS_PUBLISHER_WORKFLOW:
+            findings.extend(Finding(rel, message) for message in _g9_status_publisher_policy_errors(text))
+        elif rel == G10_STATUS_PUBLISHER_WORKFLOW:
+            findings.extend(Finding(rel, message) for message in _g10_status_publisher_policy_errors(text))
         else:
             for regex, message in (
                 (WRITE_ALL_RE, "workflow grants permissions: write-all; observer-only workflows must not have canonical mutation authority"),

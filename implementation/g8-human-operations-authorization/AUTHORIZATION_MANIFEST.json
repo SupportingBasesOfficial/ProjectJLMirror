@@ -1,0 +1,160 @@
+{
+  "schema_version": 1,
+  "authorization_id": "g8.human-operations@1",
+  "canonical_base": "main@be9d2a2fe49c308d4d8c9ca06e9ebafbb4ae69f8",
+  "implementation_authority_before_merge": "blocked",
+  "implementation_authority_after_merge": "granted_for_exact_g8_human_operations_only",
+  "merge_authorization": "not_granted",
+  "human_operations_authority": "responsibility_ack_current_action_and_native_visibility_only",
+  "authority_source_paths": [
+    "docs/00-foundation/ai-e2e-delivery/PRODUCT-EXECUTION-ROADMAP.md",
+    "docs/00-foundation/project-memory/HUMAN-OPERATIONS-MODEL.md",
+    "implementation/g7-alert-policy-lifecycle/IMPLEMENTATION_CLAIM.json",
+    "implementation/g7-alert-policy-lifecycle/DESIGN.md",
+    "sql/alerting/001_alert_policy_lifecycle.sql"
+  ],
+  "issue_authority": [
+    "#149"
+  ],
+  "implementation_path_policy": {
+    "implementation_pr_head_prefix": "impl/g8-human-operations",
+    "implementation_pr_required_label": "jlmirror-slice:g8-human-operations",
+    "implementation_claim_path": "implementation/g8-human-operations/IMPLEMENTATION_CLAIM.json",
+    "implementation_claim_authorization_id": "g8.human-operations@1",
+    "allowed_prefixes": [
+      "apps/g8-human-operations/",
+      "contracts/g8-human-operations/",
+      "implementation/g8-human-operations/",
+      "tests/g8/",
+      "tools/g8/"
+    ],
+    "allowed_exact_paths": [
+      "sql/human_operations/001_human_operations.sql",
+      ".github/workflows/g8-human-operations-runtime.yml"
+    ],
+    "exact_sql_path": "sql/human_operations/001_human_operations.sql",
+    "exact_sql_allowed_relations": [
+      "human_operations.resource_responsibility_assignment",
+      "human_operations.alert_action_assignment",
+      "human_operations.alert_acknowledgement",
+      "human_operations.visibility_requirement",
+      "human_operations.visibility_receipt",
+      "human_operations.current_action_projection"
+    ],
+    "exact_sql_relation_rule": "all_created_human_operations_relations_must_be_explicitly_allowlisted",
+    "runtime_workflow": ".github/workflows/g8-human-operations-runtime.yml",
+    "runtime_workflow_name": "JLMIRROR G8 Human Operations Runtime",
+    "runtime_entrypoint": "python tools/g8/run_human_operations_runtime.py",
+    "runtime_allowed_actions": [
+      "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+      "actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1",
+      "actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38"
+    ],
+    "semantic_scan_prefixes": [
+      "apps/g8-human-operations/",
+      "contracts/g8-human-operations/",
+      "implementation/g8-human-operations/",
+      "tests/g8/",
+      "tools/g8/"
+    ],
+    "forbidden_path_tokens": [
+      "notification",
+      "delivery",
+      "whatsapp",
+      "email",
+      "sms",
+      "teams",
+      "slack",
+      "approval",
+      "budget",
+      "itsm",
+      "incident",
+      "ticket",
+      "automation",
+      "aiops",
+      "provider-write"
+    ],
+    "forbidden_code_markers": [
+      "notification_intent",
+      "delivery_attempt",
+      "delivery_state",
+      "provider_accepted",
+      "whatsapp",
+      "send_email",
+      "send_sms",
+      "teams_webhook",
+      "slack_webhook",
+      "awaiting_budget_approval",
+      "approval_state",
+      "incident_id",
+      "ticket_id",
+      "provider_write_back",
+      "alert_reopen",
+      "unacknowledge"
+    ]
+  },
+  "identity_laws": [
+    "ALERT_LIFECYCLE != RESPONSIBILITY",
+    "RESPONSIBILITY != CURRENT_ACTION_OWNER",
+    "CURRENT_ACTION_OWNER != ACKNOWLEDGER",
+    "VIEWER != ACKNOWLEDGER",
+    "ACKNOWLEDGEMENT != ALERT_RESOLUTION",
+    "RESOURCE_RESPONSIBILITY != ALERT_ACTION_ASSIGNMENT",
+    "VISIBILITY != DELIVERY",
+    "VISIBILITY != RESPONSE",
+    "NOTIFICATION_RECIPIENT != RESPONSIBLE_PERSON",
+    "PROVIDER_ACK != JLMIRROR_ACK",
+    "TIMELINE != MUTABLE_BUSINESS_TRUTH"
+  ],
+  "explicitly_not_authorized": [
+    "alert_lifecycle_or_policy_mutation",
+    "unacknowledge",
+    "suppression",
+    "notification_intent",
+    "dispatch_provider_acceptance_or_delivery_state",
+    "external_channel_read_receipts",
+    "external_messaging_adapters",
+    "generic_response_or_waiting_state",
+    "budget_quote_or_approval_workflow",
+    "routing_or_escalation_automation",
+    "itsm_incident_ticket_task_behavior",
+    "automation_or_aiops_mutation",
+    "provider_write_back",
+    "production_activation"
+  ],
+  "human_operations_v1": {
+    "responsibility_roles": [
+      "technical_responsible",
+      "service_owner",
+      "operator",
+      "customer_responsible"
+    ],
+    "responsibility_assignment_sources": [
+      "manual",
+      "configured"
+    ],
+    "alert_action_assignment_kinds": [
+      "investigate_alert",
+      "acknowledge_alert",
+      "review_alert",
+      "customer_review_required"
+    ],
+    "projection_only_action_kinds": [
+      "no_human_action_required"
+    ],
+    "acknowledgement_scope": [
+      "alert"
+    ],
+    "unacknowledge_authorized": false,
+    "visibility_viewer_sides": [
+      "internal",
+      "customer"
+    ],
+    "visibility_capability_classes": [
+      "platform_native_authenticated_view@1"
+    ],
+    "new_alert_visibility_requirement_requires_active_alert": true,
+    "existing_visibility_requirement_receipt_after_alert_resolution": "allowed_as_late_evidence_only",
+    "visibility_receipt_may_mutate_alert_lifecycle": false
+  }
+}

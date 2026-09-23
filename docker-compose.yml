@@ -1,0 +1,41 @@
+services:
+  db:
+    image: timescale/timescaledb:2.17.2-pg16
+    container_name: jlmirror-db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-jlmirror}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-jlmirror}
+      POSTGRES_DB: ${POSTGRES_DB:-jlmirror}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - jlmirror-db-data:/var/lib/postgresql/data
+      - ./docker/db-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-jlmirror} -d ${POSTGRES_DB:-jlmirror}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: jlmirror-api
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_APP_USER:-jlmirror_app}:${POSTGRES_APP_PASSWORD:-app_password}@db:5432/${POSTGRES_DB:-jlmirror}
+      DATABASE_MIGRATION_URL: postgresql://${POSTGRES_USER:-jlmirror}:${POSTGRES_PASSWORD:-jlmirror}@db:5432/${POSTGRES_DB:-jlmirror}
+      API_HOST: 0.0.0.0
+      API_PORT: 8000
+      ENVIRONMENT_CLASS: environment.development@1
+      SESSION_SECRET: ${SESSION_SECRET:-dev-only-not-for-production-use-generate-a-real-secret}
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+
+volumes:
+  jlmirror-db-data:

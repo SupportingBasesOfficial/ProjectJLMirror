@@ -18,21 +18,19 @@ services:
       retries: 10
     restart: unless-stopped
 
-  api:
+  gateway:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: jlmirror-api
+    container_name: jlmirror-gateway
+    command: ["python", "-m", "gateway.runtime"]
     depends_on:
       db:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql://${POSTGRES_APP_USER:-jlmirror_app}:${POSTGRES_APP_PASSWORD:-app_password}@db:5432/${POSTGRES_DB:-jlmirror}
-      DATABASE_MIGRATION_URL: postgresql://${POSTGRES_USER:-jlmirror}:${POSTGRES_PASSWORD:-jlmirror}@db:5432/${POSTGRES_DB:-jlmirror}
-      API_HOST: 0.0.0.0
-      API_PORT: 8000
-      ENVIRONMENT_CLASS: environment.development@1
-      SESSION_SECRET: ${SESSION_SECRET:-dev-only-not-for-production-use-generate-a-real-secret}
+      GATEWAY_HOST: 0.0.0.0
+      GATEWAY_PORT: "8000"
     ports:
       - "8000:8000"
     restart: unless-stopped

@@ -353,13 +353,33 @@ def falsify_g10_auto_incident_extension_boundary() -> None:
     for marker in required:
         assert marker in text, f"record 66 missing G10 extension boundary: {marker}"
 
-    weakened = text.replace(
-        "a separately accepted G10 extension must explicitly authorize automatic Alert-to-Incident creation",
-        "the existing G10 boundary is sufficient for automatic Alert-to-Incident creation",
-        1,
-    )
-    assert "a separately accepted G10 extension must explicitly authorize automatic Alert-to-Incident creation" not in weakened
-    assert "the existing G10 boundary is sufficient" in weakened
+    def weaken_record(root: Path) -> None:
+        rel = Path("docs/16-implementation-readiness/66-alert-evaluation-incident-response-decision-record.md")
+        current = (root / rel).read_text(encoding="utf-8")
+        marker = "a separately accepted G10 extension must explicitly authorize automatic Alert-to-Incident creation"
+        assert marker in current
+        weakened = current.replace(
+            marker,
+            "the existing G10 boundary is sufficient for automatic Alert-to-Incident creation",
+            1,
+        )
+        (root / rel).write_text(weakened, encoding="utf-8")
+
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        clone(root)
+        weaken_record(root)
+        weakened_text = (root / "docs/16-implementation-readiness/66-alert-evaluation-incident-response-decision-record.md").read_text(encoding="utf-8")
+        assert "the existing G10 boundary is sufficient for automatic Alert-to-Incident creation" in weakened_text
+        assert "a separately accepted G10 extension must explicitly authorize automatic Alert-to-Incident creation" not in weakened_text
+        required_after_mutation = (
+            "outside current G10 authority",
+            "separately accepted G10 extension",
+            "G10 automatic incident extension",
+            "orchestration cannot write ITSM tables",
+        )
+        assert all(marker in weakened_text for marker in required_after_mutation)
+        assert "a separately accepted G10 extension must explicitly authorize automatic Alert-to-Incident creation" not in weakened_text
 
 def falsify_wave4_authorization_exact_path_allowlist() -> None:
     validator = ROOT / "tools/assurance/validate_wave4_monitoring_authorization.py"

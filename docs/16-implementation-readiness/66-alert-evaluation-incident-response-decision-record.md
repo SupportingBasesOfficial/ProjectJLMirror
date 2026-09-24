@@ -1,145 +1,189 @@
-# 66 — Alert Evaluation and Incident Response Decision Record
+# 66 — Application Error Ingest and Incident Response Orchestration Proposal
 
-**Status:** proposed — model selected; closure conditions below are binding before Alert Policy/Evaluation and the ApplicationErrorEvent inbound path are treated as implementation-authorized
-**Decision class:** C1/C2 (Alert Policy/Evaluation semantics are C1 fixed; IncidentResponsePolicy per-tenant configuration is C2 product selection)
-**Drivers:** `ADR-019` (event-driven), `ADR-005` (tenant isolation), G5 (Problem/Health), G6 (Alerting transport), G7 (Alert Policy Lifecycle), G9 (Notification), G10 (ITSM), Product requirement: per-tenant auto-ticket and automation configuration
+**Status:** proposed — candidate cross-domain extension under adversarial review; grants no Alert, ITSM, Notification, Automation, API, or production authority  
+**Decision class:** mixed C1/C2 proposal; any accepted implementation authority must be split into bounded gates before code is admitted  
+**Drivers:** `ADR-005`, `ADR-013`, `ADR-019`, accepted G7 Alert Policy/Lifecycle, G8 Human Operations, G9 Notification Delivery, G10 ITSM
 
-This document proposes a candidate resolution for the "Alert Policy/Evaluation" open question and proposes `ApplicationErrorEvent` plus `IncidentResponsePolicy`. The open question remains open, and neither concept gains implementation or mutation authority, until this record is accepted through governance.
+This record proposes two future capabilities:
 
-## Context and problem
+1. a new monitored-application signal, `ApplicationErrorEvent`, as a candidate additional source for Alert evaluation; and
+2. a tenant-scoped response-orchestration policy that may request downstream ITSM, Notification, or future Automation effects after an accepted Alert decision.
 
-`OPEN-QUESTIONS-AND-DEFERRED.md` lists: "exact Alert Policy/Evaluation DSL/model remains unaccepted; exact grouping/correlation/dedupe semantics remain unaccepted; automatic Alert create/resolve remains blocked." This record proposes a policy model for a future gate while keeping G10-and-below accepted semantics unchanged. Any conflict with existing G5-G10 authority must be resolved in favor of the already-accepted contracts unless separately authorized.
+This proposal does **not** modify current G7/G8/G9/G10 authority while its status is proposed.
 
-Additionally, the product vision requires: when a monitored application or infrastructure system encounters an error or incident, the platform must:
-1. ingest the event automatically (push API from the monitored system);
-2. evaluate it against the tenant's configured policy;
-3. trigger the configured downstream actions (open ITSM ticket, notify channels, run automation) without manual human intervention — unless the tenant has configured manual-only mode.
+## Existing authority that this proposal must preserve
 
-This is distinct from the current G6/G7 flow where alerts are derived from ProblemState/HealthProjection changes within JLMirror's own monitoring stack.
+The accepted repository state remains authoritative:
 
-## Requirements and invariants this selection must satisfy
+- G7 Alert lifecycle is `active | resolved`; G8 acknowledgement/responsibility/visibility are orthogonal human-operation facts and are **not** Alert lifecycle states.
+- G7 currently admits `monitoring_problem` and `monitoring_health_projection` source kinds. A new `ApplicationErrorEvent` source kind requires a separately accepted G7 extension.
+- G9 v1 admits exactly one transport channel, `whatsapp_business@1`, and explicitly does not authorize additional channels or routing policy.
+- G10 preserves `Alert != Incident`; an Alert does not automatically become or mutate an Incident.
+- G11 Automation is not yet authorized.
+- provider/native identity is never platform identity, and event payload fields never select tenant or authorization authority.
 
-- ADR-019: alert evaluation is event-driven; no polling loop owns Alert creation authority.
-- ADR-005: IncidentResponsePolicy is per-tenant; one tenant's configuration cannot affect another's alert lifecycle.
-- G5/G6: existing ProblemState ACTIVE→RESOLVED and HealthProjection DEGRADED/UNHEALTHY transition events remain the primary alert creation sources; this record extends, not replaces, that path.
-- G7: Alert lifecycle (OPEN → ACKNOWLEDGED → RESOLVED → CLOSED) is unchanged; new inbound events must feed into the same lifecycle.
-- No Alert is created or resolved without a traceable, authorized event source (audit requirement).
-- AIOps findings must not silently gain authority over Alert lifecycle (OPEN-QUESTIONS-AND-DEFERRED.md constraint preserved).
+If any text below conflicts with those accepted contracts, the accepted contracts win until a later explicit authorization changes them.
 
-## Decision
+## Proposed capability A — ApplicationErrorEvent
 
-### Proposed alert evaluation model — three candidate inbound event types
+`ApplicationErrorEvent` is a candidate platform-owned event representing an application-side operational failure that may be invisible to infrastructure polling.
 
-If accepted, the proposed evaluator would consume exactly these candidate event types. This section does not expand current G5-G7 authority:
+### Candidate admission shape
 
-#### Type 1 — ProblemState transition events (existing, G5/G6)
-- `ProblemState` transitions to `ACTIVE` → evaluate Alert creation policy for the affected resource/tenant.
-- `ProblemState` transitions to `RESOLVED` → evaluate Alert auto-resolve policy; if no open policy exception, resolve the linked Alert.
-- Grouping/correlation: within a single evaluation window (configurable, default 60 s), multiple ProblemState events for the same resource group are correlated into a single Alert. The grouping key is `(tenant_id, resource_id, problem_category)`. Dedupe is idempotent: a second event for an already-open Alert for the same key updates the Alert's evidence set, not a new Alert.
+A future authorization may admit an authenticated machine principal to submit:
 
-#### Type 2 — HealthProjection change events (existing, G5/G6)
-- `HealthProjection` transitions to `DEGRADED` or `UNHEALTHY` → treated as an alert signal for the aggregate resource group.
-- `HealthProjection` returns to `HEALTHY` → evaluate Alert auto-resolve if no overriding open ProblemState.
-- Grouping key: `(tenant_id, resource_group_id, health_dimension)`.
-
-#### Type 3 — ApplicationErrorEvent (NEW, PROPOSED; not authorized by this record while status is proposed)
-- A monitored application or infrastructure system pushes an error/incident event to the platform via an authenticated inbound REST API endpoint.
-- This event type represents a push from the monitored side, as opposed to the pull/observation model of G2-G5.
-- The event carries:
-  - `tenant_id` (mandatory; authenticated at the BFF boundary — the push credential is tenant-scoped)
-  - `application_id` (the monitored application, registered in G3 resource inventory)
-  - `error_code` / `error_message` (the raw error from the monitored system)
-  - `occurred_at` (ISO 8601; the time the error occurred in the source system, not the ingestion time)
-  - `principal_id` (optional; the user or service account that was active when the error occurred)
-  - `operation` (optional; the operation/process/function where the error was raised)
-  - `session_context` (optional; opaque context string from the source system, e.g. request ID, session ID)
-  - `severity_hint` (optional; `LOW | MEDIUM | HIGH | CRITICAL`; advisory only — tenant policy governs actual severity)
-  - `raw_payload` (optional; structured or unstructured additional context; stored but not parsed for business logic)
-- The inbound API endpoint authenticates the push source via the external machine principal profile (OAuth 2.0 Client Credentials + `private_key_jwt`), not a shared API key.
-- `ApplicationErrorEvent` feeds into the same Alert evaluation pipeline as Type 1/2 events; the evaluator treats it as a problem signal, not a pre-formed Alert.
-
-### IncidentResponsePolicy — per-tenant configuration
-
-Each tenant has exactly one `IncidentResponsePolicy` record (created with defaults at onboarding; updatable by tenant admins). The policy governs what happens when an alert evaluation triggers a response.
-
-Schema:
-
-```
-IncidentResponsePolicy {
-    tenant_id:               UUID (PK, FK tenants)
-    severity_threshold:      ENUM(LOW, MEDIUM, HIGH, CRITICAL)  -- minimum severity to trigger any automated response
-    auto_open_ticket:        BOOLEAN DEFAULT false               -- automatically open ITSM ticket on alert open
-    itsm_integration:        ENUM(NONE, JIRA, SERVICENOW, GLPI) -- which ITSM adapter to use
-    notify_channels:         JSONB   -- [{channel_type, channel_config, on_severities: [...]}]
-    automation_triggers:     JSONB   -- [{trigger: ALERT_OPEN|ACK|RESOLVE, runbook_id, condition: ...}]
-    manual_override_only:    BOOLEAN DEFAULT false               -- when true: no automated actions; all manual
-    created_at, updated_at
-}
+```text
+application_error_event_id   platform-owned opaque identity
+tenant_id                    derived from trusted admission context, not payload authority
+application_id               platform resource/application reference
+occurred_at                  source-reported event time
+error_code                   bounded source code
+error_message                bounded source text
+operation                    optional bounded operation name
+principal_ref                optional external/platform principal reference with explicit namespace
+session_context              optional bounded correlation context
+severity_hint                optional advisory source metadata
+raw_evidence_ref             optional bounded evidence reference, not unrestricted payload authority
 ```
 
-Evaluation rules:
-1. If `manual_override_only = true`: no automated action is taken; the alert is opened and the operator sees it in the NOC dashboard only.
-2. If alert severity < `severity_threshold`: no automated response beyond the alert record itself.
-3. If `auto_open_ticket = true` and severity ≥ threshold: the ITSM adapter opens a ticket with the alert's evidence set as the description. The ticket includes: `occurred_at` (for ApplicationErrorEvent: the source-reported time), `error_message`, `operation`, `principal_id`, `application_id`, `session_context` — the fields the product vision described as essential for direct-to-root-cause investigation.
-4. `notify_channels` entries are evaluated in order; each matching severity entry dispatches a notification via the NotificationPort/channel model proposed in record 67, only after that record is separately accepted.
-5. `automation_triggers` entries are evaluated against the alert lifecycle event; matching entries enqueue a runbook execution in the Automation subsystem (G11, future).
+Requirements:
 
-### Policy conflict and precedence
+- tenant authority is derived from authenticated machine-principal admission and must match any body tenant field if one is present;
+- `application_id` must resolve through current platform-owned inventory/registration authority;
+- source-provided severity is advisory evidence only and cannot silently become Alert severity/policy authority;
+- raw payload/evidence is bounded, privacy-minimized, and cannot select policy, tenant, destination, runbook, or ITSM provider;
+- provider/source IDs are evidence references only and cannot become canonical event or Alert identity.
 
-- A single alert can match at most one `IncidentResponsePolicy` (tenant-scoped, always unique).
-- There is no cross-tenant policy inheritance.
-- If the policy evaluation itself fails (policy record missing, ITSM adapter error, notification adapter error): the alert is still created and opened; the failed downstream action is logged as a `ResponseActionFailure` audit event and retried with bounded exponential backoff (max 3 retries, 5 min cap).
-- Policy changes take effect for new alerts only; already-open alerts retain the policy evaluation that was active at open time (captured as a JSON snapshot in the alert record).
+### Candidate idempotency
 
-### Alert evaluation timing/debounce
+The accepted design must define a durable logical event identity. Time-bucket heuristics alone are insufficient as canonical replay identity.
 
-- For Type 1/2 events: a configurable debounce window (per-tenant, default 30 s) suppresses duplicate signals for the same grouping key within the window.
-- For Type 3 (ApplicationErrorEvent): no debounce by default; each event produces at most one evaluation cycle, but deduplication uses `(tenant_id, application_id, error_code, occurred_at rounded to 1-minute bucket)` as the dedupe key for a 5-minute window to prevent event-replay storms.
-- The debounce and dedupe windows are stored configuration, not hard-coded constants.
+Before authorization, the design must choose one of:
 
-### Proposed automatic Alert create/resolve authority (not yet granted)
+- caller-supplied idempotency key bound to authenticated source + tenant + application and content equivalence;
+- platform-issued ingestion token bound to the same scope; or
+- another reviewed deterministic equivalence key.
 
-If this record is later accepted, a subsequent implementation authorization may permit automatic Alert create/resolve under the following candidate conditions. While status is proposed, this text grants no Alert mutation authority:
-- CREATE: any evaluation cycle produces an OPEN alert only when no open alert for the same grouping key already exists.
-- RESOLVE: automatic resolution is triggered by a matching RESOLVED/HEALTHY event only if `IncidentResponsePolicy.manual_override_only = false`; if `manual_override_only = true`, resolution requires an operator ACK action.
-- AIOps findings (future G12) may provide evidence to the evaluator but cannot directly create or resolve alerts without a separately authorized AIOps authority contract.
+A replay with equivalent content must converge to one logical admitted event. A replay with the same idempotency identity but divergent material content must fail closed.
 
-### Closure conditions
+### Candidate G7 integration
 
-**Closure 1 — ApplicationErrorEvent inbound API (binding)**
-Before any future accepted push API could be considered production-eligible:
-- inbound credential authenticates to the correct tenant scope; a credential for tenant A cannot push events that create alerts for tenant B;
-- `occurred_at` from the source is preserved exactly in the alert evidence and in the ITSM ticket body;
-- a replay of the same event within the 5-minute dedupe window produces exactly one alert, not N;
-- missing/invalid mandatory fields reject at the API boundary with a 422 and a structured error body.
+ApplicationErrorEvent must enter Alerting only through a separately accepted G7 source-kind/policy extension.
 
-**Closure 2 — IncidentResponsePolicy enforcement (binding)**
-Before any future accepted auto-ticket path could be considered production-eligible:
-- `manual_override_only = true` produces zero downstream automated actions;
-- severity below threshold produces zero downstream automated actions;
-- ITSM ticket body contains all required fields (`occurred_at`, `error_message`, `operation`, `principal_id`, `application_id`, `session_context`);
-- a failed ITSM adapter call logs a `ResponseActionFailure` and retries; it does not prevent the alert from opening.
+That extension must prove:
+
+- current G7 monitoring-derived semantics remain unchanged;
+- Alert identity remains platform-owned;
+- source evidence is immutable/auditable;
+- policy evaluation re-reads current admitted authority before an effect;
+- dedupe/correlation cannot merge across tenant/application/policy authority boundaries;
+- unknown/incomplete source evidence cannot fabricate resolution.
+
+This proposal does not itself authorize Alert create/resolve from ApplicationErrorEvent.
+
+## Proposed capability B — IncidentResponsePolicy
+
+`IncidentResponsePolicy` is a candidate tenant-scoped orchestration policy evaluated **after** an accepted Alert lifecycle effect. It does not own Alert lifecycle.
+
+Candidate fields may include:
+
+```text
+tenant_id
+policy_id / policy_version
+severity_threshold
+manual_response_only
+open_incident
+notification_intents[]
+automation_triggers[]
+created_at / superseded_at
+content_hash
+```
+
+The exact schema, versioning and edit semantics require a separate accepted contract.
+
+### Separation of authority
+
+A future accepted orchestration implementation must preserve:
+
+```text
+ALERT_LIFECYCLE != HUMAN_ACK
+ALERT != INCIDENT
+ALERT_EFFECT != NOTIFICATION_DELIVERY
+ALERT_EFFECT != AUTOMATION_EXECUTION
+RESPONSE_POLICY != G7_ALERT_POLICY
+DOWNSTREAM_FAILURE != ALERT_ROLLBACK
+```
+
+Rules:
+
+1. `manual_response_only` may suppress **downstream automated response effects** only. It must not redefine G7 source-derived Alert resolution or turn G8 ACK into an Alert state transition.
+2. `open_incident` may request an ITSM action only through G10's admitted boundary. G10 must re-read current Alert authority and owns Incident identity/idempotency.
+3. notification requests must create/use G9 notification intent authority. This policy cannot directly dispatch provider messages.
+4. any channel beyond `whatsapp_business@1` remains blocked until separately authorized.
+5. `automation_triggers` are descriptive future configuration only until G11 is authorized; they cannot enqueue or execute runbooks today.
+6. failure of ITSM/Notification/future Automation must be recorded and reconciled independently; it must not roll back or rewrite an already accepted Alert transition.
+
+## Proposed ordering
+
+The dependency-safe order is:
+
+1. accept a bounded ApplicationErrorEvent admission contract;
+2. accept the G7 source-kind/policy extension, if ApplicationErrorEvent is to create/resolve Alerts;
+3. accept a separate response-orchestration contract;
+4. reuse existing G9/G10 boundaries for downstream intents/effects;
+5. add G11 integration only after G11 authorization;
+6. add any extra notification transport only after a separate G9 channel-expansion authorization.
+
+No single implementation PR should claim all six authorities.
+
+## Closure conditions before implementation authorization
+
+### ApplicationErrorEvent admission
+
+Evidence must prove:
+
+- cross-tenant submission fails closed;
+- authenticated source identity cannot choose another tenant in payload;
+- exact bounded parser/body limits exist;
+- durable replay/equivalence identity is explicit;
+- divergent replay is rejected;
+- source time is retained as evidence without replacing ingestion/currentness timestamps;
+- raw evidence cannot select authorization or downstream routing.
+
+### G7 extension
+
+Evidence must prove:
+
+- existing `monitoring_problem` and `monitoring_health_projection` paths are unchanged;
+- new source kind is explicitly enumerated and versioned;
+- create/resolve decisions remain current-state/evidence driven;
+- G8 acknowledgement remains orthogonal;
+- tenant/policy/source identity collisions fail closed.
+
+### Response orchestration
+
+Evidence must prove:
+
+- response-policy version is pinned to each downstream request;
+- replay does not duplicate Incident or notification intent;
+- downstream provider failure does not mutate Alert lifecycle;
+- G10 and G9 enforce their own authority rather than trusting orchestration assertions;
+- automation fields cause zero runtime effects until G11 is authorized.
 
 ## Consequences
 
 ### Positive
-- operators receive automatic tickets enriched with the context they need to go directly to root cause;
-- tenant administrators can configure fully automated or fully manual response per their operational maturity;
-- the ApplicationErrorEvent push model enables monitoring of application-side errors that are invisible to infrastructure metric collectors.
 
-### Negative / cost
-- per-tenant policy snapshot at alert-open time increases alert record size;
-- the 5-minute dedupe window for ApplicationErrorEvent requires a durable dedupe state (PostgreSQL dedupe table or Redis set with TTL);
-- IncidentResponsePolicy JSONB columns for channels and triggers must be validated at write time, not only at evaluation time.
+- application-originated failures can eventually become governed evidence rather than ad-hoc webhook side effects;
+- tenant response preferences can be modeled without collapsing Alert, Incident, Notification, and Automation into one state machine;
+- downstream failures remain independently recoverable.
 
-## Validation
+### Cost / risk
 
-- alert created from ProblemState ACTIVE event; policy with `auto_open_ticket = true` produces ITSM ticket within 30 s;
-- alert created from ApplicationErrorEvent with all optional fields; ticket body contains `occurred_at`, `principal_id`, `operation`;
-- policy with `severity_threshold = HIGH`; LOW severity alert produces no ticket and no notification;
-- `manual_override_only = true`; CRITICAL severity alert produces no automated action;
-- replay of ApplicationErrorEvent within 5-minute dedupe window; exactly one alert exists.
+- this is a cross-domain feature and therefore requires multiple bounded gates, not one broad implementation authorization;
+- durable idempotency/equivalence and privacy controls are mandatory for application-supplied evidence;
+- orchestration introduces additional recovery and audit state.
 
 ## Exit / revisit conditions
 
-Revisit if the grouping/correlation semantics need DSL-level expressibility (e.g., CEL or OPA-based evaluation), if AIOps (G12) requires a richer co-evaluation model, or if ApplicationErrorEvent volume requires a streaming ingest path (Kafka consumer) rather than a synchronous REST endpoint.
+Revisit if the product chooses a streaming ingress instead of HTTP, if ApplicationErrorEvent becomes a separate bounded context, or if response orchestration is better modeled as an Automation capability after G11 rather than a dedicated policy domain.

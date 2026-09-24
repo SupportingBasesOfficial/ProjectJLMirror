@@ -9,13 +9,16 @@ DOCS_ALLOWED_PREFIXES = (
     "docs/",
     "governance/adversarial/learning-ledger.d/",
 )
+DOCS_ALLOWED_EXACT = {
+    "tools/assurance/validate_governance_pr_scope.py",
+    "tools/assurance/test_validate_adversarial_learning.py",
+    ".github/workflows/deterministic-assurance.yml",
+}
 GOVERNANCE_ALLOWED_PREFIXES = (
     "docs/",
     "governance/",
-    "tools/assurance/",
-    ".github/workflows/",
-    "implementation/",
 )
+GOVERNANCE_ALLOWED_EXACT = DOCS_ALLOWED_EXACT
 
 RUNTIME_FORBIDDEN_PREFIXES = (
     "apps/",
@@ -43,10 +46,12 @@ def scope_errors(*, head_ref: str, changed_paths: list[str]) -> list[str]:
     if not head_ref:
         return []
     if head_ref.startswith("docs/"):
-        allowed = DOCS_ALLOWED_PREFIXES
+        allowed_prefixes = DOCS_ALLOWED_PREFIXES
+        allowed_exact = DOCS_ALLOWED_EXACT
         scope = "docs"
     elif head_ref.startswith("governance/"):
-        allowed = GOVERNANCE_ALLOWED_PREFIXES
+        allowed_prefixes = GOVERNANCE_ALLOWED_PREFIXES
+        allowed_exact = GOVERNANCE_ALLOWED_EXACT
         scope = "governance"
     else:
         return []
@@ -56,7 +61,7 @@ def scope_errors(*, head_ref: str, changed_paths: list[str]) -> list[str]:
         if path in RUNTIME_FORBIDDEN_EXACT or path.startswith(RUNTIME_FORBIDDEN_PREFIXES):
             errors.append(f"{scope}-scope branch carries forbidden runtime/substrate path: {path}")
             continue
-        if not path.startswith(allowed):
+        if path not in allowed_exact and not path.startswith(allowed_prefixes):
             errors.append(f"{scope}-scope branch carries undeclared path outside governance allowlist: {path}")
     return errors
 

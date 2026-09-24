@@ -9,6 +9,7 @@ import validate_adversarial_learning as v
 import validate_adversarial_learning_strict as s
 import validate_repository as vr
 import validate_governance_pr_scope as gps
+import validate_governance_decision_records as gdr
 
 ROOT = Path(__file__).resolve().parents[2]
 FILES = [v.TAXONOMY, v.INVARIANTS, v.LEDGER, v.BOOTSTRAP_EXCEPTIONS, v.STOP_POLICY]
@@ -39,6 +40,7 @@ GUARDRAIL_FILES = [
     Path("tools/assurance/validate_adversarial_learning_strict.py"),
     Path("tools/assurance/validate_repository.py"),
     Path("tools/assurance/validate_governance_pr_scope.py"),
+    Path("tools/assurance/validate_governance_decision_records.py"),
     Path("docs/16-implementation-readiness/66-alert-evaluation-incident-response-decision-record.md"),
     Path("tools/assurance/test_validate_d4d_selection.py"),
     Path("tools/assurance/test_validate_d4c_selection.py"),
@@ -340,23 +342,19 @@ def falsify_g10_auto_incident_extension_boundary() -> None:
             "",
         )
     )
+
     path = ROOT / "docs/16-implementation-readiness/66-alert-evaluation-incident-response-decision-record.md"
     text = path.read_text(encoding="utf-8")
-    required = (
-        "outside current G10 authority",
-        "separately accepted G10 extension",
-        "automatic Alert-to-Incident creation",
-        "G10 automatic incident extension",
-        "Alert != Incident",
-        "orchestration cannot write ITSM tables",
-    )
-    for marker in required:
-        assert marker in text, f"record 66 missing G10 extension boundary: {marker}"
+    assert not gdr.validate(ROOT), "canonical record 66 must satisfy the governance decision validator"
 
-    def weaken_record(root: Path) -> None:
+    marker = "a separately accepted G10 extension must explicitly authorize automatic Alert-to-Incident creation"
+    assert marker in text
+
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        clone(root)
         rel = Path("docs/16-implementation-readiness/66-alert-evaluation-incident-response-decision-record.md")
         current = (root / rel).read_text(encoding="utf-8")
-        marker = "a separately accepted G10 extension must explicitly authorize automatic Alert-to-Incident creation"
         assert marker in current
         weakened = current.replace(
             marker,
@@ -364,22 +362,10 @@ def falsify_g10_auto_incident_extension_boundary() -> None:
             1,
         )
         (root / rel).write_text(weakened, encoding="utf-8")
+        errors = gdr.validate(root)
+        assert errors, "weakened G10 auto-incident authority boundary unexpectedly passed governance decision validation"
+        assert any("G10 authority" in error or "widens current G10 authority" in error for error in errors), errors
 
-    with tempfile.TemporaryDirectory() as td:
-        root = Path(td)
-        clone(root)
-        weaken_record(root)
-        weakened_text = (root / "docs/16-implementation-readiness/66-alert-evaluation-incident-response-decision-record.md").read_text(encoding="utf-8")
-        assert "the existing G10 boundary is sufficient for automatic Alert-to-Incident creation" in weakened_text
-        assert "a separately accepted G10 extension must explicitly authorize automatic Alert-to-Incident creation" not in weakened_text
-        required_after_mutation = (
-            "outside current G10 authority",
-            "separately accepted G10 extension",
-            "G10 automatic incident extension",
-            "orchestration cannot write ITSM tables",
-        )
-        assert all(marker in weakened_text for marker in required_after_mutation)
-        assert "a separately accepted G10 extension must explicitly authorize automatic Alert-to-Incident creation" not in weakened_text
 
 def falsify_wave4_authorization_exact_path_allowlist() -> None:
     validator = ROOT / "tools/assurance/validate_wave4_monitoring_authorization.py"

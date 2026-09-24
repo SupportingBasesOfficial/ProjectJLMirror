@@ -189,6 +189,33 @@
       ],
       "systemic_guardrail_updated": true,
       "guardrail_generation": 101
+    },
+    {
+      "id": "LEARN-PR178-008",
+      "pr": 178,
+      "source": "external_review",
+      "review_comment_id": 4098169649,
+      "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP",
+      "invariant_ids": [
+        "INV-LEARNING-002"
+      ],
+      "root_cause": "The first G10 auto-incident boundary falsifier mutated text only in-memory and asserted string presence/absence without invoking a governing validator over the weakened cloned record. That allowed a no-op or semantically ineffective mutation to appear as permanent rejection evidence. A dedicated governance decision-record validator now owns the boundary and the falsifier writes the weakened document into a clone and requires that validator to reject it.",
+      "horizontal_audit": [
+        "record 66 G10 authority boundary",
+        "mutated-clone validation",
+        "strict falsifier negative-effect proof",
+        "decision-record governance validators",
+        "automatic Alert-to-Incident authority",
+        "future proposal-boundary guardrails"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_adversarial_learning.py",
+          "probe": "falsify_g10_auto_incident_extension_boundary"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 276
     }
   ]
 }

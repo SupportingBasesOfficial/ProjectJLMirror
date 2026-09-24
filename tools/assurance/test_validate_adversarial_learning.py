@@ -288,6 +288,9 @@ def falsify_governance_only_pr_scope() -> None:
     allowed_docs = [
         "docs/16-implementation-readiness/65-frontend-stack-decision-record.md",
         "governance/adversarial/learning-ledger.d/pr-example.json",
+        "tools/assurance/validate_governance_pr_scope.py",
+        "tools/assurance/test_validate_adversarial_learning.py",
+        ".github/workflows/deterministic-assurance.yml",
     ]
     assert not gps.scope_errors(head_ref="docs/example", changed_paths=allowed_docs)
 
@@ -301,6 +304,12 @@ def falsify_governance_only_pr_scope() -> None:
     ):
         errors = gps.scope_errors(head_ref="docs/example", changed_paths=allowed_docs + [forbidden])
         assert errors and any(forbidden in error for error in errors), (forbidden, errors)
+
+    unsupported_governance_tool = gps.scope_errors(
+        head_ref="docs/example",
+        changed_paths=["tools/assurance/unrelated_validator.py"],
+    )
+    assert unsupported_governance_tool and "tools/assurance/unrelated_validator.py" in unsupported_governance_tool[0]
 
     governance_errors = gps.scope_errors(
         head_ref="governance/example",

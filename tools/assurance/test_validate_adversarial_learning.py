@@ -8,6 +8,7 @@ from pathlib import Path
 import validate_adversarial_learning as v
 import validate_adversarial_learning_strict as s
 import validate_repository as vr
+import validate_governance_pr_scope as gps
 
 ROOT = Path(__file__).resolve().parents[2]
 FILES = [v.TAXONOMY, v.INVARIANTS, v.LEDGER, v.BOOTSTRAP_EXCEPTIONS, v.STOP_POLICY]
@@ -37,6 +38,7 @@ GUARDRAIL_FILES = [
     Path("tools/assurance/validate_g1_identity_tenant_shell_scope_readiness.py"),
     Path("tools/assurance/validate_adversarial_learning_strict.py"),
     Path("tools/assurance/validate_repository.py"),
+    Path("tools/assurance/validate_governance_pr_scope.py"),
     Path("tools/assurance/test_validate_d4d_selection.py"),
     Path("tools/assurance/test_validate_d4c_selection.py"),
     Path("tools/assurance/d4b_wire_schema/test_source_evidence.py"),
@@ -279,6 +281,36 @@ def falsify_bootstrap_exception_scope() -> None:
 def falsify_stop_policy_relaxation() -> None:
     expect_failure(lambda r: mutate_json(r, v.STOP_POLICY, lambda d: d.__setitem__("merge_blocking_severities", ["P0"])))
 
+
+
+def falsify_governance_only_pr_scope() -> None:
+    allowed_docs = [
+        "docs/16-implementation-readiness/65-frontend-stack-decision-record.md",
+        "governance/adversarial/learning-ledger.d/pr-example.json",
+    ]
+    assert not gps.scope_errors(head_ref="docs/example", changed_paths=allowed_docs)
+
+    for forbidden in (
+        "Makefile",
+        "docker/db-init/001-create-app-role.sql",
+        "tests/wave2/__init__.py",
+        "src/jlmirror_monitoring/metric_history.py",
+        "sql/monitoring/001.sql",
+        "apps/api/main.py",
+    ):
+        errors = gps.scope_errors(head_ref="docs/example", changed_paths=allowed_docs + [forbidden])
+        assert errors and any(forbidden in error for error in errors), (forbidden, errors)
+
+    governance_errors = gps.scope_errors(
+        head_ref="governance/example",
+        changed_paths=["governance/adversarial/example.json", "src/domain/runtime.py"],
+    )
+    assert governance_errors and "src/domain/runtime.py" in governance_errors[0]
+
+    assert not gps.scope_errors(
+        head_ref="impl/g11-example",
+        changed_paths=["src/domain/runtime.py"],
+    )
 
 def falsify_wave4_authorization_exact_path_allowlist() -> None:
     validator = ROOT / "tools/assurance/validate_wave4_monitoring_authorization.py"
@@ -551,6 +583,7 @@ def main() -> None:
     falsify_unbound_manual_dispatch()
     falsify_non_strict_deterministic_reconciliation()
     falsify_stale_d4c_current_workflow_projection()
+    falsify_governance_only_pr_scope()
     falsify_wave4_authorization_exact_path_allowlist()
     falsify_wave4_authority_toctou_guardrail()
     falsify_wave4_host_inventory_authority_transition()

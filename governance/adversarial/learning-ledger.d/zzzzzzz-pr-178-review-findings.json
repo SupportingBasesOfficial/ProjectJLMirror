@@ -1,0 +1,194 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "id": "LEARN-PR178-001",
+      "pr": 178,
+      "source": "external_review",
+      "review_comment_id": 4088158461,
+      "class_id": "ADV-PROVENANCE-IDENTITY-DRIFT",
+      "invariant_ids": [
+        "INV-PROVENANCE-001",
+        "INV-AUTH-001"
+      ],
+      "root_cause": "The initial governance branch inherited an unrelated runnable-application commit, so a documentation PR exposed API-role provisioning code that was outside its declared scope and carried an unreviewed least-privilege defect. Reconstructing the branch from the exact canonical base removed that runtime surface rather than misrepresenting it as fixed by documentation work.",
+      "horizontal_audit": [
+        "declared PR scope versus actual diff",
+        "database bootstrap and runtime configuration",
+        "API role privilege authority",
+        "inherited branch ancestry",
+        "governance-only changed-path provenance"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_adversarial_learning.py",
+          "probe": "falsify_governance_only_pr_scope"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 23
+    },
+    {
+      "id": "LEARN-PR178-002",
+      "pr": 178,
+      "source": "external_review",
+      "review_comment_id": 4088158468,
+      "class_id": "ADV-PROVENANCE-IDENTITY-DRIFT",
+      "invariant_ids": [
+        "INV-PROVENANCE-001",
+        "INV-AUTH-001"
+      ],
+      "root_cause": "The initial governance branch inherited unrelated developer-runtime tooling, allowing a broken Makefile startup path to appear in a PR whose declared authority was documentation decisions. The branch was rebuilt from canonical main so developer tooling is no longer part of this proposal and must be handled only by a separately scoped implementation change.",
+      "horizontal_audit": [
+        "declared PR scope versus actual diff",
+        "developer startup tooling",
+        "Makefile environment expansion",
+        "inherited branch ancestry",
+        "documentation proposal path allowlist"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_adversarial_learning.py",
+          "probe": "falsify_governance_only_pr_scope"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 24
+    },
+    {
+      "id": "LEARN-PR178-003",
+      "pr": 178,
+      "source": "external_review",
+      "review_comment_id": 4088158474,
+      "class_id": "ADV-PROVENANCE-IDENTITY-DRIFT",
+      "invariant_ids": [
+        "INV-PROVENANCE-001",
+        "INV-AUTH-001"
+      ],
+      "root_cause": "The initial governance branch inherited a file under the accepted Wave 2 protected substrate, violating both the stated docs-only purpose and the repository's immutable accepted-baseline contract. Exact-base branch reconstruction removed the undeclared protected-path mutation before acceptance.",
+      "horizontal_audit": [
+        "accepted Wave 2 protected substrate",
+        "declared PR scope versus actual diff",
+        "baseline immutability",
+        "branch ancestry contamination",
+        "exact canonical base reconstruction"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_adversarial_learning.py",
+          "probe": "falsify_governance_only_pr_scope"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 25
+    },
+    {
+      "id": "LEARN-PR178-004",
+      "pr": 178,
+      "source": "external_review",
+      "review_comment_id": 4088158478,
+      "class_id": "ADV-PROVENANCE-IDENTITY-DRIFT",
+      "invariant_ids": [
+        "INV-PROVENANCE-001",
+        "INV-AUTH-001"
+      ],
+      "root_cause": "The initial governance branch inherited unrelated metric-history runtime code, causing a real per-request exhaustion defect to be reviewed inside a decision-record PR. Because that runtime was not authorized by this PR, the correct remediation was to remove the inherited code from the branch and leave any metric-history correction to its owning separately scoped authority.",
+      "horizontal_audit": [
+        "metric history runtime ownership",
+        "bounded request exhaustion semantics",
+        "declared PR scope versus actual diff",
+        "unrelated implementation ancestry",
+        "owner-domain remediation boundary"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_adversarial_learning.py",
+          "probe": "falsify_governance_only_pr_scope"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 26
+    },
+    {
+      "id": "LEARN-PR178-005",
+      "pr": 178,
+      "source": "external_review",
+      "review_comment_id": 4088158482,
+      "class_id": "ADV-PROVENANCE-IDENTITY-DRIFT",
+      "invariant_ids": [
+        "INV-PROVENANCE-001",
+        "INV-AUTH-001"
+      ],
+      "root_cause": "The initial governance branch inherited database bootstrap code with a hard-coded database-name defect even though the PR claimed decision-document scope. Rebuilding the branch from canonical main removed the bootstrap surface; configurable-database provisioning remains an implementation concern requiring its own scoped review rather than authority laundering through governance documentation.",
+      "horizontal_audit": [
+        "database bootstrap configuration",
+        "configured database identity",
+        "declared PR scope versus actual diff",
+        "inherited branch ancestry",
+        "implementation versus governance authority"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_adversarial_learning.py",
+          "probe": "falsify_governance_only_pr_scope"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 27
+    },
+    {
+      "id": "LEARN-PR178-006",
+      "pr": 178,
+      "source": "external_review",
+      "review_comment_id": 4088620913,
+      "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP",
+      "invariant_ids": [
+        "INV-LEARNING-002"
+      ],
+      "root_cause": "The first remediation credited a G1 implementation-scope falsifier as if it permanently guarded governance-only pull requests, but that probe exercised a G1-specific manifest and path policy and could not reject future docs/governance branch contamination. The repository now has a dedicated branch-classified governance scope validator, wired into deterministic assurance, plus a falsifier covering the exact runtime/substrate paths seen in the superseded PR.",
+      "horizontal_audit": [
+        "docs branch scope classification",
+        "governance branch scope classification",
+        "runtime and protected substrate paths",
+        "rename-disabled diff enumeration",
+        "deterministic assurance execution",
+        "future governance-only pull requests"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_adversarial_learning.py",
+          "probe": "falsify_governance_only_pr_scope"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 275
+    },
+    {
+      "id": "LEARN-PR178-007",
+      "pr": 178,
+      "source": "external_review",
+      "review_comment_id": 4088620915,
+      "class_id": "ADV-TRUST-CONTEXT-GAP",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "The proposed response-orchestration record treated use of the existing G10 boundary as sufficient for automatic Alert-to-Incident creation even though accepted G10 explicitly excludes that authority. The proposal now requires a separately accepted bounded G10 extension before open_incident can cause any runtime effect and makes that dependency part of ordering and closure evidence.",
+      "horizontal_audit": [
+        "G10 automatic incident exclusion",
+        "Alert versus Incident authority separation",
+        "response orchestration downstream authority",
+        "G7 and G9 extension ordering",
+        "ITSM idempotency and recovery ownership",
+        "future cross-domain automation proposals"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_adversarial_learning.py",
+          "probe": "falsify_g10_auto_incident_extension_boundary"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 101
+    }
+  ]
+}

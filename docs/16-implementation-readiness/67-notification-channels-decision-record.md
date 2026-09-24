@@ -1,160 +1,170 @@
-# 67 — Notification Channels Decision Record
+# 67 — Additional Notification Channel Expansion Proposal
 
-**Status:** proposed — channel model and initial adapters selected; closure condition below is binding before notification delivery is treated as production-eligible
-**Decision class:** C2 product selection (channel providers are replaceable within the accepted NotificationPort adapter pattern)
-**Drivers:** `ADR-013` (inbound/outbound adapter pattern), `ADR-005` (tenant isolation), G9 (Notification Delivery, IMPLEMENTED), `OPEN-QUESTIONS-AND-DEFERRED.md` (notification channel capability model open)
+**Status:** proposed — candidate expansion of G9 transport capability; grants no additional channel authority while proposed  
+**Decision class:** C2 provider/transport selection under the accepted G9 notification-delivery domain  
+**Drivers:** `ADR-005`, `ADR-013`, accepted `g9.notification-delivery@1`, G8 authoritative-visibility separation
 
-This document proposes a candidate resolution for the notification channel capability model and provider selection. The open question remains open until this record is accepted. It does not close the authoritative read/view evidence or customer-identity-binding questions, which remain open.
+This record proposes how G9 may later expand beyond its currently admitted transport.
 
-## Context and problem
+## Existing G9 authority
 
-`OPEN-QUESTIONS-AND-DEFERRED.md` lists: "channel capability model is not yet authorized; exact WhatsApp/e-mail/SMS/push/provider integrations are not selected here; which workflows require authoritative read evidence versus best-effort notification must be explicitly authorized."
+The accepted G9 v1 contract remains authoritative:
 
-G9 (Notification Delivery) is IMPLEMENTED. That implementation contains the `NotificationPort` protocol and its adapters. This record proposes which adapters may be selected, a candidate channel capability model, and candidate delivery guarantees. Existing G9 authority is not widened by this proposed record.
+- the only admitted transport channel is `whatsapp_business@1`;
+- notification intent, delivery attempt, provider evidence and delivery projection are separate concepts;
+- retry stays on the same admitted channel;
+- `fallback_action_required` does not authorize another channel;
+- external read evidence is not G8 authoritative native visibility;
+- email, SMS, push, Teams, Slack and other transports are outside current G9 authority;
+- the existing application-facing `NotificationPort` owns notification-intent persistence/read operations. This proposal does not redefine that interface.
 
-## Requirements and invariants this selection must satisfy
+Therefore this proposed record must not describe SMTP, webhook, SMS, or any second transport as already authorized or implemented.
 
-- ADR-013: each channel is implemented behind a `NotificationPort` adapter; the business layer has no direct dependency on provider SDKs or HTTP client details.
-- ADR-005: notification routing is per-tenant; one tenant's channel configuration cannot cause delivery to another tenant's channels.
-- ADR-019: notifications are dispatched after alert/ACK/resolution events via the event-driven pipeline; there is no synchronous notification in the request path.
-- Delivery guarantees must be explicit: the platform does not promise authoritative-read evidence for best-effort channels.
-- Provider credentials (SMTP passwords, webhook signing keys) are never in application code or logs; they are loaded from the accepted secrets authority.
+## Proposed channel-expansion boundary
 
-## Decision
+If an additional channel is accepted, provider delivery should remain behind a worker-side adapter boundary distinct from the existing intent port.
 
-### NotificationPort protocol
-
-The canonical interface for all notification adapters is:
+Candidate conceptual interface:
 
 ```python
-class NotificationPort(Protocol):
-    async def deliver(
-        self,
-        recipient: NotificationRecipient,
-        payload: NotificationPayload,
-        context: NotificationContext,
-    ) -> NotificationDeliveryResult:
+class NotificationTransportAdapter(Protocol):
+    channel_class: str
+
+    def dispatch(self, request: DispatchRequest) -> DispatchEvidence:
         ...
 ```
 
-- `NotificationRecipient`: typed union — `EmailRecipient | WebhookRecipient | SmsRecipient | WhatsappRecipient`
-- `NotificationPayload`: `subject`, `body_text`, `body_html` (optional), `severity`, `alert_id`, `tenant_id`
-- `NotificationContext`: `trace_id`, `attempt_number`, `policy_snapshot_id`
-- `NotificationDeliveryResult`: `success: bool`, `provider_message_id: str | None`, `failure_reason: str | None`
+This is a conceptual boundary only. The exact runtime interface, sync/async shape and package location must be fixed by the future implementation authorization.
 
-No adapter implements delivery guarantees beyond what the provider offers; the result is honest about provider acceptance, not ultimate delivery.
+The adapter receives an already-admitted G9 dispatch request. It does not:
 
-### Proposed adapter set — no new authority granted
+- create notification intents;
+- select tenant;
+- select recipient/routing policy;
+- mutate Alert, ACK, responsibility, Incident, or Automation state;
+- convert provider IDs into platform IDs;
+- claim authoritative read evidence.
 
-#### Adapter 1 — SmtpNotificationAdapter (candidate formalization of existing G9 capability)
+Provider responses/callbacks are normalized into the existing G9 evidence semantics rather than creating a second notification truth model.
 
-- Delivers via standard SMTP (TLS required; plaintext SMTP is not the accepted profile).
-- Recipient: `EmailRecipient(address: str, display_name: str | None)`
-- Provider acceptance = result success; email delivery to inbox is best-effort (SMTP standard).
-- Retry policy: 3 attempts with exponential backoff (2 s, 8 s, 32 s); failures after 3 attempts log a `NotificationDeliveryFailure` and do not block alert lifecycle.
-- Configuration per tenant: SMTP host, port, from-address, credential reference (secret name, not value).
-- Supports HTML alert body with: severity badge, alert title, resource name, occurred_at, ITSM ticket link (if opened).
+## Candidate additional channels
 
-#### Adapter 2 — WebhookNotificationAdapter (candidate formalization of existing G9 capability)
+The following are candidates, not authorizations.
 
-- Delivers via HTTP POST to a tenant-configured HTTPS endpoint.
-- Recipient: `WebhookRecipient(url: str, signing_key_ref: str, headers: dict[str, str])`
-- Request body: JSON payload matching `NotificationPayload` schema (versioned with `"schema_version": "1.0"`).
-- Request signature: `X-JLMirror-Signature: sha256=<HMAC-SHA256 of body using signing_key>` — the receiving webhook can verify authenticity.
-- TLS: endpoint must present a valid certificate; self-signed certs are not accepted in production.
-- Retry policy: same as SMTP (3 attempts, exp backoff).
-- This adapter is compatible with Slack incoming webhooks, Microsoft Teams connectors, PagerDuty Events API, and any generic HTTPS receiver.
+### Email / SMTP
 
-#### Adapter 3 — SmsNotificationAdapter (PROPOSED, implementation deferred)
+Candidate class: `smtp_email@1`.
 
-- Proposed for a future implementation authorization; candidate initial provider: Twilio SMS. This record does not authorize implementation while its status is proposed.
-- Recipient: `SmsRecipient(phone_e164: str)`
-- Payload: subject + first 140 characters of body_text (SMS constraint).
-- The Twilio integration is behind the adapter boundary; replacing with another SMS provider requires only a new adapter implementation.
-- Twilio credential (Account SID, Auth Token) loaded from secrets authority.
-- Not IMPLEMENTED until G11 cycle begins.
+Required evidence before authorization:
 
-#### Adapter 4 — WhatsappNotificationAdapter (PROPOSED, implementation deferred)
+- TLS profile and certificate validation are explicit;
+- envelope/from/recipient authority is derived from trusted tenant configuration, not untrusted payload fields;
+- credentials come from accepted secret authority;
+- provider acceptance is not represented as inbox delivery/read;
+- retry/idempotency maps into G9 immutable-attempt semantics.
 
-- Proposed for a future implementation authorization; candidate provider: WhatsApp Business API (Meta) or a BSP (Business Solution Provider).
-- Recipient: `WhatsappRecipient(phone_e164: str, display_name: str | None)`
-- Template-based delivery (WhatsApp requires pre-approved message templates for business-initiated messages).
-- A separate governance record will authorize the template content for each notification event type before implementation.
-- Not IMPLEMENTED until template governance is accepted.
+### Generic HTTPS webhook
 
-### Channel capability model
+Candidate class: `https_webhook@1`.
 
-Each channel carries an explicit capability classification:
+Required evidence before authorization:
 
-| Channel | Delivery guarantee | Read evidence | Authoritative |
-|---|---|---|---|
-| Email (SMTP) | Provider acceptance only | None (best-effort) | No |
-| Webhook | HTTP 2xx from endpoint | Response body | Endpoint-defined |
-| SMS (Twilio) | Carrier acceptance | Delivery receipt (optional, Twilio-provided) | No |
-| WhatsApp | Template delivery | Read receipt (optional, Meta-provided) | No |
+- HTTPS only under an accepted TLS profile;
+- endpoint is selected from trusted tenant configuration;
+- SSRF/private-network controls are explicit;
+- request authenticity/signing profile is versioned;
+- retries are at-least-once safe and provider response does not gain platform authority;
+- callback/response body is bounded and untrusted.
 
-"Authoritative read evidence" (a recipient has provably read and acknowledged the notification within a JLMirror-controlled surface) requires a separate authorized mechanism — the `AuthoritativeViewRecord` design — which remains open in `OPEN-QUESTIONS-AND-DEFERRED.md`. No channel in this record provides authoritative read evidence.
+Slack, Teams, PagerDuty or other products may later be implemented through this generic adapter only if their endpoint/authentication model fits the accepted profile. Their brand names do not create independent authority.
 
-### Per-tenant channel routing
+### SMS
 
-If both this record and record 66 are separately accepted, candidate channel routing would be expressed through `IncidentResponsePolicy.notify_channels`:
+Candidate class: `sms@1`.
 
-```json
-[
-  {
-    "channel_type": "email",
-    "on_severities": ["HIGH", "CRITICAL"],
-    "recipients": [{"address": "noc@customer.example", "display_name": "NOC Team"}]
-  },
-  {
-    "channel_type": "webhook",
-    "on_severities": ["MEDIUM", "HIGH", "CRITICAL"],
-    "url": "https://hooks.customer.example/jlmirror",
-    "signing_key_ref": "jlmirror_webhook_key"
-  }
-]
+No provider is selected by this record. Twilio may be evaluated as a C2 provider candidate, but provider selection, credential profile, delivery receipt semantics, phone-number privacy, regional constraints and cost/rate controls require a separate acceptance step.
+
+### Additional WhatsApp provider/profile
+
+G9 already admits `whatsapp_business@1`. A different BSP/provider implementation may be replaceable behind the accepted channel contract only if it preserves the exact admitted semantics and passes a separately governed conformance profile. This record does not widen the existing WhatsApp authority.
+
+## Channel capability classification
+
+Any future channel authorization must explicitly classify at least:
+
+- provider request accepted;
+- provider accepted;
+- delivered, if the provider can prove it;
+- external read observed, if supplied;
+- failed;
+- unknown.
+
+The platform must preserve:
+
+```text
+SENT != PROVIDER_ACCEPTED
+PROVIDER_ACCEPTED != DELIVERED
+DELIVERED != VIEWED
+EXTERNAL_READ != G8_AUTHORITATIVE_VIEW
+PROVIDER_MESSAGE_ID != PLATFORM_NOTIFICATION_ID
 ```
 
-Rules:
-- severity filter is evaluated against the alert's computed severity at dispatch time;
-- a failing channel does not block other channels in the same routing list;
-- each channel dispatch is an independent `NotificationDeliveryAttempt` record with its result;
-- duplicate suppression: if an alert has already dispatched to the same `(alert_id, channel_type, recipient_hash)` in the last 24 h, re-dispatch is suppressed unless the alert severity has escalated.
+A channel lacking a stronger evidence signal stays at the strongest state actually proven.
 
-### Privacy and retention
+## Routing and response policy boundary
 
-- Notification payloads are stored as `NotificationDeliveryAttempt` records for audit purposes; default retention 90 days.
-- `body_html` is not stored in the audit record; only `subject`, `severity`, `alert_id`, `channel_type`, `recipient_hash` (not the raw address) and `result`.
-- Raw recipient contact details (email addresses, phone numbers) are stored encrypted in the tenant configuration; they are decrypted only at dispatch time and never logged.
-- Phone numbers for SMS and WhatsApp are stored E.164 format; display for NOC operators is masked by default (`+55••••••8765`).
+This record does **not** authorize notification routing policy.
 
-### Closure condition — adapter delivery evidence (binding)
+A future response-orchestration capability may request a G9 notification intent only after that orchestration capability is separately accepted. Channel selection must then be represented as admitted G9 intent/configuration authority, not as arbitrary provider data.
 
-Before any channel introduced under this proposal could be treated as production-eligible:
-- SmtpNotificationAdapter: deliver a test alert email to a real SMTP server; verify SMTP response code 250; verify the HTML body contains severity badge, alert title, occurred_at, and ITSM ticket link (if applicable).
-- WebhookNotificationAdapter: deliver to a test HTTPS receiver; verify `X-JLMirror-Signature` matches HMAC-SHA256 of body; verify JSON body validates against schema version "1.0".
-- For each adapter: a simulated provider failure (refused connection, 5xx response) triggers retry within the accepted backoff policy and logs `NotificationDeliveryFailure` after exhaustion without blocking alert state.
+Record 66 is also proposed; neither record depends on treating the other as already authorized.
+
+## Privacy and secret requirements
+
+Every additional channel must define:
+
+- destination storage and masking rules;
+- secret/key authority;
+- minimum audit fields;
+- raw provider payload retention limits;
+- PII minimization;
+- tenant isolation;
+- callback authenticity/replay controls when callbacks exist.
+
+Raw email addresses, phone numbers, signing keys and provider tokens must not appear in ordinary logs.
+
+## Closure conditions before any additional channel authorization
+
+For each candidate channel:
+
+1. exact `channel_class` and version are fixed;
+2. runtime adapter scope is bounded;
+3. cross-tenant routing is falsified;
+4. direct application/provider mutation of G9 tables is blocked;
+5. retry creates a new immutable attempt under the existing G9 model;
+6. duplicate dispatch/callback behavior is idempotent;
+7. provider evidence cannot fabricate stronger delivery/read state;
+8. external read cannot fabricate G8 authoritative visibility;
+9. secret/PII logging is falsified;
+10. restart/replay/reconciliation is proven.
+
+A channel that has not satisfied these conditions remains outside G9 authority.
 
 ## Consequences
 
 ### Positive
-- webhook adapter covers Slack, Teams, PagerDuty, and generic receivers without separate integrations;
-- HMAC signature on webhooks allows receiving systems to verify authenticity without a separate credential;
-- honest capability classification prevents false assumptions about authoritative-read evidence.
 
-### Negative / cost
-- WhatsApp template approval is an external dependency on Meta; cannot be unilaterally implemented;
-- duplicate suppression keyed by `recipient_hash` requires a durable dedup table (PostgreSQL with TTL-based cleanup);
-- SMS/WhatsApp implementation is deferred; tenants needing those channels must use webhook adapter to Twilio/Meta APIs in the interim.
+- G9 can expand without redefining its intent/attempt/evidence model;
+- provider selection remains replaceable C2 infrastructure;
+- new channels inherit the existing separation between notification delivery and authoritative human visibility.
 
-## Validation
+### Cost / risk
 
-- alert OPEN event dispatches email to configured address within 60 s of alert creation;
-- webhook delivery includes correct `X-JLMirror-Signature`; tampered body fails signature verification at receiver;
-- severity below tenant-configured threshold produces zero dispatch attempts;
-- `manual_override_only = true` on IncidentResponsePolicy produces zero notification dispatches;
-- re-dispatch of the same alert to the same channel within 24 h is suppressed (only one `NotificationDeliveryAttempt` for that combination).
+- each transport has distinct security, privacy and evidence semantics;
+- webhook support introduces SSRF and signing concerns;
+- SMS/email introduce PII and deliverability/regional concerns;
+- multi-channel fallback/routing remains a separate product-policy problem.
 
 ## Exit / revisit conditions
 
-Revisit if WhatsApp Business API template approval requires a fundamentally different adapter architecture, if authoritative-read evidence (AuthoritativeViewRecord) is accepted and must be wired into the notification flow, or if notification volume requires a dedicated notification service rather than in-process adapter dispatch.
+Revisit if routing/fallback becomes its own domain, if notification delivery is extracted from the monolith, or if a provider requires semantics that cannot be normalized without changing the accepted G9 evidence model.

@@ -117,7 +117,7 @@ DOWNSTREAM_FAILURE != ALERT_ROLLBACK
 Rules:
 
 1. `manual_response_only` may suppress **downstream automated response effects** only. It must not redefine G7 source-derived Alert resolution or turn G8 ACK into an Alert state transition.
-2. `open_incident` may request an ITSM action only through G10's admitted boundary. G10 must re-read current Alert authority and owns Incident identity/idempotency.
+2. `open_incident` describes a future automatic Alert-to-Incident capability that is **outside current G10 authority**. Before it can cause any runtime effect, a separately accepted G10 extension must explicitly authorize automatic Alert-to-Incident creation, preserve `Alert != Incident`, and define the exact admission/idempotency/recovery contract. After that extension exists, orchestration may request the action only through the extended G10 boundary; G10 must re-read current Alert authority and owns Incident identity/idempotency.
 3. notification requests must create/use G9 notification intent authority. This policy cannot directly dispatch provider messages.
 4. any channel beyond `whatsapp_business@1` remains blocked until separately authorized.
 5. `automation_triggers` are descriptive future configuration only until G11 is authorized; they cannot enqueue or execute runbooks today.
@@ -130,9 +130,10 @@ The dependency-safe order is:
 1. accept a bounded ApplicationErrorEvent admission contract;
 2. accept the G7 source-kind/policy extension, if ApplicationErrorEvent is to create/resolve Alerts;
 3. accept a separate response-orchestration contract;
-4. reuse existing G9/G10 boundaries for downstream intents/effects;
-5. add G11 integration only after G11 authorization;
-6. add any extra notification transport only after a separate G9 channel-expansion authorization.
+4. if `open_incident` automation is desired, accept a bounded G10 extension that explicitly authorizes automatic Alert-to-Incident creation; current G10 is insufficient;
+5. reuse existing G9 and the separately extended G10 boundaries for downstream intents/effects;
+6. add G11 integration only after G11 authorization;
+7. add any extra notification transport only after a separate G9 channel-expansion authorization.
 
 No single implementation PR should claim all six authorities.
 
@@ -159,6 +160,17 @@ Evidence must prove:
 - create/resolve decisions remain current-state/evidence driven;
 - G8 acknowledgement remains orthogonal;
 - tenant/policy/source identity collisions fail closed.
+
+### G10 automatic incident extension
+
+Before `open_incident` can trigger an Incident automatically, a separately accepted G10 extension must prove:
+
+- current G10's explicit exclusion of automatic Alert-to-Incident creation is superseded only for the exact new bounded path;
+- `Alert != Incident` remains mechanically true;
+- G10 independently re-reads current Alert authority before Incident creation;
+- retries/replays converge on one Incident under explicit logical-action equivalence;
+- orchestration cannot write ITSM tables or fabricate Incident identity directly;
+- failure/recovery semantics remain owned by G10 and cannot rewrite Alert lifecycle.
 
 ### Response orchestration
 

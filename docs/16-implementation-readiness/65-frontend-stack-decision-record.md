@@ -55,8 +55,8 @@ These constraints are architecture laws, not style preferences:
 
 1. **No direct DB or event-bus access**: all reads are via accepted REST API endpoints.
 2. **No business-truth mutation outside accepted API calls**: alert lifecycle, ACK, ticket creation, policy changes — all go through the backend.
-3. **Session handled by BFF cookie only**: no localStorage/sessionStorage for auth tokens; TanStack Query calls /g1/api/me on load to establish identity context.
-4. **Tenant context from BFF**: the frontend reads `tenant_id` from /g1/api/me; it does not select or impersonate tenants.
+3. **Session handled by BFF cookie only**: no localStorage/sessionStorage for auth tokens; TanStack Query calls an accepted BFF/session identity surface (the canonical `/api/v1/me/...` contract family or the gate-approved equivalent) to establish principal/session context; this proposal does not invent a new identity endpoint.
+4. **Tenant context from BFF**: the frontend consumes tenant context only from an accepted BFF/API response; it does not derive, select, or impersonate tenant authority from browser-local state.
 5. **NOC contract**: real-time data (metric, problem, alert, ACK) is polled or streamed; the frontend renders state, never derives business state from UI-local computation.
 
 ### Candidate initial screens (not yet authorized)
@@ -90,7 +90,7 @@ Before the first frontend screen is treated as complete:
 - TypeScript strict build passes with zero errors;
 - Lighthouse accessibility score ≥ 90 on every implemented screen;
 - all interactive controls pass keyboard-only navigation;
-- /g1/api/me 401 → redirect to BFF login without JS token exposure;
+- an unauthenticated response from the accepted BFF/session identity surface → BFF login flow without JS token exposure;
 - tenant_id from session is consistent across all rendered data.
 
 ## Exit / revisit conditions

@@ -285,6 +285,14 @@ def falsify_stop_policy_relaxation() -> None:
 
 
 def falsify_governance_only_pr_scope() -> None:
+    expect_failure(
+        lambda r: mutate_text(
+            r,
+            Path("tools/assurance/test_validate_adversarial_learning.py"),
+            "    falsify_governance_only_pr_scope()\n",
+            "",
+        )
+    )
     allowed_docs = [
         "docs/16-implementation-readiness/65-frontend-stack-decision-record.md",
         "governance/adversarial/learning-ledger.d/pr-example.json",
@@ -324,6 +332,14 @@ def falsify_governance_only_pr_scope() -> None:
 
 
 def falsify_g10_auto_incident_extension_boundary() -> None:
+    expect_failure(
+        lambda r: mutate_text(
+            r,
+            Path("tools/assurance/test_validate_adversarial_learning.py"),
+            "    falsify_g10_auto_incident_extension_boundary()\n",
+            "",
+        )
+    )
     path = ROOT / "docs/16-implementation-readiness/66-alert-evaluation-incident-response-decision-record.md"
     text = path.read_text(encoding="utf-8")
     required = (

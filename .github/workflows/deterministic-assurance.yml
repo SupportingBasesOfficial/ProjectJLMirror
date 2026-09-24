@@ -46,19 +46,32 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           EVENT_SHA: ${{ github.sha }}
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
         shell: bash
         run: |
           set -euo pipefail
           if [[ "$EVENT_NAME" == "issue_comment" ]]; then
-            resolved_sha="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq '.head.sha')"
+            pr_json="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}")"
+            resolved_sha="$(jq -r '.head.sha' <<<"$pr_json")"
+            resolved_head_ref="$(jq -r '.head.ref' <<<"$pr_json")"
+            resolved_base_sha="$(jq -r '.base.sha' <<<"$pr_json")"
           elif [[ -n "${PR_HEAD_SHA}" ]]; then
             resolved_sha="${PR_HEAD_SHA}"
+            resolved_head_ref="${PR_HEAD_REF}"
+            resolved_base_sha="${PR_BASE_SHA}"
           else
             resolved_sha="${EVENT_SHA}"
+            resolved_head_ref=""
+            resolved_base_sha=""
           fi
           test -n "$resolved_sha"
-          printf 'sha=%s\n' "$resolved_sha" >> "$GITHUB_OUTPUT"
+          {
+            printf 'sha=%s\n' "$resolved_sha"
+            printf 'head_ref=%s\n' "$resolved_head_ref"
+            printf 'base_sha=%s\n' "$resolved_base_sha"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Checkout exact analyzed HEAD
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -77,6 +90,16 @@ jobs:
           actual_sha="$(git rev-parse HEAD)"
           printf 'expected_sha=%s\nactual_sha=%s\n' "$EXPECTED_SHA" "$actual_sha"
           test "$actual_sha" = "$EXPECTED_SHA"
+
+      - name: Enforce governance-only pull-request scope
+        if: github.event_name == 'pull_request' || github.event_name == 'pull_request_review_comment' || github.event_name == 'pull_request_review' || github.event_name == 'issue_comment'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/assurance/validate_governance_pr_scope.py \
+            --base "${{ steps.analyzed-head.outputs.base_sha }}" \
+            --head "${{ steps.analyzed-head.outputs.sha }}" \
+            --head-ref "${{ steps.analyzed-head.outputs.head_ref }}"
 
       - name: Falsify adversarial learning policy
         shell: bash

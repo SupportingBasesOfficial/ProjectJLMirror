@@ -101,6 +101,10 @@ jobs:
             --head "${{ steps.analyzed-head.outputs.sha }}" \
             --head-ref "${{ steps.analyzed-head.outputs.head_ref }}"
 
+      - name: Validate governance decision-record authority boundaries
+        shell: bash
+        run: python3 tools/assurance/validate_governance_decision_records.py --root .
+
       - name: Falsify adversarial learning policy
         shell: bash
         run: PYTHONPATH=tools/assurance python3 tools/assurance/test_validate_adversarial_learning.py

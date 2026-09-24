@@ -11,6 +11,7 @@ DOCS_ALLOWED_PREFIXES = (
 )
 DOCS_ALLOWED_EXACT = {
     "tools/assurance/validate_governance_pr_scope.py",
+    "tools/assurance/validate_governance_decision_records.py",
     "tools/assurance/test_validate_adversarial_learning.py",
     ".github/workflows/deterministic-assurance.yml",
 }

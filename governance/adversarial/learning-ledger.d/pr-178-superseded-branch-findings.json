@@ -1,0 +1,140 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "id": "LEARN-PR178-001",
+      "pr": 178,
+      "source": "external_review",
+      "review_comment_id": 4088158461,
+      "class_id": "ADV-PROVENANCE-IDENTITY-DRIFT",
+      "invariant_ids": [
+        "INV-PROVENANCE-001",
+        "INV-AUTH-001"
+      ],
+      "root_cause": "The initial governance branch inherited an unrelated runnable-application commit, so a documentation PR exposed API-role provisioning code that was outside its declared scope and carried an unreviewed least-privilege defect. Reconstructing the branch from the exact canonical base removed that runtime surface rather than misrepresenting it as fixed by documentation work.",
+      "horizontal_audit": [
+        "declared PR scope versus actual diff",
+        "database bootstrap and runtime configuration",
+        "API role privilege authority",
+        "inherited branch ancestry",
+        "governance-only changed-path provenance"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_g1_identity_tenant_shell_authorization.py",
+          "probe": "falsify_implementation_scope_gate_execution"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 2000001
+    },
+    {
+      "id": "LEARN-PR178-002",
+      "pr": 178,
+      "source": "external_review",
+      "review_comment_id": 4088158468,
+      "class_id": "ADV-PROVENANCE-IDENTITY-DRIFT",
+      "invariant_ids": [
+        "INV-PROVENANCE-001",
+        "INV-AUTH-001"
+      ],
+      "root_cause": "The initial governance branch inherited unrelated developer-runtime tooling, allowing a broken Makefile startup path to appear in a PR whose declared authority was documentation decisions. The branch was rebuilt from canonical main so developer tooling is no longer part of this proposal and must be handled only by a separately scoped implementation change.",
+      "horizontal_audit": [
+        "declared PR scope versus actual diff",
+        "developer startup tooling",
+        "Makefile environment expansion",
+        "inherited branch ancestry",
+        "documentation proposal path allowlist"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_g1_identity_tenant_shell_authorization.py",
+          "probe": "falsify_implementation_scope_gate_execution"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 2000002
+    },
+    {
+      "id": "LEARN-PR178-003",
+      "pr": 178,
+      "source": "external_review",
+      "review_comment_id": 4088158474,
+      "class_id": "ADV-PROVENANCE-IDENTITY-DRIFT",
+      "invariant_ids": [
+        "INV-PROVENANCE-001",
+        "INV-AUTH-001"
+      ],
+      "root_cause": "The initial governance branch inherited a file under the accepted Wave 2 protected substrate, violating both the stated docs-only purpose and the repository's immutable accepted-baseline contract. Exact-base branch reconstruction removed the undeclared protected-path mutation before acceptance.",
+      "horizontal_audit": [
+        "accepted Wave 2 protected substrate",
+        "declared PR scope versus actual diff",
+        "baseline immutability",
+        "branch ancestry contamination",
+        "exact canonical base reconstruction"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_g1_identity_tenant_shell_authorization.py",
+          "probe": "falsify_implementation_scope_gate_execution"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 2000003
+    },
+    {
+      "id": "LEARN-PR178-004",
+      "pr": 178,
+      "source": "external_review",
+      "review_comment_id": 4088158478,
+      "class_id": "ADV-PROVENANCE-IDENTITY-DRIFT",
+      "invariant_ids": [
+        "INV-PROVENANCE-001",
+        "INV-AUTH-001"
+      ],
+      "root_cause": "The initial governance branch inherited unrelated metric-history runtime code, causing a real per-request exhaustion defect to be reviewed inside a decision-record PR. Because that runtime was not authorized by this PR, the correct remediation was to remove the inherited code from the branch and leave any metric-history correction to its owning separately scoped authority.",
+      "horizontal_audit": [
+        "metric history runtime ownership",
+        "bounded request exhaustion semantics",
+        "declared PR scope versus actual diff",
+        "unrelated implementation ancestry",
+        "owner-domain remediation boundary"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_g1_identity_tenant_shell_authorization.py",
+          "probe": "falsify_implementation_scope_gate_execution"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 2000004
+    },
+    {
+      "id": "LEARN-PR178-005",
+      "pr": 178,
+      "source": "external_review",
+      "review_comment_id": 4088158482,
+      "class_id": "ADV-PROVENANCE-IDENTITY-DRIFT",
+      "invariant_ids": [
+        "INV-PROVENANCE-001",
+        "INV-AUTH-001"
+      ],
+      "root_cause": "The initial governance branch inherited database bootstrap code with a hard-coded database-name defect even though the PR claimed decision-document scope. Rebuilding the branch from canonical main removed the bootstrap surface; configurable-database provisioning remains an implementation concern requiring its own scoped review rather than authority laundering through governance documentation.",
+      "horizontal_audit": [
+        "database bootstrap configuration",
+        "configured database identity",
+        "declared PR scope versus actual diff",
+        "inherited branch ancestry",
+        "implementation versus governance authority"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_g1_identity_tenant_shell_authorization.py",
+          "probe": "falsify_implementation_scope_gate_execution"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 2000005
+    }
+  ]
+}

@@ -39,6 +39,7 @@ GUARDRAIL_FILES = [
     Path("tools/assurance/validate_adversarial_learning_strict.py"),
     Path("tools/assurance/validate_repository.py"),
     Path("tools/assurance/validate_governance_pr_scope.py"),
+    Path("docs/16-implementation-readiness/66-alert-evaluation-incident-response-decision-record.md"),
     Path("tools/assurance/test_validate_d4d_selection.py"),
     Path("tools/assurance/test_validate_d4c_selection.py"),
     Path("tools/assurance/d4b_wire_schema/test_source_evidence.py"),
@@ -312,6 +313,29 @@ def falsify_governance_only_pr_scope() -> None:
         changed_paths=["src/domain/runtime.py"],
     )
 
+
+def falsify_g10_auto_incident_extension_boundary() -> None:
+    path = ROOT / "docs/16-implementation-readiness/66-alert-evaluation-incident-response-decision-record.md"
+    text = path.read_text(encoding="utf-8")
+    required = (
+        "outside current G10 authority",
+        "separately accepted G10 extension",
+        "automatic Alert-to-Incident creation",
+        "G10 automatic incident extension",
+        "Alert != Incident",
+        "orchestration cannot write ITSM tables",
+    )
+    for marker in required:
+        assert marker in text, f"record 66 missing G10 extension boundary: {marker}"
+
+    weakened = text.replace(
+        "a separately accepted G10 extension must explicitly authorize automatic Alert-to-Incident creation",
+        "the existing G10 boundary is sufficient for automatic Alert-to-Incident creation",
+        1,
+    )
+    assert "a separately accepted G10 extension must explicitly authorize automatic Alert-to-Incident creation" not in weakened
+    assert "the existing G10 boundary is sufficient" in weakened
+
 def falsify_wave4_authorization_exact_path_allowlist() -> None:
     validator = ROOT / "tools/assurance/validate_wave4_monitoring_authorization.py"
     text = validator.read_text(encoding="utf-8")
@@ -584,6 +608,7 @@ def main() -> None:
     falsify_non_strict_deterministic_reconciliation()
     falsify_stale_d4c_current_workflow_projection()
     falsify_governance_only_pr_scope()
+    falsify_g10_auto_incident_extension_boundary()
     falsify_wave4_authorization_exact_path_allowlist()
     falsify_wave4_authority_toctou_guardrail()
     falsify_wave4_host_inventory_authority_transition()

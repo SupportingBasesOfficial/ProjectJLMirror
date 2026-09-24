@@ -8,6 +8,8 @@ from pathlib import Path
 import validate_adversarial_learning as v
 import validate_adversarial_learning_strict as s
 import validate_repository as vr
+import validate_governance_pr_scope as gps
+import validate_governance_decision_records as gdr
 
 ROOT = Path(__file__).resolve().parents[2]
 FILES = [v.TAXONOMY, v.INVARIANTS, v.LEDGER, v.BOOTSTRAP_EXCEPTIONS, v.STOP_POLICY]
@@ -37,6 +39,9 @@ GUARDRAIL_FILES = [
     Path("tools/assurance/validate_g1_identity_tenant_shell_scope_readiness.py"),
     Path("tools/assurance/validate_adversarial_learning_strict.py"),
     Path("tools/assurance/validate_repository.py"),
+    Path("tools/assurance/validate_governance_pr_scope.py"),
+    Path("tools/assurance/validate_governance_decision_records.py"),
+    Path("docs/16-implementation-readiness/66-alert-evaluation-incident-response-decision-record.md"),
     Path("tools/assurance/test_validate_d4d_selection.py"),
     Path("tools/assurance/test_validate_d4c_selection.py"),
     Path("tools/assurance/d4b_wire_schema/test_source_evidence.py"),
@@ -278,6 +283,88 @@ def falsify_bootstrap_exception_scope() -> None:
 
 def falsify_stop_policy_relaxation() -> None:
     expect_failure(lambda r: mutate_json(r, v.STOP_POLICY, lambda d: d.__setitem__("merge_blocking_severities", ["P0"])))
+
+
+
+def falsify_governance_only_pr_scope() -> None:
+    expect_failure(
+        lambda r: mutate_text(
+            r,
+            Path("tools/assurance/test_validate_adversarial_learning.py"),
+            "    falsify_governance_only_pr_scope()\n",
+            "",
+        )
+    )
+    allowed_docs = [
+        "docs/16-implementation-readiness/65-frontend-stack-decision-record.md",
+        "governance/adversarial/learning-ledger.d/pr-example.json",
+        "tools/assurance/validate_governance_pr_scope.py",
+        "tools/assurance/test_validate_adversarial_learning.py",
+        ".github/workflows/deterministic-assurance.yml",
+    ]
+    assert not gps.scope_errors(head_ref="docs/example", changed_paths=allowed_docs)
+
+    for forbidden in (
+        "Makefile",
+        "docker/db-init/001-create-app-role.sql",
+        "tests/wave2/__init__.py",
+        "src/jlmirror_monitoring/metric_history.py",
+        "sql/monitoring/001.sql",
+        "apps/api/main.py",
+    ):
+        errors = gps.scope_errors(head_ref="docs/example", changed_paths=allowed_docs + [forbidden])
+        assert errors and any(forbidden in error for error in errors), (forbidden, errors)
+
+    unsupported_governance_tool = gps.scope_errors(
+        head_ref="docs/example",
+        changed_paths=["tools/assurance/unrelated_validator.py"],
+    )
+    assert unsupported_governance_tool and "tools/assurance/unrelated_validator.py" in unsupported_governance_tool[0]
+
+    governance_errors = gps.scope_errors(
+        head_ref="governance/example",
+        changed_paths=["governance/adversarial/example.json", "src/domain/runtime.py"],
+    )
+    assert governance_errors and "src/domain/runtime.py" in governance_errors[0]
+
+    assert not gps.scope_errors(
+        head_ref="impl/g11-example",
+        changed_paths=["src/domain/runtime.py"],
+    )
+
+
+def falsify_g10_auto_incident_extension_boundary() -> None:
+    expect_failure(
+        lambda r: mutate_text(
+            r,
+            Path("tools/assurance/test_validate_adversarial_learning.py"),
+            "    falsify_g10_auto_incident_extension_boundary()\n",
+            "",
+        )
+    )
+
+    path = ROOT / "docs/16-implementation-readiness/66-alert-evaluation-incident-response-decision-record.md"
+    text = path.read_text(encoding="utf-8")
+    assert not gdr.validate(ROOT), "canonical record 66 must satisfy the governance decision validator"
+
+    marker = "a separately accepted G10 extension must explicitly authorize automatic Alert-to-Incident creation"
+    assert marker in text
+
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        clone(root)
+        rel = Path("docs/16-implementation-readiness/66-alert-evaluation-incident-response-decision-record.md")
+        current = (root / rel).read_text(encoding="utf-8")
+        assert marker in current
+        weakened = current.replace(
+            marker,
+            "the existing G10 boundary is sufficient for automatic Alert-to-Incident creation",
+            1,
+        )
+        (root / rel).write_text(weakened, encoding="utf-8")
+        errors = gdr.validate(root)
+        assert errors, "weakened G10 auto-incident authority boundary unexpectedly passed governance decision validation"
+        assert any("G10 authority" in error or "widens current G10 authority" in error for error in errors), errors
 
 
 def falsify_wave4_authorization_exact_path_allowlist() -> None:
@@ -551,6 +638,8 @@ def main() -> None:
     falsify_unbound_manual_dispatch()
     falsify_non_strict_deterministic_reconciliation()
     falsify_stale_d4c_current_workflow_projection()
+    falsify_governance_only_pr_scope()
+    falsify_g10_auto_incident_extension_boundary()
     falsify_wave4_authorization_exact_path_allowlist()
     falsify_wave4_authority_toctou_guardrail()
     falsify_wave4_host_inventory_authority_transition()

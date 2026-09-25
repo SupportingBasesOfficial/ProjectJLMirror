@@ -18,6 +18,10 @@ DOCS_ALLOWED_EXACT = {
 GOVERNANCE_ALLOWED_PREFIXES = (
     "docs/",
     "governance/",
+    "tools/assurance/",
+    ".github/workflows/",
+    "implementation/",
+    "sql/",
 )
 GOVERNANCE_ALLOWED_EXACT = DOCS_ALLOWED_EXACT
 

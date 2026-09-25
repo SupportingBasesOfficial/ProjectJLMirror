@@ -473,7 +473,7 @@ def sql_errors(text,p):
       rf"\bCREATE\s+(?:UNIQUE\s+)?INDEX\b[^;]*\bON\s+(?:ONLY\s+)?{external_schema}\s*\.",
       rf"\bCREATE\s+(?:CONSTRAINT\s+)?TRIGGER\b[^;]*\bON\s+(?:ONLY\s+)?{external_schema}\s*\.",
       rf"\bDROP\s+TRIGGER\b[^;]*\bON\s+(?:ONLY\s+)?{external_schema}\s*\.",
-      rf"\bCREATE\s+RULE\b[^;]*\bON\s+(?:ONLY\s+)?{external_schema}\s*\.",
+      rf"\bCREATE\s+RULE\b[^;]*\bAS\s+ON\s+(?:SELECT|INSERT|UPDATE|DELETE)\s+TO\s+(?:ONLY\s+)?{external_schema}\s*\.",
       rf"\bDROP\s+RULE\b[^;]*\bON\s+(?:ONLY\s+)?{external_schema}\s*\.",
       rf"\bCREATE\s+POLICY\b[^;]*\bON\s+(?:ONLY\s+)?{external_schema}\s*\.",
       rf"\bALTER\s+POLICY\b[^;]*\bON\s+(?:ONLY\s+)?{external_schema}\s*\.",

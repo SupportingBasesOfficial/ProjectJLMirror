@@ -1,0 +1,2767 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "id": "LEARN-PR174-001",
+      "pr": 174,
+      "source": "external_review",
+      "review_comment_id": 4055013573,
+      "class_id": "ADV-TRUST-CONTEXT-GAP",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "The first G10 membership guardrail validated only the presence of pg_auth_members lookup tokens, so a non-effectful query could satisfy the scope validator while leaving privileged membership escalation usable.",
+      "horizontal_audit": [
+        "role membership preflight",
+        "fail-closed authorization checks",
+        "scope-validator semantic effects",
+        "database role inheritance",
+        "SET ROLE attack paths"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_privileged_role_membership_fence"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000001
+    },
+    {
+      "id": "LEARN-PR174-002",
+      "pr": 174,
+      "source": "external_review",
+      "review_comment_id": 4055013575,
+      "class_id": "ADV-AUTHORITY-TOCTOU",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "The expired-sync discovery guardrail checked dispatching and expiry markers independently, allowing an impossible conjunction that mentioned both states without providing a reachable recovery branch.",
+      "horizontal_audit": [
+        "worker discovery reachability",
+        "state-machine predicates",
+        "expired lease recovery",
+        "scope-validator branch semantics",
+        "restart liveness"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_expired_sync_discovery"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000002
+    },
+    {
+      "id": "LEARN-PR174-003",
+      "pr": 174,
+      "source": "external_review",
+      "review_comment_id": 4055013576,
+      "class_id": "ADV-AUTHORITY-TOCTOU",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "The Incident-create serialization guardrail proved that an advisory lock existed but not that it executed before the idempotency lookup, so concurrent creators could still race before serialization.",
+      "horizontal_audit": [
+        "logical-action serialization order",
+        "idempotency lookup order",
+        "unreachable lock placement",
+        "concurrent create paths",
+        "TOCTOU scope validation"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_concurrent_incident_create_serialization"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000003
+    },
+    {
+      "id": "LEARN-PR174-004",
+      "pr": 174,
+      "source": "external_review",
+      "review_comment_id": 4055013580,
+      "class_id": "ADV-PROVENANCE-IDENTITY-DRIFT",
+      "invariant_ids": [
+        "INV-PROVENANCE-001"
+      ],
+      "root_cause": "The transition replay guardrail checked conflict and target markers without proving control-flow order, allowing duplicate success to occur before an unreachable contradictory-target rejection.",
+      "horizontal_audit": [
+        "transition replay ordering",
+        "duplicate-success branches",
+        "unreachable conflict checks",
+        "logical-action equivalence",
+        "immutable transition provenance"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_transition_replay_equivalence"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000002
+    },
+    {
+      "id": "LEARN-PR174-005",
+      "pr": 174,
+      "source": "external_review",
+      "review_comment_id": 4055013582,
+      "class_id": "ADV-PROVENANCE-IDENTITY-DRIFT",
+      "invariant_ids": [
+        "INV-PROVENANCE-001"
+      ],
+      "root_cause": "The Alert timestamp guardrail accepted opened_at anywhere and rejected only an exact unqualified created_at sequence, allowing a qualified nonexistent created_at reference to be aliased as opened_at.",
+      "horizontal_audit": [
+        "cross-domain column qualification",
+        "projection aliases",
+        "Alert schema references",
+        "scope-validator query sections",
+        "runtime projection compatibility"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_alert_opened_at_projection"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000003
+    },
+    {
+      "id": "LEARN-PR177-001",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4063584963,
+      "class_id": "ADV-TRUST-CONTEXT-GAP",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "The strengthened membership guard still proved only that some v_role was checked, not that all three named G10 privileged roles were enumerated, allowing executor or invoker membership paths to escape validation.",
+      "horizontal_audit": [
+        "privileged-role enumeration",
+        "executor membership",
+        "app invoker membership",
+        "worker invoker membership",
+        "role preflight completeness"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_privileged_role_membership_fence"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000004
+    },
+    {
+      "id": "LEARN-PR177-002",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4063584967,
+      "class_id": "ADV-AUTHORITY-TOCTOU",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "The expired-claim validator proved predicate shape but not executable reachability, so a matching recovery branch could be placed after an unconditional return or inside a statically false branch.",
+      "horizontal_audit": [
+        "worker discovery reachability",
+        "dead-code guardrails",
+        "expired lease recovery",
+        "return ordering",
+        "static false branches"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_expired_sync_discovery"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000004
+    },
+    {
+      "id": "LEARN-PR177-003",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4063584978,
+      "class_id": "ADV-AUTHORITY-TOCTOU",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "The create-serialization validator compared source offsets but did not prove the advisory lock was executable, allowing a lock inside dead code to appear before the replay lookup while preserving the race.",
+      "horizontal_audit": [
+        "logical-action lock reachability",
+        "dead-code serialization",
+        "idempotency lookup order",
+        "concurrent create race",
+        "TOCTOU validation"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_concurrent_incident_create_serialization"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000005
+    },
+    {
+      "id": "LEARN-PR177-004",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4063584987,
+      "class_id": "ADV-PROVENANCE-IDENTITY-DRIFT",
+      "invariant_ids": [
+        "INV-PROVENANCE-001"
+      ],
+      "root_cause": "The transition replay validator proved textual order inside a matching block but not reachability of that block, so contradictory replay rejection could remain dead code.",
+      "horizontal_audit": [
+        "transition guard reachability",
+        "duplicate-success control flow",
+        "dead-code equivalence checks",
+        "immutable transition provenance",
+        "replay semantics"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_transition_replay_equivalence"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000004
+    },
+    {
+      "id": "LEARN-PR177-005",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4063584993,
+      "class_id": "ADV-PROVENANCE-IDENTITY-DRIFT",
+      "invariant_ids": [
+        "INV-PROVENANCE-001"
+      ],
+      "root_cause": "The Alert timestamp guard rejected created_at aliases but still accepted any expression aliased as opened_at, allowing fabricated opening timestamps such as resolved_at or transaction time.",
+      "horizontal_audit": [
+        "Alert timestamp provenance",
+        "projection aliases",
+        "cross-domain field authenticity",
+        "derived-value masquerading",
+        "Incident detail schema contract"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_alert_opened_at_projection"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000005
+    },
+    {
+      "id": "LEARN-PR177-006",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4064414392,
+      "class_id": "ADV-TRUST-CONTEXT-GAP",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "The privileged-role loop and membership guard were validated independently, so the exact three-role loop could be empty while the effectful membership check executed afterward against only the final v_role value.",
+      "horizontal_audit": [
+        "role-loop guard containment",
+        "privileged-role membership",
+        "loop body semantics",
+        "fail-closed role preflight",
+        "SET ROLE paths"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_privileged_role_membership_fence"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000006
+    },
+    {
+      "id": "LEARN-PR177-007",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4064414400,
+      "class_id": "ADV-AUTHORITY-TOCTOU",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "Reachability validation rejected returns and static-false branches but not an unconditional RAISE EXCEPTION before worker discovery, allowing recovery code to remain permanently unreachable.",
+      "horizontal_audit": [
+        "unconditional terminators",
+        "worker discovery reachability",
+        "expired lease recovery",
+        "exception-before-effect",
+        "dead-code validation"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_expired_sync_discovery"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000006
+    },
+    {
+      "id": "LEARN-PR177-008",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4064414404,
+      "class_id": "ADV-PROVENANCE-IDENTITY-DRIFT",
+      "invariant_ids": [
+        "INV-PROVENANCE-001"
+      ],
+      "root_cause": "The Alert timestamp provenance guard rejected AS aliases but not PostgreSQL aliases without AS, allowing resolved_at opened_at to masquerade as the canonical Alert opening timestamp.",
+      "horizontal_audit": [
+        "SQL alias syntax",
+        "Alert timestamp provenance",
+        "projection parsing",
+        "cross-domain schema authenticity",
+        "Incident detail response"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_alert_opened_at_projection"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000006
+    },
+    {
+      "id": "LEARN-PR177-009",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4065704338,
+      "class_id": "ADV-PROVENANCE-IDENTITY-DRIFT",
+      "invariant_ids": [
+        "INV-PROVENANCE-001"
+      ],
+      "root_cause": "The opened_at provenance guard validated only the outer select list and could be bypassed by a nested derived table that fabricated opened_at from resolved_at before the outer projection.",
+      "horizontal_audit": [
+        "nested SQL projections",
+        "derived-table provenance",
+        "Alert timestamp authenticity",
+        "projection lineage",
+        "Incident detail response"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_alert_opened_at_projection"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000007
+    },
+    {
+      "id": "LEARN-PR177-010",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4065704350,
+      "class_id": "ADV-TRUST-CONTEXT-GAP",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "The privileged membership guard was required inside the correct role loop but could still sit inside a statically false branch, making the attestation textually present yet never executable.",
+      "horizontal_audit": [
+        "membership guard reachability",
+        "dead-code authorization checks",
+        "privileged role preflight",
+        "static false branches",
+        "SET ROLE paths"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_privileged_role_membership_fence"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000007
+    },
+    {
+      "id": "LEARN-PR177-011",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4065704356,
+      "class_id": "ADV-AUTHORITY-TOCTOU",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "Worker recovery reachability recognized only RAISE EXCEPTION and missed other unconditional PL/pgSQL RAISE forms such as RAISE SQLSTATE, allowing execution to terminate before expired-claim discovery.",
+      "horizontal_audit": [
+        "PL/pgSQL raise variants",
+        "unconditional terminators",
+        "worker discovery reachability",
+        "expired lease recovery",
+        "control-flow validation"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_expired_sync_discovery"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000007
+    },
+    {
+      "id": "LEARN-PR177-012",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4065986154,
+      "class_id": "ADV-TRUST-CONTEXT-GAP",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "The reachability helper treated every prior RAISE as unconditional, so a legitimate conditional role-safety exception incorrectly invalidated the later membership guard.",
+      "horizontal_audit": [
+        "conditional exceptions",
+        "dominance semantics",
+        "membership preflight reachability",
+        "PL/pgSQL control flow",
+        "false-positive assurance"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_privileged_role_membership_fence"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000008
+    },
+    {
+      "id": "LEARN-PR177-013",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4065986162,
+      "class_id": "ADV-PROVENANCE-IDENTITY-DRIFT",
+      "invariant_ids": [
+        "INV-PROVENANCE-001"
+      ],
+      "root_cause": "Expression blacklisting could not prove opened_at lineage, so nested expressions such as COALESCE(resolved_at,resolved_at) AS opened_at could still masquerade as the canonical Alert opening timestamp.",
+      "horizontal_audit": [
+        "column lineage",
+        "derived-table projections",
+        "expression provenance",
+        "Alert timestamp authenticity",
+        "Incident detail contract"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_alert_opened_at_projection"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000008
+    },
+    {
+      "id": "LEARN-PR177-014",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4065986174,
+      "class_id": "ADV-AUTHORITY-TOCTOU",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "The recovery validator proved the pending/expired predicate existed but did not prove the matched row populated the value returned to the worker, allowing recovery to be evaluated and discarded.",
+      "horizontal_audit": [
+        "worker candidate dataflow",
+        "recovery return binding",
+        "expired claim liveness",
+        "query-to-result lineage",
+        "durable work recovery"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_expired_sync_discovery"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000008
+    },
+    {
+      "id": "LEARN-PR177-015",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4065986181,
+      "class_id": "ADV-PROVENANCE-IDENTITY-DRIFT",
+      "invariant_ids": [
+        "INV-PROVENANCE-001"
+      ],
+      "root_cause": "The replay guard accepted IF FOUND text without proving FOUND was set by the required transition lookup for the same tenant, incident, and logical action.",
+      "horizontal_audit": [
+        "FOUND provenance",
+        "transition replay lookup",
+        "logical action equivalence",
+        "tenant incident binding",
+        "duplicate success semantics"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_transition_replay_equivalence"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000009
+    },
+    {
+      "id": "LEARN-PR177-016",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4066768985,
+      "class_id": "ADV-AUTHORITY-TOCTOU",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "Worker recovery validation found the pending/expired predicates but did not prove they were the effective tenant-scoped WHERE condition, so an always-false dominating filter could make the returned candidate set empty.",
+      "horizontal_audit": [
+        "effective WHERE semantics",
+        "durable work discovery",
+        "tenant-scoped recovery predicate",
+        "false-dominance bypass",
+        "worker candidate liveness"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_expired_sync_discovery"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000009
+    },
+    {
+      "id": "LEARN-PR177-017",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4066768993,
+      "class_id": "ADV-TRUST-CONTEXT-GAP",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "Privileged-role membership validation checked loop containment but not unconditional loop control transfers before the guard, allowing CONTINUE to skip validation for every role.",
+      "horizontal_audit": [
+        "loop control flow",
+        "privileged membership preflight",
+        "CONTINUE/EXIT dominance",
+        "role validation reachability",
+        "fail-closed authorization"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_privileged_role_membership_fence"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000009
+    },
+    {
+      "id": "LEARN-PR177-018",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4066769001,
+      "class_id": "ADV-AUTHORITY-TOCTOU",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "Incident-create serialization validation proved lock ordering textually but did not prove the lock dominates the equivalence lookup on the normal valid-input path.",
+      "horizontal_audit": [
+        "advisory-lock dominance",
+        "valid-input serialization",
+        "conditional lock bypass",
+        "concurrent create equivalence",
+        "logical-action race prevention"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_concurrent_incident_create_serialization"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000010
+    },
+    {
+      "id": "LEARN-PR177-019",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4066769009,
+      "class_id": "ADV-PROVENANCE-IDENTITY-DRIFT",
+      "invariant_ids": [
+        "INV-PROVENANCE-001"
+      ],
+      "root_cause": "Transition replay validation bound lookup and FOUND textually but did not prove the entire lookup/conflict block was reachable on the main transition path.",
+      "horizontal_audit": [
+        "replay block reachability",
+        "FOUND provenance",
+        "dead-code equivalence checks",
+        "contradictory retry handling",
+        "duplicate success semantics"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_transition_replay_equivalence"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000010
+    },
+    {
+      "id": "LEARN-PR177-020",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4067349477,
+      "class_id": "ADV-PROVENANCE-IDENTITY-DRIFT",
+      "invariant_ids": [
+        "INV-PROVENANCE-001"
+      ],
+      "root_cause": "The scope validator attested only the first matching validated function definition, allowing a later CREATE OR REPLACE of the same function name to replace the safe implementation after attestation.",
+      "horizontal_audit": [
+        "validated function uniqueness",
+        "CREATE OR REPLACE shadowing",
+        "definition provenance",
+        "post-attestation replacement",
+        "SQL function identity"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_duplicate_validated_function_definition"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000011
+    },
+    {
+      "id": "LEARN-PR177-021",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4067349488,
+      "class_id": "ADV-AUTHORITY-TOCTOU",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "Worker discovery validation matched the canonical recovery predicate as a prefix rather than proving it was the complete effective filter, so a trailing AND FALSE could disable all discovery.",
+      "horizontal_audit": [
+        "complete WHERE semantics",
+        "trailing predicate dominance",
+        "worker recovery liveness",
+        "tenant-scoped candidate selection",
+        "effective filter attestation"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_expired_sync_discovery"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000011
+    },
+    {
+      "id": "LEARN-PR177-022",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4067349494,
+      "class_id": "ADV-TRUST-CONTEXT-GAP",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "Membership validation rejected only known static-false forms and loop control transfers, but still allowed the fail-closed guard to be nested under an arbitrary condition that never matches the protected roles.",
+      "horizontal_audit": [
+        "membership guard top-level placement",
+        "conditional nesting",
+        "privileged role inheritance",
+        "SET ROLE paths",
+        "fail-closed reachability"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_privileged_role_membership_fence"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000010
+    },
+    {
+      "id": "LEARN-PR177-023",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4067349501,
+      "class_id": "ADV-AUTHORITY-TOCTOU",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "Incident-create serialization proved the advisory lock was outside IF branches but did not prove it was outside nonexecuting loops, allowing lookup to run without serialization.",
+      "horizontal_audit": [
+        "advisory lock top-level placement",
+        "loop nesting",
+        "concurrent create equivalence",
+        "logical-action serialization",
+        "dead-loop bypass"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_concurrent_incident_create_serialization"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000012
+    },
+    {
+      "id": "LEARN-PR177-024",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4067862410,
+      "class_id": "ADV-PROVENANCE-IDENTITY-DRIFT",
+      "invariant_ids": [
+        "INV-PROVENANCE-001"
+      ],
+      "root_cause": "Worker discovery validation proved the effective filter but not that rows originated from the canonical itsm.incident_sync_outbox relation, allowing fabricated derived rows to satisfy attestation.",
+      "horizontal_audit": [
+        "worker source provenance",
+        "canonical outbox relation",
+        "derived-table fabrication",
+        "recovery candidate authenticity",
+        "provider-neutral durable work truth"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_expired_sync_discovery"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000012
+    },
+    {
+      "id": "LEARN-PR177-025",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4067862414,
+      "class_id": "ADV-TRUST-CONTEXT-GAP",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "Privileged-role membership validation found the exact loop anywhere in SQL text but did not prove it was inside an executing installation DO block, allowing a never-called function to carry the guard.",
+      "horizontal_audit": [
+        "installation-time execution",
+        "DO block binding",
+        "membership preflight provenance",
+        "never-called function bypass",
+        "privileged role safety"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_privileged_role_membership_fence"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000011
+    },
+    {
+      "id": "LEARN-PR177-026",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4067862416,
+      "class_id": "ADV-AUTHORITY-TOCTOU",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "The advisory-lock validator only required the logical-action parameter to appear in the lock expression, allowing nondeterministic entropy to produce different lock keys for equivalent concurrent creates.",
+      "horizontal_audit": [
+        "deterministic advisory lock key",
+        "logical-action serialization",
+        "random entropy exclusion",
+        "concurrent create equivalence",
+        "tenant scoped lock identity"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_concurrent_incident_create_serialization"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000013
+    },
+    {
+      "id": "LEARN-PR177-027",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4067862420,
+      "class_id": "ADV-PROVENANCE-IDENTITY-DRIFT",
+      "invariant_ids": [
+        "INV-PROVENANCE-001"
+      ],
+      "root_cause": "Function-block delimitation was case-sensitive even though PostgreSQL keywords are case-insensitive, allowing a lowercase decoy definition to bleed canonical evidence into the unsafe function block.",
+      "horizontal_audit": [
+        "case-insensitive SQL parsing",
+        "function block boundaries",
+        "decoy definition isolation",
+        "validated function provenance",
+        "parser consistency"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_duplicate_validated_function_definition"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000013
+    },
+    {
+      "id": "LEARN-PR177-028",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4067862423,
+      "class_id": "ADV-AUTHORITY-TOCTOU",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "The reachability helper treated any preceding RAISE as an unconditional terminator, rejecting legitimate fail-fast validation branches even when the canonical discovery query remained reachable.",
+      "horizontal_audit": [
+        "conditional raise reachability",
+        "fail-fast validation",
+        "control-flow aware terminators",
+        "worker discovery acceptance",
+        "false-positive guardrails"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_expired_sync_discovery"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000014
+    },
+    {
+      "id": "LEARN-PR177-029",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4068128007,
+      "class_id": "ADV-AUTHORITY-TOCTOU",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "Worker discovery reachability rejected dead IF branches but did not reject the canonical candidate query when nested inside a nonexecuting loop, allowing discovery to be textually present yet unreachable.",
+      "horizontal_audit": [
+        "worker discovery loop nesting",
+        "candidate-query reachability",
+        "dead-loop bypass",
+        "recovery liveness",
+        "control-flow dominance"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_expired_sync_discovery"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000015
+    },
+    {
+      "id": "LEARN-PR177-030",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4068128011,
+      "class_id": "ADV-AUTHORITY-TOCTOU",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "Advisory-lock recognition operated on raw SQL text, so a canonical lock statement inside a line comment could satisfy attestation even though PostgreSQL would not execute it.",
+      "horizontal_audit": [
+        "SQL comment stripping",
+        "advisory lock execution",
+        "comment-spoofed semantic evidence",
+        "concurrent create serialization",
+        "executable-text attestation"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_concurrent_incident_create_serialization"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000016
+    },
+    {
+      "id": "LEARN-PR177-031",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4068128018,
+      "class_id": "ADV-PROVENANCE-IDENTITY-DRIFT",
+      "invariant_ids": [
+        "INV-PROVENANCE-001"
+      ],
+      "root_cause": "Validated-function uniqueness counted only CREATE OR REPLACE definitions, allowing DROP FUNCTION followed by plain CREATE FUNCTION of the same signature to replace the attested implementation.",
+      "horizontal_audit": [
+        "plain CREATE FUNCTION definitions",
+        "DROP and recreate sequences",
+        "function identity provenance",
+        "validated definition uniqueness",
+        "post-attestation replacement"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_duplicate_validated_function_definition"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000014
+    },
+    {
+      "id": "LEARN-PR177-032",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4069005642,
+      "class_id": "ADV-PROVENANCE-IDENTITY-DRIFT",
+      "invariant_ids": [
+        "INV-PROVENANCE-001"
+      ],
+      "root_cause": "SQL comment stripping was not quote-aware, so `--` inside a string literal could truncate subsequent executable text and hide forbidden cross-domain mutations from attestation.",
+      "horizontal_audit": [
+        "quote-aware SQL lexing",
+        "line-comment recognition",
+        "string-literal preservation",
+        "cross-domain mutation visibility",
+        "executable SQL provenance"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_cross_domain_mutation"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000015
+    },
+    {
+      "id": "LEARN-PR177-033",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4069005644,
+      "class_id": "ADV-PROVENANCE-IDENTITY-DRIFT",
+      "invariant_ids": [
+        "INV-PROVENANCE-001"
+      ],
+      "root_cause": "Validated-function provenance rejected duplicate/drop-recreate definitions but not ALTER FUNCTION rename swaps that could install an unsafe decoy body under the validated name.",
+      "horizontal_audit": [
+        "validated function rename",
+        "ALTER FUNCTION provenance",
+        "rename swap",
+        "final installed identity",
+        "decoy implementation takeover"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_duplicate_validated_function_definition"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000016
+    },
+    {
+      "id": "LEARN-PR177-034",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4069005650,
+      "class_id": "ADV-AUTHORITY-TOCTOU",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "Worker discovery was protected against static-false and loop nesting but could still be placed inside an arbitrary IF branch not taken on the normal valid-input path.",
+      "horizontal_audit": [
+        "worker discovery IF nesting",
+        "valid-input path reachability",
+        "candidate query dominance",
+        "recovery liveness",
+        "conditional bypass"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_expired_sync_discovery"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000017
+    },
+    {
+      "id": "LEARN-PR177-035",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4069005657,
+      "class_id": "ADV-TRUST-CONTEXT-GAP",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "The membership guard itself was top-level inside the extracted loop, but the exact three-role loop could still be nested under an unreachable IF in the executing DO block.",
+      "horizontal_audit": [
+        "membership loop reachability",
+        "installation-time DO block",
+        "outer IF nesting",
+        "privileged role preflight",
+        "guard placement"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_privileged_role_membership_fence"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000012
+    },
+    {
+      "id": "LEARN-PR177-036",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4069005665,
+      "class_id": "ADV-AUTHORITY-TOCTOU",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "Transition replay equivalence rejected dead IF placement but did not reject the canonical replay lookup/conflict block when nested inside a nonexecuting loop.",
+      "horizontal_audit": [
+        "transition replay loop nesting",
+        "equivalence guard reachability",
+        "duplicate replay conflict",
+        "dead-loop bypass",
+        "main-path dominance"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_transition_replay_equivalence"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000018
+    },
+    {
+      "id": "LEARN-PR177-037",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4075266022,
+      "class_id": "ADV-PROVENANCE-IDENTITY-DRIFT",
+      "invariant_ids": [
+        "INV-PROVENANCE-001"
+      ],
+      "root_cause": "The SQL comment lexer preserved single/double-quoted strings but not tagged dollar-quoted literals, allowing `--` inside `$tag$...$tag$` to truncate later executable SQL during attestation.",
+      "horizontal_audit": [
+        "tagged dollar-quoted literal lexing",
+        "comment recognition",
+        "cross-domain mutation visibility",
+        "PL/pgSQL executable text",
+        "lexer fidelity"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_cross_domain_mutation"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000017
+    },
+    {
+      "id": "LEARN-PR177-038",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4075266028,
+      "class_id": "ADV-PROVENANCE-IDENTITY-DRIFT",
+      "invariant_ids": [
+        "INV-PROVENANCE-001"
+      ],
+      "root_cause": "Validated-function provenance only recognized schema-qualified DDL, allowing unqualified DROP/CREATE under `SET search_path=itsm` to replace the attested implementation.",
+      "horizontal_audit": [
+        "unqualified function DDL",
+        "search_path resolution",
+        "validated function identity",
+        "DROP/CREATE replacement",
+        "schema qualification"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_duplicate_validated_function_definition"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000018
+    },
+    {
+      "id": "LEARN-PR177-039",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4075266037,
+      "class_id": "ADV-TRUST-CONTEXT-GAP",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "The privileged-role membership preflight could execute correctly and then be invalidated by a later role-membership GRANT, so installation final state no longer matched the attested safety invariant.",
+      "horizontal_audit": [
+        "post-preflight role grants",
+        "membership final state",
+        "privileged-role inheritance",
+        "installation ordering",
+        "final-state attestation"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_privileged_role_membership_fence"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000013
+    },
+    {
+      "id": "LEARN-PR177-040",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4075997191,
+      "class_id": "ADV-AUTHORITY-TOCTOU",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "Advisory-lock attestation searched executable text but did not require the lock token to be an actual PERFORM call outside string literals, so literal contents could spoof serialization evidence.",
+      "horizontal_audit": [
+        "advisory lock executable call",
+        "literal masking",
+        "concurrent create serialization",
+        "equivalence lookup ordering",
+        "semantic evidence"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_concurrent_incident_create_serialization"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000019
+    },
+    {
+      "id": "LEARN-PR177-041",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4075997197,
+      "class_id": "ADV-PROVENANCE-IDENTITY-DRIFT",
+      "invariant_ids": [
+        "INV-PROVENANCE-001"
+      ],
+      "root_cause": "Validated function extraction stopped only at the next qualified `itsm.` function definition, allowing an unqualified decoy function under search_path to bleed canonical evidence into an unsafe validated body.",
+      "horizontal_audit": [
+        "function boundary delimitation",
+        "unqualified CREATE FUNCTION",
+        "search_path decoys",
+        "validated body provenance",
+        "definition bleed-through"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_duplicate_validated_function_definition"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000019
+    },
+    {
+      "id": "LEARN-PR177-042",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4075997207,
+      "class_id": "ADV-TRUST-CONTEXT-GAP",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "Post-preflight membership mutation detection did not account for PostgreSQL's optional GROUP keyword on GRANT/REVOKE recipients, allowing protected roles to gain membership after attestation.",
+      "horizontal_audit": [
+        "GRANT TO GROUP",
+        "REVOKE FROM GROUP",
+        "post-preflight membership mutation",
+        "protected roles",
+        "final-state attestation"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_privileged_role_membership_fence"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000014
+    },
+    {
+      "id": "LEARN-PR177-043",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4075997217,
+      "class_id": "ADV-PROVENANCE-IDENTITY-DRIFT",
+      "invariant_ids": [
+        "INV-PROVENANCE-001"
+      ],
+      "root_cause": "The SQL comment lexer handled ordinary quoted strings but not PostgreSQL escape strings, so an escaped quote could prematurely terminate lexical state and hide later executable SQL behind apparent comment syntax.",
+      "horizontal_audit": [
+        "escape string lexing",
+        "backslash-escaped quote",
+        "comment stripping",
+        "cross-domain mutation visibility",
+        "SQL lexer fidelity"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_cross_domain_mutation"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000020
+    },
+    {
+      "id": "LEARN-PR177-044",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4077402443,
+      "class_id": "ADV-PROVENANCE-IDENTITY-DRIFT",
+      "invariant_ids": [
+        "INV-PROVENANCE-001"
+      ],
+      "root_cause": "Validated-function detection did not recognize quoted canonical schema/function identifiers, allowing a quoted replacement of the same PostgreSQL object to escape occurrence/provenance checks.",
+      "horizontal_audit": [
+        "quoted SQL identifiers",
+        "validated function identity",
+        "quoted schema qualification",
+        "replacement detection",
+        "PostgreSQL identifier equivalence"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_duplicate_validated_function_definition"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000021
+    },
+    {
+      "id": "LEARN-PR177-045",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4077402450,
+      "class_id": "ADV-PROVENANCE-IDENTITY-DRIFT",
+      "invariant_ids": [
+        "INV-PROVENANCE-001"
+      ],
+      "root_cause": "Static validated-definition checks could be bypassed by dynamically constructing DROP/CREATE FUNCTION statements with PL/pgSQL EXECUTE.",
+      "horizontal_audit": [
+        "dynamic SQL",
+        "EXECUTE",
+        "validated function DDL",
+        "static attestation boundary",
+        "runtime DDL construction"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_duplicate_validated_function_definition"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000022
+    },
+    {
+      "id": "LEARN-PR177-046",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4077402453,
+      "class_id": "ADV-AUTHORITY-TOCTOU",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "SQL block-comment stripping was not nesting-aware, so PostgreSQL-valid nested comments could expose text to attestation that remained commented at execution time.",
+      "horizontal_audit": [
+        "nested block comments",
+        "comment lexer depth",
+        "advisory lock evidence",
+        "executable SQL parity",
+        "serialization guard"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_concurrent_incident_create_serialization"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000020
+    },
+    {
+      "id": "LEARN-PR177-047",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4077402461,
+      "class_id": "ADV-TRUST-CONTEXT-GAP",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "Post-preflight membership mutation detection matched only unquoted protected-role recipients, while PostgreSQL quoted lowercase identifiers resolve to the same roles.",
+      "horizontal_audit": [
+        "quoted role identifiers",
+        "post-preflight GRANT",
+        "protected role membership",
+        "final-state attestation",
+        "identifier equivalence"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_privileged_role_membership_fence"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000015
+    },
+    {
+      "id": "LEARN-PR177-048",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4077797373,
+      "class_id": "ADV-PROVENANCE-IDENTITY-DRIFT",
+      "invariant_ids": [
+        "INV-PROVENANCE-001"
+      ],
+      "root_cause": "Worker discovery attestation matched canonical query text from SQL literal contents instead of proving those statements were executable code.",
+      "horizontal_audit": [
+        "worker discovery executable evidence",
+        "SQL literal masking",
+        "tagged dollar-quoted strings",
+        "candidate query reachability",
+        "attestation provenance"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_expired_sync_discovery"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000023
+    },
+    {
+      "id": "LEARN-PR177-049",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4077797379,
+      "class_id": "ADV-TRUST-CONTEXT-GAP",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "Protected-role recipient matching required immediate comma/semicolon/end after the role, allowing valid trailing membership options such as WITH ADMIN OPTION to bypass post-preflight mutation detection.",
+      "horizontal_audit": [
+        "GRANT WITH ADMIN OPTION",
+        "role membership options",
+        "protected role recipient boundary",
+        "post-preflight mutation",
+        "final-state attestation"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_privileged_role_membership_fence"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000016
+    },
+    {
+      "id": "LEARN-PR177-050",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4077797384,
+      "class_id": "ADV-AUTHORITY-TOCTOU",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "Incident-create lock dominance rejected only prior RETURN statements, so a top-level RAISE could terminate execution before the lock while still passing attestation.",
+      "horizontal_audit": [
+        "top-level RAISE",
+        "unconditional terminators",
+        "advisory lock dominance",
+        "create-path reachability",
+        "serialization guarantee"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_concurrent_incident_create_serialization"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000021
+    },
+    {
+      "id": "LEARN-PR177-051",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4078035976,
+      "class_id": "ADV-PROVENANCE-IDENTITY-DRIFT",
+      "invariant_ids": [
+        "INV-PROVENANCE-001"
+      ],
+      "root_cause": "Case-insensitive matching also applied to quoted PostgreSQL identifiers, even though quoted names preserve case and therefore can denote non-canonical schemas/functions.",
+      "horizontal_audit": [
+        "quoted identifier case",
+        "PostgreSQL name semantics",
+        "canonical schema identity",
+        "validated function identity",
+        "case-sensitive provenance"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_duplicate_validated_function_definition"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000024
+    },
+    {
+      "id": "LEARN-PR177-052",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4078035983,
+      "class_id": "ADV-TRUST-CONTEXT-GAP",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "Post-preflight membership fencing covered GRANT/REVOKE but not equivalent membership-changing DDL such as CREATE ROLE ... IN ROLE/ROLE/ADMIN or ALTER GROUP ... ADD/DROP USER.",
+      "horizontal_audit": [
+        "CREATE ROLE membership options",
+        "CREATE USER membership options",
+        "ALTER GROUP ADD USER",
+        "ALTER GROUP DROP USER",
+        "post-preflight membership mutation"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_privileged_role_membership_fence"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000017
+    },
+    {
+      "id": "LEARN-PR177-053",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4078232347,
+      "class_id": "ADV-PROVENANCE-IDENTITY-DRIFT",
+      "invariant_ids": [
+        "INV-PROVENANCE-001"
+      ],
+      "root_cause": "Quoted-identifier exact-case validation only covered fully quoted schema+function pairs, allowing mixed quoted/unquoted qualifiers such as \"ITSM\".g10_next_sync_candidate to masquerade as canonical lowercase objects.",
+      "horizontal_audit": [
+        "mixed quoted qualifiers",
+        "quoted schema exact case",
+        "unquoted function token",
+        "PostgreSQL identifier semantics",
+        "canonical function identity"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_duplicate_validated_function_definition"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000025
+    },
+    {
+      "id": "LEARN-PR177-054",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4078232353,
+      "class_id": "ADV-TRUST-CONTEXT-GAP",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "Post-preflight membership scanning began after the enclosing DO block rather than immediately after the validated membership loop, allowing membership mutation in the remainder of that same DO block.",
+      "horizontal_audit": [
+        "membership loop tail",
+        "DO block remainder",
+        "post-preflight GRANT",
+        "final-state membership",
+        "installation ordering"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_privileged_role_membership_fence"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000018
+    },
+    {
+      "id": "LEARN-PR177-055",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4078232357,
+      "class_id": "ADV-AUTHORITY-TOCTOU",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "Worker discovery reachability recognized IF and LOOP nesting but not PL/pgSQL CASE, allowing canonical discovery evidence to live only in a nonexecuting CASE branch.",
+      "horizontal_audit": [
+        "PL/pgSQL CASE reachability",
+        "worker discovery control flow",
+        "nonexecuting branch",
+        "candidate query reachability",
+        "valid-input execution path"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_expired_sync_discovery"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000022
+    },
+    {
+      "id": "LEARN-PR177-056",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4078232364,
+      "class_id": "ADV-PROVENANCE-IDENTITY-DRIFT",
+      "invariant_ids": [
+        "INV-PROVENANCE-001"
+      ],
+      "root_cause": "The SQL lexer preserved tagged dollar-quoted literals but not valid untagged $$...$$ literals, so comment markers inside a bare-dollar string could hide later executable mutations from analysis.",
+      "horizontal_audit": [
+        "untagged dollar quotes",
+        "bare $$ literal",
+        "comment spoofing",
+        "cross-domain mutation visibility",
+        "SQL lexer fidelity"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_cross_domain_mutation"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000026
+    },
+    {
+      "id": "LEARN-PR177-057",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4078530479,
+      "class_id": "ADV-PROVENANCE-IDENTITY-DRIFT",
+      "invariant_ids": [
+        "INV-PROVENANCE-001"
+      ],
+      "root_cause": "Validated-function identity checks rejected drops and renames but did not forbid ALTER FUNCTION/ROUTINE ... SET SCHEMA, allowing an attested canonical function to be moved out of the required itsm schema after validation.",
+      "horizontal_audit": [
+        "ALTER FUNCTION SET SCHEMA",
+        "ALTER ROUTINE SET SCHEMA",
+        "canonical function identity",
+        "schema relocation",
+        "post-attestation DDL"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_duplicate_validated_function_definition"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000027
+    },
+    {
+      "id": "LEARN-PR177-058",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4078530484,
+      "class_id": "ADV-AUTHORITY-TOCTOU",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "Worker candidate validation proved that the canonical sync-outbox relation and filter both appeared, but allowed arbitrary row-eliminating joins between them, so a syntactically canonical query could be permanently empty.",
+      "horizontal_audit": [
+        "worker candidate source path",
+        "row-eliminating joins",
+        "JOIN ON FALSE",
+        "expired dispatch recovery",
+        "candidate reachability"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_expired_sync_discovery"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000028
+    },
+    {
+      "id": "LEARN-PR177-059",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4078530491,
+      "class_id": "ADV-TRUST-CONTEXT-GAP",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "Post-preflight GRANT/REVOKE detection recognized quoted protected recipients but only unquoted role identifiers on the granted/revoked side, allowing quoted role names to recreate forbidden membership edges.",
+      "horizontal_audit": [
+        "quoted role identifiers",
+        "GRANT granted side",
+        "REVOKE revoked side",
+        "protected-role membership",
+        "post-preflight membership mutation"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_privileged_role_membership_fence"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000029
+    },
+    {
+      "id": "LEARN-PR177-060",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4078612716,
+      "class_id": "ADV-PROVENANCE-IDENTITY-DRIFT",
+      "invariant_ids": [
+        "INV-PROVENANCE-001"
+      ],
+      "root_cause": "Tagged dollar-quote delimiters were always treated as opaque literals, even when introduced by AS for a PL/pgSQL function body, allowing commented-out canonical evidence inside tagged procedural bodies to remain visible to later regex validation.",
+      "horizontal_audit": [
+        "tagged procedural bodies",
+        "AS $tag$",
+        "comment stripping",
+        "PL/pgSQL body lexing",
+        "replay evidence visibility"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_transition_replay_equivalence"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000030
+    },
+    {
+      "id": "LEARN-PR177-061",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4078612721,
+      "class_id": "ADV-PROVENANCE-IDENTITY-DRIFT",
+      "invariant_ids": [
+        "INV-PROVENANCE-001"
+      ],
+      "root_cause": "Validated-function rename fencing covered ALTER FUNCTION but not PostgreSQL's equivalent ALTER ROUTINE form, allowing rename-away/rename-into swaps to replace a canonical implementation without rejection.",
+      "horizontal_audit": [
+        "ALTER ROUTINE RENAME",
+        "rename-away",
+        "rename-into",
+        "validated function identity",
+        "DDL parity"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_duplicate_validated_function_definition"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000031
+    },
+    {
+      "id": "LEARN-PR177-062",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4078612725,
+      "class_id": "ADV-TRUST-CONTEXT-GAP",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "Post-preflight membership patterns assumed a protected role would be the first element of a GRANT/REVOKE role or recipient list, allowing protected roles later in comma-separated lists to create forbidden membership edges.",
+      "horizontal_audit": [
+        "comma-separated role lists",
+        "protected role later in list",
+        "GRANT list scanning",
+        "REVOKE list scanning",
+        "membership final state"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_privileged_role_membership_fence"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000032
+    },
+    {
+      "id": "LEARN-PR177-063",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4078612730,
+      "class_id": "ADV-AUTHORITY-TOCTOU",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "Membership-preflight reachability rejected IF and LOOP nesting but omitted CASE, allowing the exact role loop or guard to exist only in a nonexecuting CASE branch.",
+      "horizontal_audit": [
+        "membership preflight CASE",
+        "nonexecuting CASE branch",
+        "role-loop reachability",
+        "guard reachability",
+        "installation safety"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_privileged_role_membership_fence"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000033
+    },
+    {
+      "id": "LEARN-PR177-064",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4078612736,
+      "class_id": "ADV-AUTHORITY-TOCTOU",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "Incident-create advisory-lock reachability rejected IF and LOOP nesting but omitted CASE, allowing the canonical lock call to be present only in a nonexecuting CASE branch.",
+      "horizontal_audit": [
+        "advisory lock CASE",
+        "lock dominance",
+        "nonexecuting CASE branch",
+        "concurrent create serialization",
+        "valid-input path"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_concurrent_incident_create_serialization"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000034
+    },
+    {
+      "id": "LEARN-PR177-065",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4078612743,
+      "class_id": "ADV-AUTHORITY-TOCTOU",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "Transition replay reachability rejected IF and LOOP nesting but omitted CASE, allowing the canonical lookup/conflict block to be present only in a nonexecuting CASE branch.",
+      "horizontal_audit": [
+        "transition replay CASE",
+        "replay equivalence",
+        "nonexecuting CASE branch",
+        "conflict detection",
+        "main transition path"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_transition_replay_equivalence"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000035
+    },
+    {
+      "id": "LEARN-PR177-066",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4078761267,
+      "class_id": "ADV-AUTHORITY-TOCTOU",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "Incident-create lock reachability rejected IF, CASE, and LOOP nesting but did not distinguish EXCEPTION handlers, allowing the canonical advisory lock to exist only on an exceptional path that does not dominate the normal equivalence lookup.",
+      "horizontal_audit": [
+        "PL/pgSQL EXCEPTION handler",
+        "advisory lock dominance",
+        "exception-only execution",
+        "normal create path",
+        "concurrent create serialization"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_concurrent_incident_create_serialization"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000036
+    },
+    {
+      "id": "LEARN-PR177-067",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4078761271,
+      "class_id": "ADV-AUTHORITY-TOCTOU",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "Transition replay reachability invalidated only earlier RETURN statements and did not reuse the unconditional terminator analysis, allowing a top-level RAISE to terminate before replay equivalence while attestation still passed.",
+      "horizontal_audit": [
+        "top-level RAISE",
+        "transition replay reachability",
+        "unconditional terminator",
+        "replay equivalence",
+        "main transition path"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_transition_replay_equivalence"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000037
+    },
+    {
+      "id": "LEARN-PR177-068",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4078822014,
+      "class_id": "ADV-AUTHORITY-TOCTOU",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "Exception-handler reachability considered only the innermost BEGIN frame, so a nested ordinary block inside an enclosing EXCEPTION handler could hide the canonical advisory lock on an exceptional-only path.",
+      "horizontal_audit": [
+        "nested BEGIN in EXCEPTION handler",
+        "ancestor handler frames",
+        "advisory lock dominance",
+        "exception-only execution",
+        "concurrent create serialization"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_concurrent_incident_create_serialization"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000038
+    },
+    {
+      "id": "LEARN-PR177-069",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4078822017,
+      "class_id": "ADV-PROVENANCE-IDENTITY-DRIFT",
+      "invariant_ids": [
+        "INV-PROVENANCE-001"
+      ],
+      "root_cause": "Worker reachability helpers analyzed unmasked function text, allowing control-flow tokens embedded in string literals such as 'END IF;' to alter nesting depth and make dead discovery code appear top-level reachable.",
+      "horizontal_audit": [
+        "literal-masked reachability",
+        "control-flow token spoofing",
+        "worker discovery nesting",
+        "string literal END IF",
+        "candidate execution path"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_expired_sync_discovery"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000039
+    },
+    {
+      "id": "LEARN-PR177-070",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4078822020,
+      "class_id": "ADV-AUTHORITY-TOCTOU",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "Membership-guard reachability rejected only bare EXIT/CONTINUE statements, allowing conditional EXIT WHEN/CONTINUE WHEN before the guard to skip privileged-role validation.",
+      "horizontal_audit": [
+        "EXIT WHEN",
+        "CONTINUE WHEN",
+        "membership loop control flow",
+        "preflight guard reachability",
+        "privileged role validation"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_privileged_role_membership_fence"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000040
+    },
+    {
+      "id": "LEARN-PR177-071",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4078822024,
+      "class_id": "ADV-TRUST-CONTEXT-GAP",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "Membership GRANT/REVOKE classification searched for the token ON anywhere in the statement text, so a quoted role named \"ON\" was mistaken for an object-privilege clause and bypassed protected-role mutation detection.",
+      "horizontal_audit": [
+        "quoted role ON",
+        "syntactic ON clause",
+        "membership statement parsing",
+        "GRANT role list",
+        "REVOKE role list"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_privileged_role_membership_fence"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000041
+    },
+    {
+      "id": "LEARN-PR177-072",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4078870457,
+      "class_id": "ADV-PROVENANCE-IDENTITY-DRIFT",
+      "invariant_ids": [
+        "INV-PROVENANCE-001"
+      ],
+      "root_cause": "Comment stripping assumed standard-conforming ordinary string semantics, so disabling standard_conforming_strings could make backslash-escaped quotes keep comment markers inside literals while the validator misclassified following executable SQL as a comment.",
+      "horizontal_audit": [
+        "standard_conforming_strings",
+        "backslash-escaped quote",
+        "comment stripping",
+        "ordinary SQL string semantics",
+        "cross-domain mutation visibility"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_cross_domain_mutation"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000042
+    },
+    {
+      "id": "LEARN-PR177-073",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4078870460,
+      "class_id": "ADV-AUTHORITY-TOCTOU",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "Privileged-role membership reachability rejected IF/CASE/LOOP nesting but did not reject EXCEPTION-handler confinement, allowing the canonical guard to exist only on an exceptional path that never runs during normal installation.",
+      "horizontal_audit": [
+        "membership guard EXCEPTION handler",
+        "privileged-role preflight",
+        "handler-local guard",
+        "installation safety",
+        "normal execution path"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_privileged_role_membership_fence"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000043
+    },
+    {
+      "id": "LEARN-PR177-074",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4078870464,
+      "class_id": "ADV-PROVENANCE-IDENTITY-DRIFT",
+      "invariant_ids": [
+        "INV-PROVENANCE-001"
+      ],
+      "root_cause": "Incident-create lock evidence used a literal-masked view, but the equivalence lookup still scanned unmasked function text, allowing canonical lookup SQL inside a dollar-quoted literal to satisfy idempotency attestation without executing.",
+      "horizontal_audit": [
+        "incident lookup literal evidence",
+        "create idempotency lookup",
+        "dollar-quoted literal",
+        "masked executable SQL",
+        "equivalence lookup"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_concurrent_incident_create_serialization"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000044
+    },
+    {
+      "id": "LEARN-PR177-075",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4078870469,
+      "class_id": "ADV-PROVENANCE-IDENTITY-DRIFT",
+      "invariant_ids": [
+        "INV-PROVENANCE-001"
+      ],
+      "root_cause": "Transition replay matching and reachability scanned unmasked function text, allowing the complete canonical replay lookup/conflict block inside a dollar-quoted literal to satisfy attestation while runtime bypassed replay equivalence.",
+      "horizontal_audit": [
+        "transition replay literal evidence",
+        "dollar-quoted literal",
+        "masked replay reachability",
+        "replay equivalence",
+        "contradictory replay protection"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_transition_replay_equivalence"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000045
+    },
+    {
+      "id": "LEARN-PR177-076",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4078986979,
+      "class_id": "ADV-PROVENANCE-IDENTITY-DRIFT",
+      "invariant_ids": [
+        "INV-PROVENANCE-001"
+      ],
+      "root_cause": "The string-semantics fence covered SET standard_conforming_strings but not executable set_config calls that mutate the same GUC, allowing ordinary-string lexing assumptions to diverge from PostgreSQL runtime semantics.",
+      "horizontal_audit": [
+        "set_config",
+        "standard_conforming_strings",
+        "GUC mutation",
+        "string semantics",
+        "comment stripping"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_cross_domain_mutation"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000046
+    },
+    {
+      "id": "LEARN-PR177-077",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4078986986,
+      "class_id": "ADV-PROVENANCE-IDENTITY-DRIFT",
+      "invariant_ids": [
+        "INV-PROVENANCE-001"
+      ],
+      "root_cause": "Membership-guard reachability used a literal-masked view, but the guard pattern itself still matched unmasked loop text, allowing the canonical guard inside a dollar-quoted literal to satisfy preflight attestation without executing.",
+      "horizontal_audit": [
+        "membership guard literal evidence",
+        "pg_auth_members",
+        "dollar-quoted literal",
+        "masked executable SQL",
+        "privileged-role preflight"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_privileged_role_membership_fence"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000047
+    },
+    {
+      "id": "LEARN-PR177-078",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4078986991,
+      "class_id": "ADV-TRUST-CONTEXT-GAP",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "Cross-domain mutation fencing covered only a narrow subset of DML/CREATE forms and unquoted schemas, leaving TRUNCATE, DROP, ALTER, MERGE and quoted canonical schema names able to mutate resources outside the authorized G10 boundary.",
+      "horizontal_audit": [
+        "cross-domain DML",
+        "TRUNCATE",
+        "DROP TABLE",
+        "ALTER TABLE",
+        "MERGE INTO",
+        "quoted schema identifiers"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_cross_domain_mutation"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000048
+    },
+    {
+      "id": "LEARN-PR177-079",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4080143786,
+      "class_id": "ADV-PROVENANCE-IDENTITY-DRIFT",
+      "invariant_ids": [
+        "INV-PROVENANCE-001"
+      ],
+      "root_cause": "The set_config fence recognized only single-quoted standard_conforming_strings arguments, while PostgreSQL also accepts dollar-quoted text arguments that mutate the same GUC and desynchronize lexer assumptions from runtime semantics.",
+      "horizontal_audit": [
+        "set_config dollar-quoted arguments",
+        "standard_conforming_strings",
+        "GUC mutation",
+        "string semantics",
+        "comment stripping"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_cross_domain_mutation"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000049
+    },
+    {
+      "id": "LEARN-PR177-080",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4080143790,
+      "class_id": "ADV-PROVENANCE-IDENTITY-DRIFT",
+      "invariant_ids": [
+        "INV-PROVENANCE-001"
+      ],
+      "root_cause": "Incident Alert projection semantics were validated against unmasked function text, allowing the canonical alerting.alert query inside a dollar-quoted literal to satisfy provenance attestation without executing.",
+      "horizontal_audit": [
+        "Alert projection literal evidence",
+        "g10_get_incident",
+        "alerting.alert provenance",
+        "dollar-quoted literal",
+        "masked executable SQL"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_alert_opened_at_projection"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000050
+    },
+    {
+      "id": "LEARN-PR177-081",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4080143798,
+      "class_id": "ADV-TRUST-CONTEXT-GAP",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "Cross-domain mutation fencing covered common DML, TRUNCATE and DDL forms but omitted relation-targeted COPY FROM, allowing direct writes into read-only external domains.",
+      "horizontal_audit": [
+        "COPY FROM",
+        "cross-domain mutation",
+        "alerting",
+        "notification",
+        "relation-targeted bulk write"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_cross_domain_mutation"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000051
+    },
+    {
+      "id": "LEARN-PR177-082",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4080143804,
+      "class_id": "ADV-AUTHORITY-TOCTOU",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "The final privileged-role preflight fenced membership changes but not post-preflight ALTER ROLE/USER attribute escalation, allowing protected runtime roles to gain SUPERUSER or equivalent authority after attestation.",
+      "horizontal_audit": [
+        "ALTER ROLE",
+        "ALTER USER",
+        "protected runtime roles",
+        "role attributes",
+        "post-preflight authority escalation"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_privileged_role_membership_fence"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000052
+    },
+    {
+      "id": "LEARN-PR177-083",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4080231341,
+      "class_id": "ADV-PROVENANCE-IDENTITY-DRIFT",
+      "invariant_ids": [
+        "INV-PROVENANCE-001"
+      ],
+      "root_cause": "set_config target matching recognized only literal spellings, allowing computed text expressions to mutate standard_conforming_strings while evading static attestation.",
+      "horizontal_audit": [
+        "computed set_config target",
+        "session GUC mutation",
+        "standard_conforming_strings",
+        "static attestation",
+        "fail-closed SQL context"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_cross_domain_mutation"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000053
+    },
+    {
+      "id": "LEARN-PR177-084",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4080231351,
+      "class_id": "ADV-AUTHORITY-TOCTOU",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "The final privileged-role preflight fenced membership and attribute changes but allowed creation of a protected runtime role after the loop, enabling a role absent from pg_roles during preflight to be installed later with excessive authority.",
+      "horizontal_audit": [
+        "CREATE ROLE",
+        "CREATE USER",
+        "protected runtime roles",
+        "post-preflight creation",
+        "authority escalation"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_privileged_role_membership_fence"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000054
+    },
+    {
+      "id": "LEARN-PR177-085",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4080231364,
+      "class_id": "ADV-TRUST-CONTEXT-GAP",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "Cross-domain DML fencing required schema qualification immediately after UPDATE, DELETE FROM, or MERGE INTO and omitted PostgreSQL's optional ONLY modifier.",
+      "horizontal_audit": [
+        "UPDATE ONLY",
+        "DELETE FROM ONLY",
+        "MERGE INTO ONLY",
+        "cross-domain mutation",
+        "target modifiers"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_cross_domain_mutation"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000055
+    },
+    {
+      "id": "LEARN-PR177-086",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4080231368,
+      "class_id": "ADV-TRUST-CONTEXT-GAP",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "Cross-domain mutation fencing assumed explicitly qualified targets, while a mutable search_path could redirect otherwise-unqualified DML into protected external schemas.",
+      "horizontal_audit": [
+        "search_path mutation",
+        "unqualified DML",
+        "target resolution",
+        "cross-domain authority",
+        "session context"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_cross_domain_mutation"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000056
+    },
+    {
+      "id": "LEARN-PR177-087",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4084431483,
+      "class_id": "ADV-PROVENANCE-IDENTITY-DRIFT",
+      "invariant_ids": [
+        "INV-PROVENANCE-001"
+      ],
+      "root_cause": "The mutable-session fence recognized only unquoted set_config function names, while PostgreSQL resolves the lowercase quoted identifier \"set_config\" to the same function and can still alter resolution semantics.",
+      "horizontal_audit": [
+        "quoted set_config",
+        "pg_catalog.set_config",
+        "mutable session semantics",
+        "search_path mutation",
+        "unqualified mutation target"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_cross_domain_mutation"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000057
+    },
+    {
+      "id": "LEARN-PR177-088",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4084431496,
+      "class_id": "ADV-TRUST-CONTEXT-GAP",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "The mutable target-resolution fence blocked SET search_path but not PostgreSQL's equivalent SET SCHEMA alias, allowing an unqualified DML target to resolve into a protected external schema.",
+      "horizontal_audit": [
+        "SET SCHEMA",
+        "search_path alias",
+        "unqualified DML",
+        "target resolution",
+        "cross-domain authority"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_cross_domain_mutation"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000058
+    },
+    {
+      "id": "LEARN-PR177-089",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4084431506,
+      "class_id": "ADV-AUTHORITY-TOCTOU",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "Post-preflight protected-role creation fencing covered CREATE ROLE and CREATE USER but omitted PostgreSQL's CREATE GROUP role-creation alias, allowing a protected runtime principal to be created with excessive attributes after attestation.",
+      "horizontal_audit": [
+        "CREATE GROUP",
+        "protected runtime roles",
+        "role creation aliases",
+        "post-preflight authority",
+        "SUPERUSER escalation"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_privileged_role_membership_fence"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000059
+    },
+    {
+      "id": "LEARN-PR177-090",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4084528271,
+      "class_id": "ADV-TRUST-CONTEXT-GAP",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "Cross-domain mutation fencing rejected direct DML and DDL but did not reject mutation-capable object privilege grants, allowing a G10 runtime role to acquire direct write authority over protected external-domain relations without containing cross-domain DML in the installation artifact.",
+      "horizontal_audit": [
+        "GRANT object privileges",
+        "cross-domain write authority",
+        "runtime role capabilities",
+        "ALL PRIVILEGES",
+        "schema-wide table grants"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_cross_domain_mutation"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000060
+    },
+    {
+      "id": "LEARN-PR177-091",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4085603633,
+      "class_id": "ADV-PROVENANCE-IDENTITY-DRIFT",
+      "invariant_ids": [
+        "INV-PROVENANCE-001"
+      ],
+      "root_cause": "Mutable-context scanning treated canonical function-level SET search_path clauses, transaction-local jlmirror.tenant_id set_config calls, trigger EXECUTE FUNCTION syntax, and EXECUTE object privileges as if they were unsafe session-level or dynamic execution statements, making the scope validator reject the canonical G10 SQL it must attest.",
+      "horizontal_audit": [
+        "function SET search_path",
+        "transaction-local set_config",
+        "EXECUTE FUNCTION triggers",
+        "GRANT EXECUTE ON FUNCTION",
+        "canonical self-attestation"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_cross_domain_mutation"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000061
+    },
+    {
+      "id": "LEARN-PR177-092",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4085603641,
+      "class_id": "ADV-PROVENANCE-IDENTITY-DRIFT",
+      "invariant_ids": [
+        "INV-PROVENANCE-001"
+      ],
+      "root_cause": "Worker candidate attestation required no syntax between the canonical sync-outbox source and WHERE, rejecting the canonical tenant-bound join to itsm.incident that supplies the provider payload.",
+      "horizontal_audit": [
+        "worker payload join",
+        "tenant-bound join",
+        "sync candidate provenance",
+        "canonical SQL compatibility",
+        "join restriction"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_expired_sync_discovery"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000062
+    },
+    {
+      "id": "LEARN-PR177-093",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4085603647,
+      "class_id": "ADV-TRUST-CONTEXT-GAP",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "Protected-role preflight attestation required only the membership guard and failed to require the canonical unsafe-attribute guard covering login, superuser, database/role creation, inheritance, replication, and bypass-RLS capabilities.",
+      "horizontal_audit": [
+        "protected role attributes",
+        "rolcanlogin",
+        "rolsuper",
+        "rolcreatedb",
+        "rolcreaterole",
+        "rolinherit",
+        "rolreplication",
+        "rolbypassrls"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_privileged_role_membership_fence"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000063
+    },
+    {
+      "id": "LEARN-PR177-094",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4085603653,
+      "class_id": "ADV-PROVENANCE-IDENTITY-DRIFT",
+      "invariant_ids": [
+        "INV-PROVENANCE-001"
+      ],
+      "root_cause": "The protected-role list was inferred by extracting quoted substrings from an arbitrary IN expression, so concatenated expressions could preserve the expected substrings while evaluating to nonexistent role names and skipping the preflight.",
+      "horizontal_audit": [
+        "literal role identity",
+        "IN expression evaluation",
+        "role preflight provenance",
+        "concatenated literals",
+        "zero-row guard bypass"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_privileged_role_membership_fence"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000064
+    },
+    {
+      "id": "LEARN-PR177-095",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4085603659,
+      "class_id": "ADV-PROVENANCE-IDENTITY-DRIFT",
+      "invariant_ids": [
+        "INV-PROVENANCE-001"
+      ],
+      "root_cause": "The standard_conforming_strings fence enumerated only OFF/FALSE spellings, while PostgreSQL accepts additional false boolean forms such as 0 and NO that can desynchronize quote/comment lexing from runtime semantics.",
+      "horizontal_audit": [
+        "standard_conforming_strings",
+        "boolean aliases",
+        "numeric false spelling",
+        "textual NO spelling",
+        "SQL lexer semantics"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_cross_domain_mutation"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000065
+    },
+    {
+      "id": "LEARN-PR177-096",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4085603665,
+      "class_id": "ADV-TRUST-CONTEXT-GAP",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "Cross-domain authority fencing covered relation write privileges but not CREATE or ALL privileges on protected external schemas, allowing a G10 runtime role to gain object-creation authority inside another domain.",
+      "horizontal_audit": [
+        "GRANT CREATE ON SCHEMA",
+        "ALL PRIVILEGES ON SCHEMA",
+        "cross-domain object creation",
+        "runtime role capabilities",
+        "schema authority"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_cross_domain_mutation"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000066
+    },
+    {
+      "id": "LEARN-PR177-097",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4085603670,
+      "class_id": "ADV-PROVENANCE-IDENTITY-DRIFT",
+      "invariant_ids": [
+        "INV-PROVENANCE-001"
+      ],
+      "root_cause": "Incident create replay attestation only searched for the logical_action_id comparison somewhere in the lookup statement, allowing contradictory predicates such as WHERE FALSE to make the replay lookup permanently empty while still passing.",
+      "horizontal_audit": [
+        "create idempotency",
+        "equivalence lookup",
+        "tenant key",
+        "logical action key",
+        "dead predicate"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_concurrent_incident_create_serialization"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000067
+    },
+    {
+      "id": "LEARN-PR177-098",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4087150351,
+      "class_id": "ADV-PROVENANCE-IDENTITY-DRIFT",
+      "invariant_ids": [
+        "INV-PROVENANCE-001"
+      ],
+      "root_cause": "Protected-role membership attestation accepted unqualified PostgreSQL catalog relations, allowing pg_temp shadowing to hide real role or membership rows from the installation preflight.",
+      "horizontal_audit": [
+        "pg_catalog qualification",
+        "pg_temp shadowing",
+        "pg_roles provenance",
+        "pg_auth_members provenance",
+        "protected-role preflight"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_privileged_role_membership_fence"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000068
+    },
+    {
+      "id": "LEARN-PR177-099",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4087150355,
+      "class_id": "ADV-PROVENANCE-IDENTITY-DRIFT",
+      "invariant_ids": [
+        "INV-PROVENANCE-001"
+      ],
+      "root_cause": "Incident create replay attestation verified the exact equivalence key but not that the replay lookup itself remained top-level reachable, allowing a dead conditional block to preserve syntax while bypassing duplicate/conflict handling.",
+      "horizontal_audit": [
+        "create replay reachability",
+        "dead conditional path",
+        "equivalence lookup dominance",
+        "duplicate handling",
+        "idempotency semantics"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_concurrent_incident_create_serialization"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000069
+    },
+    {
+      "id": "LEARN-PR177-100",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4087150361,
+      "class_id": "ADV-TRUST-CONTEXT-GAP",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "Cross-domain DDL fencing matched CREATE INDEX as though the external schema immediately followed INDEX, while PostgreSQL identifies the mutated relation after ON, allowing index creation against protected external-domain relations.",
+      "horizontal_audit": [
+        "CREATE INDEX target relation",
+        "CREATE UNIQUE INDEX",
+        "ON relation syntax",
+        "cross-domain DDL authority",
+        "external relation mutation"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_cross_domain_mutation"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000070
+    },
+    {
+      "id": "LEARN-PR177-101",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4088195313,
+      "class_id": "ADV-TRUST-CONTEXT-GAP",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "Cross-domain DDL fencing covered direct relation DDL and CREATE INDEX target relations but omitted relation-attached trigger, rule, and policy DDL whose mutated relation is named after ON. A G10 hardening artifact could therefore attach behavior to protected external-domain relations without being rejected.",
+      "horizontal_audit": [
+        "CREATE TRIGGER relation targets",
+        "constraint triggers",
+        "DROP TRIGGER relation targets",
+        "CREATE and DROP RULE relation targets",
+        "CREATE ALTER DROP POLICY relation targets",
+        "quoted external schemas",
+        "cross-domain relation-attached DDL"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_cross_domain_mutation"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000071
+    }
+  ]
+}

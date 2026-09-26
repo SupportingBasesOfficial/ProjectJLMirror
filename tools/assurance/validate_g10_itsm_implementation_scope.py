@@ -433,36 +433,19 @@ def sql_errors(text,p):
     elif unconditional_terminator_before(create_exec,lookup_match.start()) or inside_any_if(create_exec,lookup_match.start()) or inside_any_case(create_exec,lookup_match.start()) or inside_any_loop(create_exec,lookup_match.start()) or inside_exception_handler(create_exec,lookup_match.start()):
       out.append("G10 Incident create equivalence lookup must be top-level reachable on the valid-input path")
 
-    create_lookup_raw=re.search(
-      r"SELECT\s+\*\s+INTO\s+v_existing\s+FROM\s+itsm\.incident\s+"
-      r"WHERE\s+tenant_id\s*=\s*p_tenant_id\s+AND\s+logical_action_id\s*=\s*p_logical_action_id\s*;",
-      create,re.I|re.S
-    )
-    if create_lookup_raw:
-      create_handler=create[create_lookup_raw.end():]
-      found_match=re.search(r"\bIF\s+FOUND\s+THEN\b",create_handler,re.I)
-      conflict_block=re.search(
-        r"\bIF\s+v_existing\.content_hash\s*(?:<>|IS\s+DISTINCT\s+FROM)\s*v_hash\s+THEN\b"
-        r".*?\bRAISE\s+EXCEPTION\s+'g10\.incident_equivalence_conflict'\s*;"
-        r".*?\bEND\s+IF\s*;",
-        create_handler,re.I|re.S
-      )
-      duplicate_match=re.search(
-        r"\bRETURN\s+jsonb_build_object\s*\([^;]*'duplicate'\s*,\s*TRUE[^;]*\)\s*;",
-        create_handler,re.I|re.S
-      )
-      insert_match=re.search(r"\bINSERT\s+INTO\s+itsm\.incident\s*\(",create_handler,re.I|re.S)
-      ordered=(
-        found_match is not None
-        and conflict_block is not None
-        and duplicate_match is not None
-        and insert_match is not None
-        and found_match.start()<conflict_block.start()<duplicate_match.start()<insert_match.start()
-      )
-      if not ordered:
-        out.append("G10 Incident create replay handler must reject content mismatch before duplicate success")
-    else:
-      out.append("G10 Incident create replay handler must bind to the exact equivalence lookup")
+    create_norm=re.sub(r"\s+"," ",create).strip()
+    replay_lookup="SELECT * INTO v_existing FROM itsm.incident WHERE tenant_id=p_tenant_id AND logical_action_id=p_logical_action_id;"
+    replay_found="IF FOUND THEN"
+    replay_conflict="IF v_existing.content_hash<>v_hash THEN RAISE EXCEPTION 'g10.incident_equivalence_conflict'; END IF;"
+    replay_duplicate="RETURN jsonb_build_object('incident_id',v_existing.incident_id,'duplicate',TRUE);"
+    replay_insert="INSERT INTO itsm.incident("
+    lookup_pos=create_norm.find(replay_lookup)
+    found_pos=create_norm.find(replay_found,lookup_pos+len(replay_lookup)) if lookup_pos>=0 else -1
+    conflict_pos=create_norm.find(replay_conflict,found_pos+len(replay_found)) if found_pos>=0 else -1
+    duplicate_pos=create_norm.find(replay_duplicate,conflict_pos+len(replay_conflict)) if conflict_pos>=0 else -1
+    insert_pos=create_norm.find(replay_insert,duplicate_pos+len(replay_duplicate)) if duplicate_pos>=0 else -1
+    if not (0<=lookup_pos<found_pos<conflict_pos<duplicate_pos<insert_pos):
+      out.append("G10 Incident create replay handler must reject content mismatch before duplicate success")
 
 
     transition=function_block(executable,"g10_transition_incident")

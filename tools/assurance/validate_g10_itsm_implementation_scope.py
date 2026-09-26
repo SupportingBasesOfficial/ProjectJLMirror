@@ -281,6 +281,13 @@ def sql_errors(text,p):
       if re.search(rf"\bALTER\s+(?:FUNCTION|ROUTINE)\b[^;]*\b(?:itsm|\"itsm\")\s*\.\s*(?:{re.escape(name)}|\"{re.escape(name)}\")\s*\([^;]*\)\s+SET\s+SCHEMA\b",executable,re.I|re.S):
         out.append(f"G10 validated function cannot be moved to another schema: {name}")
 
+      owner_alters=list(re.finditer(
+        rf"\bALTER\s+(?:FUNCTION|ROUTINE)\b[^;]*\b(?:itsm|\"itsm\")\s*\.\s*(?:{re.escape(name)}|\"{re.escape(name)}\")\s*\([^;]*\)\s+OWNER\s+TO\s+(?P<owner>\"[^\"]+\"|[A-Za-z_][A-Za-z0-9_]*)\s*;",
+        executable,re.I|re.S
+      ))
+      if len(owner_alters)!=1 or owner_alters[0].group("owner").strip('"').casefold()!="jlmirror_g10_itsm_executor":
+        out.append(f"G10 validated function owner must remain jlmirror_g10_itsm_executor exactly once: {name}")
+
       unqualified_ddl=(
         rf"\bCREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+(?!itsm\.){re.escape(name)}\s*\(",
         rf"\bDROP\s+FUNCTION\s+(?:IF\s+EXISTS\s+)?(?!itsm\.){re.escape(name)}\s*\(",
@@ -307,6 +314,9 @@ def sql_errors(text,p):
       )
     if not alert_match or not alert_exec:
       out.append("G10 Incident Alert summary must directly project executable alerting.alert.opened_at with canonical tenant+alert provenance")
+
+    elif inside_static_false(incident_read_exec,alert_match.start()) or inside_any_if(incident_read_exec,alert_match.start()) or inside_any_case(incident_read_exec,alert_match.start()) or inside_any_loop(incident_read_exec,alert_match.start()) or inside_exception_handler(incident_read_exec,alert_match.start()) or unconditional_terminator_before(incident_read_exec,alert_match.start()):
+      out.append("G10 Incident Alert summary projection must be top-level reachable on the valid read path")
 
     discovery=function_block(executable,"g10_next_sync_candidate")
     discovery_exec=mask_sql_literals(discovery)
@@ -383,9 +393,20 @@ def sql_errors(text,p):
     elif inside_any_if(loop_exec,membership_guard.start()) or inside_any_case(loop_exec,membership_guard.start()) or inside_any_loop(loop_exec,membership_guard.start()) or inside_exception_handler(loop_exec,membership_guard.start()) or re.search(r"\b(?:CONTINUE|EXIT)\b(?:\s+WHEN\s+[^;]+)?\s*;",loop_exec[:membership_guard.start()],re.I|re.S):
       out.append("G10 privileged-role membership guard must be top-level and executable for every role in the exact three-role loop")
 
+    protected_roles=r"(?:jlmirror_g10_itsm_executor|jlmirror_g10_itsm_app_invoker|jlmirror_g10_itsm_worker_invoker|\"jlmirror_g10_itsm_executor\"|\"jlmirror_g10_itsm_app_invoker\"|\"jlmirror_g10_itsm_worker_invoker\")"
+    if membership_loop and membership_guard:
+      loop_tail=loop_body[membership_guard.end():]
+      loop_tail_exec=mask_sql_literals(loop_tail)
+      loop_tail_role_mutation=(
+        re.search(rf"\bALTER\s+(?:ROLE|USER)\s+{protected_roles}(?=\s|;)[^;]*;",loop_tail_exec,re.I|re.S)
+        or re.search(rf"\bCREATE\s+(?:ROLE|USER|GROUP)\s+{protected_roles}(?=\s|;)[^;]*;",loop_tail_exec,re.I|re.S)
+        or re.search(rf"\b(?:GRANT|REVOKE)\b[^;]*{protected_roles}[^;]*;",loop_tail_exec,re.I|re.S)
+      )
+      if loop_tail_role_mutation:
+        out.append("G10 protected-role loop cannot mutate protected roles after completing the per-role guards")
+
     if membership_post_start>=0:
       post_membership=executable[membership_post_start:]
-      protected_roles=r"(?:jlmirror_g10_itsm_executor|jlmirror_g10_itsm_app_invoker|jlmirror_g10_itsm_worker_invoker|\"jlmirror_g10_itsm_executor\"|\"jlmirror_g10_itsm_app_invoker\"|\"jlmirror_g10_itsm_worker_invoker\")"
       membership_mutation=False
       for stmt in re.finditer(r"\b(?P<verb>GRANT|REVOKE)\b(?P<body>[^;]*);",post_membership,re.I|re.S):
         body=stmt.group("body")
@@ -446,7 +467,15 @@ def sql_errors(text,p):
     insert_pos=create_norm.find(replay_insert,duplicate_pos+len(replay_duplicate)) if duplicate_pos>=0 else -1
     if not (0<=lookup_pos<found_pos<conflict_pos<duplicate_pos<insert_pos):
       out.append("G10 Incident create replay handler must reject content mismatch before duplicate success")
-
+    elif lookup_match:
+      found_exec=re.search(r"\bIF\s+FOUND\s+THEN\b",create_exec[lookup_match.end():],re.I)
+      if not found_exec:
+        out.append("G10 Incident create replay handler must be executable, not literal contents")
+      else:
+        found_exec_pos=lookup_match.end()+found_exec.start()
+        between=create_exec[lookup_match.end():found_exec_pos]
+        if between.strip() or inside_static_false(create_exec,found_exec_pos) or inside_any_if(create_exec,found_exec_pos) or inside_any_case(create_exec,found_exec_pos) or inside_any_loop(create_exec,found_exec_pos) or inside_exception_handler(create_exec,found_exec_pos) or unconditional_terminator_before(create_exec,found_exec_pos):
+          out.append("G10 Incident create replay handler must be directly bound and reachable after the equivalence lookup")
 
     transition=function_block(executable,"g10_transition_incident")
     transition_exec=mask_sql_literals(transition)
@@ -484,6 +513,7 @@ def sql_errors(text,p):
       rf"\bMERGE\s+INTO\s+(?:ONLY\s+)?{external_schema}\s*\.",
       rf"\bCOPY\s+{external_schema}\s*\.\s*(?:\"[^\"]+\"|[A-Za-z_][A-Za-z0-9_]*)\s*(?:\([^;]*?\))?\s+FROM\b",
       rf"\bTRUNCATE\b[^;]*{external_schema}\s*\.",
+      rf"\bSELECT\b[^;]*\bINTO\s+(?:TABLE\s+)?{external_schema}\s*\.",
       rf"\b(?:CREATE|DROP)\s+(?:TABLE|VIEW|MATERIALIZED\s+VIEW|SEQUENCE|FUNCTION|PROCEDURE|ROUTINE|TYPE|DOMAIN)\s+(?:IF\s+(?:NOT\s+)?EXISTS\s+)?{external_schema}\s*\.",
       rf"\bALTER\s+(?:TABLE|VIEW|MATERIALIZED\s+VIEW|SEQUENCE)\s+(?:IF\s+EXISTS\s+)?(?:ONLY\s+)?{external_schema}\s*\.",
       rf"\bCREATE\s+(?:UNIQUE\s+)?INDEX\b[^;]*\bON\s+(?:ONLY\s+)?{external_schema}\s*\.",

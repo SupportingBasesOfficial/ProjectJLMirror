@@ -2840,6 +2840,84 @@
       ],
       "systemic_guardrail_updated": true,
       "guardrail_generation": 1000074
+    },
+    {
+      "id": "LEARN-PR177-105",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4109881541,
+      "class_id": "ADV-TRUST-CONTEXT-GAP",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "Dollar-quote masking recognized procedural bodies only when the delimiter immediately followed DO or AS. PostgreSQL permits DO LANGUAGE <lang> <dollar-body>, causing executable DO bodies with cross-domain DML or dynamic EXECUTE to be masked as inert literals.",
+      "horizontal_audit": [
+        "DO LANGUAGE plpgsql",
+        "tagged dollar bodies",
+        "cross-domain DML in procedural blocks",
+        "dynamic EXECUTE visibility",
+        "SQL literal masking"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_cross_domain_mutation"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000075
+    },
+    {
+      "id": "LEARN-PR177-106",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4109881543,
+      "class_id": "ADV-TRUST-CONTEXT-GAP",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "Incident-create validation proved the advisory lock and exact equivalence lookup but did not attest the IF FOUND handler that must reject content-hash mismatch before duplicate success. Removing the conflict branch therefore still passed static scope validation.",
+      "horizontal_audit": [
+        "create replay equivalence",
+        "content_hash mismatch",
+        "duplicate success ordering",
+        "IF FOUND handler",
+        "logical-action idempotency"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_incident_create_replay_equivalence"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000076
+    },
+    {
+      "id": "LEARN-PR177-107",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4109881545,
+      "class_id": "ADV-TRUST-CONTEXT-GAP",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "TRUNCATE fencing required the protected external relation to be the first target after TRUNCATE, but PostgreSQL accepts comma-separated target lists. A protected relation could appear later and still be truncated while evading the gate.",
+      "horizontal_audit": [
+        "TRUNCATE multiple targets",
+        "later external relation targets",
+        "ONLY targets",
+        "quoted schemas",
+        "CASCADE and RESTART IDENTITY suffixes"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_cross_domain_mutation"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000077
     }
   ]
 }

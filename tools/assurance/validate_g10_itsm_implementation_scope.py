@@ -442,19 +442,22 @@ def sql_errors(text,p):
       create_handler=create[create_lookup_raw.end():]
       found_match=re.search(r"\bIF\s+FOUND\s+THEN\b",create_handler,re.I)
       conflict_block=re.search(
-        r"\bIF\s+v_existing\.content_hash\s*(?:<>|IS\s+DISTINCT\s+FROM)\s*v_hash\s+THEN\s+"
-        r"RAISE\s+EXCEPTION\s+'g10\.incident_equivalence_conflict'\s*;\s*END\s+IF\s*;",
+        r"\bIF\s+v_existing\.content_hash\s*(?:<>|IS\s+DISTINCT\s+FROM)\s*v_hash\s+THEN\b"
+        r".*?\bRAISE\s+EXCEPTION\s+'g10\.incident_equivalence_conflict'\s*;"
+        r".*?\bEND\s+IF\s*;",
         create_handler,re.I|re.S
       )
       duplicate_match=re.search(
-        r"\bRETURN\s+jsonb_build_object\s*\([^;]*'duplicate'\s*,\s*TRUE\b[^;]*\)\s*;",
+        r"\bRETURN\s+jsonb_build_object\s*\([^;]*'duplicate'\s*,\s*TRUE[^;]*\)\s*;",
         create_handler,re.I|re.S
       )
+      insert_match=re.search(r"\bINSERT\s+INTO\s+itsm\.incident\s*\(",create_handler,re.I|re.S)
       ordered=(
         found_match is not None
         and conflict_block is not None
         and duplicate_match is not None
-        and found_match.start()<conflict_block.start()<duplicate_match.start()
+        and insert_match is not None
+        and found_match.start()<conflict_block.start()<duplicate_match.start()<insert_match.start()
       )
       if not ordered:
         out.append("G10 Incident create replay handler must reject content mismatch before duplicate success")

@@ -54,7 +54,7 @@ def strip_sql_comments(text):
             out.append(text[i:end+len(delim)])
             i=end+len(delim); continue
           prefix="".join(out)
-          if re.search(r"(?:\bAS|\bDO)\s*$",prefix,re.I):
+          if re.search(r"(?:\bAS|\bDO(?:\s+LANGUAGE\s+(?:\"[^\"]+\"|[A-Za-z_][A-Za-z0-9_]*))?)\s*$",prefix,re.I):
             out.append(delim); body_delim=delim; i+=len(delim); continue
           end=text.find(delim,i+len(delim))
           if end<0:
@@ -433,6 +433,22 @@ def sql_errors(text,p):
     elif unconditional_terminator_before(create_exec,lookup_match.start()) or inside_any_if(create_exec,lookup_match.start()) or inside_any_case(create_exec,lookup_match.start()) or inside_any_loop(create_exec,lookup_match.start()) or inside_exception_handler(create_exec,lookup_match.start()):
       out.append("G10 Incident create equivalence lookup must be top-level reachable on the valid-input path")
 
+    create_replay_bound=re.search(
+      r"SELECT\s+\*\s+INTO\s+v_existing\s+FROM\s+itsm\.incident\s+"
+      r"WHERE\s+tenant_id\s*=\s*p_tenant_id\s+AND\s+logical_action_id\s*=\s*p_logical_action_id\s*;\s*"
+      r"IF\s+FOUND\s+THEN\s+"
+      r"IF\s+v_existing\.content_hash\s*(?:<>|IS\s+DISTINCT\s+FROM)\s*v_hash\s+THEN\s+"
+      r"RAISE\s+EXCEPTION\s+'g10\.incident_equivalence_conflict'\s*;\s*END\s+IF\s*;\s*"
+      r"RETURN\s+jsonb_build_object\s*\((?P<return_body>.*?)\)\s*;\s*END\s+IF\s*;",
+      create_exec,re.I|re.S
+    )
+    if not create_replay_bound:
+      out.append("G10 Incident create replay handler must reject content mismatch before duplicate success")
+    else:
+      create_return_body=create_replay_bound.group("return_body")
+      if not re.search(r"'duplicate'\s*,\s*TRUE\b",create_return_body,re.I|re.S):
+        out.append("G10 Incident create replay handler must return duplicate=true only after equivalence is proven")
+
     transition=function_block(executable,"g10_transition_incident")
     transition_exec=mask_sql_literals(transition)
     replay_bound=re.search(
@@ -468,7 +484,7 @@ def sql_errors(text,p):
       rf"\bDELETE\s+FROM\s+(?:ONLY\s+)?{external_schema}\s*\.",
       rf"\bMERGE\s+INTO\s+(?:ONLY\s+)?{external_schema}\s*\.",
       rf"\bCOPY\s+{external_schema}\s*\.\s*(?:\"[^\"]+\"|[A-Za-z_][A-Za-z0-9_]*)\s*(?:\([^;]*?\))?\s+FROM\b",
-      rf"\bTRUNCATE\s+(?:TABLE\s+)?(?:ONLY\s+)?{external_schema}\s*\.",
+      rf"\bTRUNCATE\b[^;]*{external_schema}\s*\.",
       rf"\b(?:CREATE|DROP)\s+(?:TABLE|VIEW|MATERIALIZED\s+VIEW|SEQUENCE|FUNCTION|PROCEDURE|ROUTINE|TYPE|DOMAIN)\s+(?:IF\s+(?:NOT\s+)?EXISTS\s+)?{external_schema}\s*\.",
       rf"\bALTER\s+(?:TABLE|VIEW|MATERIALIZED\s+VIEW|SEQUENCE)\s+(?:IF\s+EXISTS\s+)?(?:ONLY\s+)?{external_schema}\s*\.",
       rf"\bCREATE\s+(?:UNIQUE\s+)?INDEX\b[^;]*\bON\s+(?:ONLY\s+)?{external_schema}\s*\.",

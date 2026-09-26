@@ -879,6 +879,8 @@ def falsify_g10_cross_domain_mutation():
     require_rejected(GOOD_SQL+"\nDROP TABLE alerting.alert;\n")
     require_rejected(GOOD_SQL+"\nALTER TABLE alerting.alert ADD COLUMN attacker text;\n")
     require_rejected(GOOD_SQL+"\nALTER TABLE ONLY alerting.alert DISABLE TRIGGER ALL;\n")
+    require_rejected(GOOD_SQL+"\nALTER TABLE IF EXISTS ONLY alerting.alert DISABLE TRIGGER ALL;\n")
+    require_rejected(GOOD_SQL+"\nALTER TABLE IF EXISTS ONLY \"notification\".\"delivery\" ENABLE TRIGGER ALL;\n")
     require_rejected(GOOD_SQL+"\nALTER TABLE ONLY \"notification\".\"delivery\" ENABLE TRIGGER ALL;\n")
     require_rejected(GOOD_SQL+"\nINSERT INTO \"alerting\".\"alert\"(tenant_id) VALUES ('t');\n")
     require_rejected(GOOD_SQL+"\nTRUNCATE TABLE \"notification\".\"delivery\";\n")

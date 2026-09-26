@@ -2762,6 +2762,58 @@
       ],
       "systemic_guardrail_updated": true,
       "guardrail_generation": 1000071
+    },
+    {
+      "id": "LEARN-PR177-102",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4099765765,
+      "class_id": "ADV-TRUST-CONTEXT-GAP",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "Cross-domain relation DDL fencing matched ALTER TABLE only when the protected schema immediately followed TABLE, but PostgreSQL permits ALTER TABLE ONLY <relation>. A G10 installer could therefore alter or disable triggers on protected external-domain relations while evading the exact-slice gate.",
+      "horizontal_audit": [
+        "ALTER TABLE ONLY",
+        "ALTER VIEW ONLY-equivalent relation modifiers",
+        "protected external relations",
+        "trigger enable/disable",
+        "quoted schemas"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_cross_domain_mutation"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000072
+    },
+    {
+      "id": "LEARN-PR177-103",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4099765772,
+      "class_id": "ADV-TRUST-CONTEXT-GAP",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "Cross-domain CREATE RULE fencing required RULE immediately after CREATE and omitted PostgreSQL's CREATE OR REPLACE RULE form, allowing rule behavior to be installed or replaced on protected external-domain relations without rejection.",
+      "horizontal_audit": [
+        "CREATE OR REPLACE RULE",
+        "external relation behavior attachment",
+        "rule replacement",
+        "protected Alert relation",
+        "quoted schemas"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_cross_domain_mutation"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000073
     }
   ]
 }

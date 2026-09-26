@@ -2814,6 +2814,32 @@
       ],
       "systemic_guardrail_updated": true,
       "guardrail_generation": 1000073
+    },
+    {
+      "id": "LEARN-PR177-104",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4109859590,
+      "class_id": "ADV-TRUST-CONTEXT-GAP",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "The external ALTER-relation fence permitted optional ONLY and IF EXISTS but encoded them in the wrong order. PostgreSQL uses ALTER TABLE IF EXISTS ONLY <relation>, so an installer could alter a protected external-domain relation while bypassing the regex.",
+      "horizontal_audit": [
+        "ALTER TABLE IF EXISTS ONLY",
+        "quoted external relations",
+        "trigger enable/disable",
+        "protected schema relation DDL",
+        "modifier ordering in PostgreSQL grammar"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_cross_domain_mutation"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000074
     }
   ]
 }

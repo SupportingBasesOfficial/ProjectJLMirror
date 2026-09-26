@@ -67,7 +67,7 @@ BEGIN
   VALUES (p_tenant_id,'fixture-incident',p_alert_id);
   RETURN jsonb_build_object('incident_id','fixture-incident','duplicate',FALSE);
 END;
-$;
+$$;
 
 CREATE OR REPLACE FUNCTION itsm.g10_transition_incident(
  p_tenant_id text,p_incident_id text,p_target_state text,p_actor_principal_id text,

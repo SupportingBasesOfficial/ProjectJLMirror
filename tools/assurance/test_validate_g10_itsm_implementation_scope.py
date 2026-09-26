@@ -420,6 +420,14 @@ def falsify_g10_privileged_role_membership_fence():
       "  LOOP\n    IF v_role.rolcanlogin OR v_role.rolsuper OR v_role.rolcreatedb OR v_role.rolcreaterole\n       OR v_role.rolinherit OR v_role.rolreplication OR v_role.rolbypassrls THEN\n      RAISE EXCEPTION 'g10.role_unsafe:%',v_role.rolname;\n    END IF;\n    IF EXISTS (",
       "  LOOP\n    IF v_role.rolcanlogin THEN\n      RAISE EXCEPTION 'g10.role_unsafe:%',v_role.rolname;\n    END IF;\n    IF EXISTS ("
     ))
+def falsify_g10_incident_create_replay_equivalence():
+    weakened=GOOD_SQL.replace(
+      "    IF v_existing.content_hash<>v_hash THEN RAISE EXCEPTION 'g10.incident_equivalence_conflict'; END IF;\n",
+      ""
+    )
+    assert weakened != GOOD_SQL, "incident replay equivalence mutation was a no-op"
+    require_rejected(weakened)
+
 def falsify_g10_concurrent_incident_create_serialization():
     require_rejected(GOOD_SQL.replace(
       "WHERE tenant_id=p_tenant_id AND logical_action_id=p_logical_action_id;",
@@ -876,6 +884,8 @@ def falsify_g10_cross_domain_mutation():
     require_rejected(GOOD_SQL+"\nCOPY alerting.alert(tenant_id) FROM STDIN;\n")
     require_rejected(GOOD_SQL+"\nCOPY \"notification\".\"delivery\" FROM STDIN;\n")
     require_rejected(GOOD_SQL+"\nTRUNCATE alerting.alert;\n")
+    require_rejected(GOOD_SQL+"\nTRUNCATE TABLE itsm.incident_comment, alerting.alert CASCADE;\n")
+    require_rejected(GOOD_SQL+"\nTRUNCATE TABLE itsm.incident_comment, ONLY \"notification\".\"delivery\" RESTART IDENTITY;\n")
     require_rejected(GOOD_SQL+"\nDROP TABLE alerting.alert;\n")
     require_rejected(GOOD_SQL+"\nALTER TABLE alerting.alert ADD COLUMN attacker text;\n")
     require_rejected(GOOD_SQL+"\nALTER TABLE ONLY alerting.alert DISABLE TRIGGER ALL;\n")
@@ -904,6 +914,8 @@ def falsify_g10_cross_domain_mutation():
     require_rejected(GOOD_SQL+"\nGRANT ALL PRIVILEGES ON SCHEMA notification TO jlmirror_g10_itsm_worker_invoker;\n")
     require_rejected(GOOD_SQL+"\nDO $ BEGIN PERFORM '--'; INSERT INTO alerting.alert(tenant_id,alert_id,lifecycle_state) VALUES ('t','a','active'); END; $;\n")
     require_rejected(GOOD_SQL+"\nDO $ BEGIN PERFORM $q$--$q$; INSERT INTO alerting.alert(tenant_id,alert_id,lifecycle_state) VALUES ('t','a','active'); END; $;\n")
+    require_rejected(GOOD_SQL+"\nDO LANGUAGE plpgsql $ BEGIN DELETE FROM alerting.alert; END $;\n")
+    require_rejected(GOOD_SQL+"\nDO LANGUAGE plpgsql $x$ BEGIN EXECUTE 'DELETE FROM alerting.alert'; END $x$;\n")
     require_rejected(GOOD_SQL+"\nSELECT E'abc\\'--xyz'; INSERT INTO alerting.alert(tenant_id) VALUES ('t');\n")
 
 def falsify_g10_forbidden_vendor_path():
@@ -916,6 +928,7 @@ def main():
  falsify_g10_alert_opened_at_projection()
  falsify_g10_expired_sync_discovery()
  falsify_g10_privileged_role_membership_fence()
+ falsify_g10_incident_create_replay_equivalence()
  falsify_g10_concurrent_incident_create_serialization()
  falsify_g10_transition_replay_equivalence()
  falsify_g10_duplicate_validated_function_definition()

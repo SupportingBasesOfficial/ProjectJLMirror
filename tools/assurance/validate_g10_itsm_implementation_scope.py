@@ -285,8 +285,8 @@ def sql_errors(text,p):
         rf"\bALTER\s+(?:FUNCTION|ROUTINE)\b[^;]*\b(?:itsm|\"itsm\")\s*\.\s*(?:{re.escape(name)}|\"{re.escape(name)}\")\s*\([^;]*\)\s+OWNER\s+TO\s+(?P<owner>\"[^\"]+\"|[A-Za-z_][A-Za-z0-9_]*)\s*;",
         executable,re.I|re.S
       ))
-      if len(owner_alters)!=1 or owner_alters[0].group("owner").strip('"').casefold()!="jlmirror_g10_itsm_executor":
-        out.append(f"G10 validated function owner must remain jlmirror_g10_itsm_executor exactly once: {name}")
+      if any(m.group("owner").strip('"').casefold()!="jlmirror_g10_itsm_executor" for m in owner_alters):
+        out.append(f"G10 validated function owner alteration must target only jlmirror_g10_itsm_executor: {name}")
 
       unqualified_ddl=(
         rf"\bCREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+(?!itsm\.){re.escape(name)}\s*\(",

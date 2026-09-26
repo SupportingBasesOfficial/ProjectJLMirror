@@ -2918,6 +2918,136 @@
       ],
       "systemic_guardrail_updated": true,
       "guardrail_generation": 1000077
+    },
+    {
+      "id": "LEARN-PR177-108",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4110053854,
+      "class_id": "ADV-TRUST-CONTEXT-GAP",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "The protected-role mutation scan began only after END LOOP, so a role mutation placed after both per-role guards but before END LOOP escaped the final-state fence and could modify a role after its own attributes and memberships had been inspected.",
+      "horizontal_audit": [
+        "protected-role loop tail",
+        "ALTER ROLE inside loop",
+        "membership mutation inside loop",
+        "post-guard mutation ordering",
+        "per-role final state"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_privileged_role_membership_fence"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000078
+    },
+    {
+      "id": "LEARN-PR177-109",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4110053856,
+      "class_id": "ADV-TRUST-CONTEXT-GAP",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "Validated-function hardening rejected rename and schema moves but did not constrain OWNER TO alterations after the canonical definitions and ACL audit. A privileged function could therefore be transferred to a runtime invoker after validation.",
+      "horizontal_audit": [
+        "ALTER FUNCTION OWNER TO",
+        "ALTER ROUTINE OWNER TO",
+        "validated function final owner",
+        "runtime invoker ownership",
+        "post-audit function mutation"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_duplicate_validated_function_definition"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000079
+    },
+    {
+      "id": "LEARN-PR177-110",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4110053859,
+      "class_id": "ADV-TRUST-CONTEXT-GAP",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "The Alert summary validator proved that the canonical projection text was executable rather than a literal, but did not require the projection to be reachable on the valid read path. A static-false wrapper could preserve the text while disabling the read.",
+      "horizontal_audit": [
+        "g10_get_incident Alert projection",
+        "IF FALSE reachability",
+        "top-level read path",
+        "opened_at projection",
+        "unconditional terminators"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_alert_opened_at_projection"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000080
+    },
+    {
+      "id": "LEARN-PR177-111",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4110053862,
+      "class_id": "ADV-TRUST-CONTEXT-GAP",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "Incident replay validation checked normalized token ordering after the equivalence lookup but did not bind the IF FOUND handler to an executable reachable position. The canonical-looking handler could be hidden in an unreachable conditional while still satisfying string order.",
+      "horizontal_audit": [
+        "Incident create replay reachability",
+        "IF FOUND binding",
+        "static-false handler",
+        "duplicate success ordering",
+        "equivalence lookup path"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_incident_create_replay_equivalence"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000081
+    },
+    {
+      "id": "LEARN-PR177-112",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4110053864,
+      "class_id": "ADV-TRUST-CONTEXT-GAP",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "Cross-domain mutation enumeration omitted PostgreSQL SELECT ... INTO [TABLE] relation creation, allowing an installer to create a relation directly inside a protected external-domain schema.",
+      "horizontal_audit": [
+        "SELECT INTO relation creation",
+        "SELECT INTO TABLE",
+        "external schema DDL",
+        "quoted schema targets",
+        "cross-domain relation creation"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_cross_domain_mutation"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000082
     }
   ]
 }

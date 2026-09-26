@@ -470,7 +470,7 @@ def sql_errors(text,p):
       rf"\bCOPY\s+{external_schema}\s*\.\s*(?:\"[^\"]+\"|[A-Za-z_][A-Za-z0-9_]*)\s*(?:\([^;]*?\))?\s+FROM\b",
       rf"\bTRUNCATE\s+(?:TABLE\s+)?(?:ONLY\s+)?{external_schema}\s*\.",
       rf"\b(?:CREATE|DROP)\s+(?:TABLE|VIEW|MATERIALIZED\s+VIEW|SEQUENCE|FUNCTION|PROCEDURE|ROUTINE|TYPE|DOMAIN)\s+(?:IF\s+(?:NOT\s+)?EXISTS\s+)?{external_schema}\s*\.",
-      rf"\bALTER\s+(?:TABLE|VIEW|MATERIALIZED\s+VIEW|SEQUENCE)\s+(?:ONLY\s+)?(?:IF\s+EXISTS\s+)?{external_schema}\s*\.",
+      rf"\bALTER\s+(?:TABLE|VIEW|MATERIALIZED\s+VIEW|SEQUENCE)\s+(?:IF\s+EXISTS\s+)?(?:ONLY\s+)?{external_schema}\s*\.",
       rf"\bCREATE\s+(?:UNIQUE\s+)?INDEX\b[^;]*\bON\s+(?:ONLY\s+)?{external_schema}\s*\.",
       rf"\bCREATE\s+(?:CONSTRAINT\s+)?TRIGGER\b[^;]*\bON\s+(?:ONLY\s+)?{external_schema}\s*\.",
       rf"\bDROP\s+TRIGGER\b[^;]*\bON\s+(?:ONLY\s+)?{external_schema}\s*\.",

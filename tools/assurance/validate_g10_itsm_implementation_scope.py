@@ -115,7 +115,7 @@ def mask_sql_literals(text):
               out.extend("\n" if c=="\n" else " " for c in segment)
               i=end+len(delim); continue
           prefix="".join(out)
-          if re.search(r"(?:\bAS|\bDO)\s*$",prefix,re.I):
+          if re.search(r"(?:\bAS|\bDO(?:\s+LANGUAGE\s+(?:\"[^\"]+\"|[A-Za-z_][A-Za-z0-9_]*))?)\s*$",prefix,re.I):
             out.append(delim); body_delim=delim; i+=len(delim); continue
           end=text.find(delim,i+len(delim))
           if end>=0:
@@ -440,7 +440,7 @@ def sql_errors(text,p):
       r"IF\s+v_existing\.content_hash\s*(?:<>|IS\s+DISTINCT\s+FROM)\s*v_hash\s+THEN\s+"
       r"RAISE\s+EXCEPTION\s+'g10\.incident_equivalence_conflict'\s*;\s*END\s+IF\s*;\s*"
       r"RETURN\s+jsonb_build_object\s*\((?P<return_body>.*?)\)\s*;\s*END\s+IF\s*;",
-      create_exec,re.I|re.S
+      create,re.I|re.S
     )
     if not create_replay_bound:
       out.append("G10 Incident create replay handler must reject content mismatch before duplicate success")

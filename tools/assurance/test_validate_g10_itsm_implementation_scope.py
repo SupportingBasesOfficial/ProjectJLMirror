@@ -649,13 +649,7 @@ def falsify_g10_transition_replay_equivalence():
   END CASE;"""
     ))
 
-    transition_block="""CREATE OR REPLACE FUNCTION itsm.g10_transition_incident(
- p_tenant_id text,p_incident_id text,p_target_state text,p_actor_principal_id text,
- p_logical_action_id text,p_authority_snapshot jsonb
-) RETURNS jsonb LANGUAGE plpgsql AS $$
-DECLARE v_existing_transition record;
-BEGIN
-  SELECT * INTO v_existing_transition
+    replay_target="""  SELECT * INTO v_existing_transition
   FROM itsm.incident_transition
   WHERE tenant_id=p_tenant_id AND incident_id=p_incident_id
     AND logical_action_id=p_logical_action_id;
@@ -664,35 +658,13 @@ BEGIN
       RAISE EXCEPTION 'g10.transition_equivalence_conflict';
     END IF;
     RETURN jsonb_build_object('incident_id',p_incident_id,'duplicate',TRUE);
-  END IF;
-  RETURN '{}'::jsonb;
-END;
-$$;"""
-    require_rejected(GOOD_SQL.replace(
-      transition_block,
-      transition_block.replace("AS $$","AS $fn$").replace("$$;","$fn$;").replace(
-        """  SELECT * INTO v_existing_transition
-  FROM itsm.incident_transition
-  WHERE tenant_id=p_tenant_id AND incident_id=p_incident_id
-    AND logical_action_id=p_logical_action_id;
-  IF FOUND THEN
-    IF v_existing_transition.to_state IS DISTINCT FROM p_target_state THEN
-      RAISE EXCEPTION 'g10.transition_equivalence_conflict';
-    END IF;
-    RETURN jsonb_build_object('incident_id',p_incident_id,'duplicate',TRUE);
-  END IF;""",
-        """  /* SELECT * INTO v_existing_transition
-  FROM itsm.incident_transition
-  WHERE tenant_id=p_tenant_id AND incident_id=p_incident_id
-    AND logical_action_id=p_logical_action_id;
-  IF FOUND THEN
-    IF v_existing_transition.to_state IS DISTINCT FROM p_target_state THEN
-      RAISE EXCEPTION 'g10.transition_equivalence_conflict';
-    END IF;
-    RETURN jsonb_build_object('incident_id',p_incident_id,'duplicate',TRUE);
-  END IF; */"""
-      )
-    ))
+  END IF;"""
+    assert replay_target in GOOD_SQL, "transition replay comment mutation target drifted"
+    commented_replay="  /*"+replay_target.strip()+" */"
+    mutated=GOOD_SQL.replace(replay_target,commented_replay,1)
+    assert mutated!=GOOD_SQL, "transition replay comment mutation was a no-op"
+    require_rejected(mutated)
+
 
 def falsify_g10_duplicate_validated_function_definition():
     canonical_worker="""CREATE OR REPLACE FUNCTION itsm.g10_next_sync_candidate(p_tenant_id text)

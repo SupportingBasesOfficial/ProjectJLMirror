@@ -433,39 +433,34 @@ def sql_errors(text,p):
     elif unconditional_terminator_before(create_exec,lookup_match.start()) or inside_any_if(create_exec,lookup_match.start()) or inside_any_case(create_exec,lookup_match.start()) or inside_any_loop(create_exec,lookup_match.start()) or inside_exception_handler(create_exec,lookup_match.start()):
       out.append("G10 Incident create equivalence lookup must be top-level reachable on the valid-input path")
 
-    if lookup_match:
-      create_handler=create[lookup_match.end():]
+    create_lookup_raw=re.search(
+      r"SELECT\s+\*\s+INTO\s+v_existing\s+FROM\s+itsm\.incident\s+"
+      r"WHERE\s+tenant_id\s*=\s*p_tenant_id\s+AND\s+logical_action_id\s*=\s*p_logical_action_id\s*;",
+      create,re.I|re.S
+    )
+    if create_lookup_raw:
+      create_handler=create[create_lookup_raw.end():]
       found_match=re.search(r"\bIF\s+FOUND\s+THEN\b",create_handler,re.I)
-      conflict_match=re.search(
-        r"\bIF\s+v_existing\.content_hash\s*(?:<>|IS\s+DISTINCT\s+FROM)\s*v_hash\s+THEN\b",
-        create_handler,re.I|re.S
-      )
-      raise_match=re.search(
-        r"\bRAISE\s+EXCEPTION\s+'g10\.incident_equivalence_conflict'\s*;",
+      conflict_block=re.search(
+        r"\bIF\s+v_existing\.content_hash\s*(?:<>|IS\s+DISTINCT\s+FROM)\s*v_hash\s+THEN\s+"
+        r"RAISE\s+EXCEPTION\s+'g10\.incident_equivalence_conflict'\s*;\s*END\s+IF\s*;",
         create_handler,re.I|re.S
       )
       duplicate_match=re.search(
         r"\bRETURN\s+jsonb_build_object\s*\([^;]*'duplicate'\s*,\s*TRUE\b[^;]*\)\s*;",
         create_handler,re.I|re.S
       )
-      conflict_end=None
-      if raise_match:
-        conflict_end=re.search(r"\bEND\s+IF\s*;",create_handler[raise_match.end():],re.I|re.S)
-      outer_end=None
-      if duplicate_match:
-        outer_end=re.search(r"\bEND\s+IF\s*;",create_handler[duplicate_match.end():],re.I|re.S)
       ordered=(
         found_match is not None
-        and conflict_match is not None
-        and raise_match is not None
+        and conflict_block is not None
         and duplicate_match is not None
-        and conflict_end is not None
-        and outer_end is not None
-        and found_match.start()<conflict_match.start()<raise_match.start()<duplicate_match.start()
-        and raise_match.end()+conflict_end.start()<duplicate_match.start()
+        and found_match.start()<conflict_block.start()<duplicate_match.start()
       )
       if not ordered:
         out.append("G10 Incident create replay handler must reject content mismatch before duplicate success")
+    else:
+      out.append("G10 Incident create replay handler must bind to the exact equivalence lookup")
+
 
     transition=function_block(executable,"g10_transition_incident")
     transition_exec=mask_sql_literals(transition)

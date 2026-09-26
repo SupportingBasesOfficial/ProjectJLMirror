@@ -187,6 +187,18 @@ def falsify_g10_alert_opened_at_projection():
     FROM alerting.alert WHERE tenant_id=p_tenant_id AND alert_id=v_incident->>'alert_id'
   ) x;$q$;"""
     ))
+    require_rejected(GOOD_SQL.replace(
+      """  SELECT to_jsonb(x) INTO v_alert FROM (
+    SELECT alert_id,lifecycle_state,opened_at,resolved_at
+    FROM alerting.alert WHERE tenant_id=p_tenant_id AND alert_id=v_incident->>'alert_id'
+  ) x;""",
+      """  IF FALSE THEN
+  SELECT to_jsonb(x) INTO v_alert FROM (
+    SELECT alert_id,lifecycle_state,opened_at,resolved_at
+    FROM alerting.alert WHERE tenant_id=p_tenant_id AND alert_id=v_incident->>'alert_id'
+  ) x;
+  END IF;"""
+    ))
 
 def falsify_g10_expired_sync_discovery():
     require_rejected(GOOD_SQL.replace(
@@ -361,6 +373,10 @@ def falsify_g10_privileged_role_membership_fence():
       "    NULL;\n  END LOOP;\n"+guard
     ))
     require_rejected(GOOD_SQL.replace(
+      guard+"\n  END LOOP;",
+      guard+"\n    ALTER ROLE jlmirror_g10_itsm_app_invoker SUPERUSER;\n  END LOOP;"
+    ))
+    require_rejected(GOOD_SQL.replace(
       guard,
       "    IF FALSE THEN\n"+guard+"\n    END IF;"
     ))
@@ -433,6 +449,14 @@ def falsify_g10_incident_create_replay_equivalence():
     )
     assert weakened != GOOD_SQL, "incident replay equivalence mutation was a no-op"
     require_rejected(weakened)
+    replay_handler="""  IF FOUND THEN
+    IF v_existing.content_hash<>v_hash THEN RAISE EXCEPTION 'g10.incident_equivalence_conflict'; END IF;
+    RETURN jsonb_build_object('incident_id',v_existing.incident_id,'duplicate',TRUE);
+  END IF;"""
+    wrapped="  IF FALSE THEN\n"+replay_handler+"\n  END IF;"
+    unreachable=GOOD_SQL.replace(replay_handler,wrapped,1)
+    assert unreachable != GOOD_SQL, "incident replay reachability mutation was a no-op"
+    require_rejected(unreachable)
 
 def falsify_g10_concurrent_incident_create_serialization():
     require_rejected(GOOD_SQL.replace(
@@ -836,6 +860,7 @@ COMMIT;
     require_rejected(GOOD_SQL+"\nSET search_path=itsm;\nDROP FUNCTION g10_next_sync_candidate(text);\nCREATE FUNCTION g10_next_sync_candidate(p_tenant_id text) RETURNS jsonb LANGUAGE plpgsql AS $$ BEGIN RETURN '{}'::jsonb; END; $$;\n")
     require_rejected(GOOD_SQL+"\nCREATE SCHEMA decoy;\nALTER FUNCTION itsm.g10_next_sync_candidate(text) SET SCHEMA decoy;\n")
     require_rejected(GOOD_SQL+"\nCREATE SCHEMA decoy;\nALTER ROUTINE itsm.g10_next_sync_candidate(text) SET SCHEMA decoy;\n")
+    require_rejected(GOOD_SQL+"\nALTER FUNCTION itsm.g10_next_sync_candidate(text) OWNER TO jlmirror_g10_itsm_worker_invoker;\n")
 
 def falsify_g10_hidden_relation():
     require_rejected(GOOD_SQL+"\nCREATE TABLE itsm.hidden(id text);\n")
@@ -864,6 +889,8 @@ def falsify_g10_cross_domain_mutation():
     require_rejected(GOOD_SQL+"\nTRUNCATE alerting.alert;\n")
     require_rejected(GOOD_SQL+"\nTRUNCATE TABLE itsm.incident_comment, alerting.alert CASCADE;\n")
     require_rejected(GOOD_SQL+"\nTRUNCATE TABLE itsm.incident_comment, ONLY \"notification\".\"delivery\" RESTART IDENTITY;\n")
+    require_rejected(GOOD_SQL+"\nSELECT 1 AS x INTO alerting.evil;\n")
+    require_rejected(GOOD_SQL+"\nSELECT 1 AS x INTO TABLE \"notification\".\"evil\";\n")
     require_rejected(GOOD_SQL+"\nDROP TABLE alerting.alert;\n")
     require_rejected(GOOD_SQL+"\nALTER TABLE alerting.alert ADD COLUMN attacker text;\n")
     require_rejected(GOOD_SQL+"\nALTER TABLE ONLY alerting.alert DISABLE TRIGGER ALL;\n")

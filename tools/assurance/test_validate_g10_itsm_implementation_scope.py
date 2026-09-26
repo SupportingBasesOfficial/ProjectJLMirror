@@ -59,9 +59,15 @@ BEGIN
   PERFORM pg_advisory_xact_lock(hashtextextended(p_tenant_id||chr(31)||p_logical_action_id,10));
   SELECT * INTO v_existing FROM itsm.incident
    WHERE tenant_id=p_tenant_id AND logical_action_id=p_logical_action_id;
-  RETURN '{}'::jsonb;
+  IF FOUND THEN
+    IF v_existing.content_hash<>v_hash THEN RAISE EXCEPTION 'g10.incident_equivalence_conflict'; END IF;
+    RETURN jsonb_build_object('incident_id',v_existing.incident_id,'duplicate',TRUE);
+  END IF;
+  INSERT INTO itsm.incident(tenant_id,incident_id,alert_id)
+  VALUES (p_tenant_id,'fixture-incident',p_alert_id);
+  RETURN jsonb_build_object('incident_id','fixture-incident','duplicate',FALSE);
 END;
-$$;
+$;
 
 CREATE OR REPLACE FUNCTION itsm.g10_transition_incident(
  p_tenant_id text,p_incident_id text,p_target_state text,p_actor_principal_id text,

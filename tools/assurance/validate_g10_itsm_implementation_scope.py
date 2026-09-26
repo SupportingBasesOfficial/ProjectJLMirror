@@ -16,6 +16,117 @@ def candidate(root,path,head):
 def fold(v):
     return re.sub(r"[^a-z0-9]+","",unicodedata.normalize("NFKC",v).casefold())
 
+def strip_sql_comments(text):
+    out=[]; i=0; quote=None; escape_string=False; body_delim=None
+    while i<len(text):
+      ch=text[i]
+      if quote=="'":
+        out.append(ch)
+        if escape_string and ch=="\\" and i+1<len(text):
+          out.append(text[i+1]); i+=2; continue
+        if ch=="'" and i+1<len(text) and text[i+1]=="'":
+          out.append(text[i+1]); i+=2; continue
+        if ch=="'":
+          quote=None; escape_string=False
+        i+=1; continue
+      if quote=='"':
+        out.append(ch)
+        if ch=='"' and i+1<len(text) and text[i+1]=='"':
+          out.append(text[i+1]); i+=2; continue
+        if ch=='"': quote=None
+        i+=1; continue
+      if ch in "Ee" and i+1<len(text) and text[i+1]=="'" and (i==0 or not (text[i-1].isalnum() or text[i-1]=="_")):
+        out.append(ch); out.append("'"); quote="'"; escape_string=True; i+=2; continue
+      if ch=="'":
+        quote="'"; escape_string=False; out.append(ch); i+=1; continue
+      if ch=='"':
+        quote='"'; out.append(ch); i+=1; continue
+      if ch=="$":
+        delim_match=re.match(r"\$\$|\$[A-Za-z_][A-Za-z0-9_]*\$",text[i:])
+        if delim_match:
+          delim=delim_match.group(0)
+          if body_delim==delim:
+            out.append(delim); body_delim=None; i+=len(delim); continue
+          if body_delim is not None:
+            end=text.find(delim,i+len(delim))
+            if end<0:
+              out.append(text[i:]); break
+            out.append(text[i:end+len(delim)])
+            i=end+len(delim); continue
+          prefix="".join(out)
+          if re.search(r"(?:\bAS|\bDO(?:\s+LANGUAGE\s+(?:\"[^\"]+\"|[A-Za-z_][A-Za-z0-9_]*))?)\s*$",prefix,re.I):
+            out.append(delim); body_delim=delim; i+=len(delim); continue
+          end=text.find(delim,i+len(delim))
+          if end<0:
+            out.append(text[i:]); break
+          out.append(text[i:end+len(delim)])
+          i=end+len(delim); continue
+      if text.startswith("--",i):
+        end=text.find("\n",i)
+        if end<0: break
+        out.append("\n"); i=end+1; continue
+      if text.startswith("/*",i):
+        start=i; depth=1; i+=2
+        while i<len(text) and depth:
+          if text.startswith("/*",i):
+            depth+=1; i+=2; continue
+          if text.startswith("*/",i):
+            depth-=1; i+=2; continue
+          i+=1
+        segment=text[start:i]
+        out.append("\n"*segment.count("\n"))
+        continue
+      out.append(ch); i+=1
+    return "".join(out)
+
+def mask_sql_literals(text):
+    out=[]; i=0; body_delim=None
+    while i<len(text):
+      if text[i] in "Ee" and i+1<len(text) and text[i+1]=="'" and (i==0 or not (text[i-1].isalnum() or text[i-1]=="_")):
+        out.extend((" "," ")); i+=2
+        while i<len(text):
+          if text[i]=="\\" and i+1<len(text):
+            out.extend((" "," ")); i+=2; continue
+          if text[i]=="'" and i+1<len(text) and text[i+1]=="'":
+            out.extend((" "," ")); i+=2; continue
+          if text[i]=="'":
+            out.append(" "); i+=1; break
+          out.append("\n" if text[i]=="\n" else " "); i+=1
+        continue
+      if text[i]=="'":
+        out.append(" "); i+=1
+        while i<len(text):
+          if text[i]=="'" and i+1<len(text) and text[i+1]=="'":
+            out.extend((" "," ")); i+=2; continue
+          if text[i]=="'":
+            out.append(" "); i+=1; break
+          out.append("\n" if text[i]=="\n" else " "); i+=1
+        continue
+      if text[i]=="$":
+        delim_match=re.match(r"\$\$|\$[A-Za-z_][A-Za-z0-9_]*\$",text[i:])
+        if delim_match:
+          delim=delim_match.group(0)
+          if body_delim==delim:
+            out.append(delim); body_delim=None; i+=len(delim); continue
+          if body_delim is not None:
+            end=text.find(delim,i+len(delim))
+            if end>=0:
+              segment=text[i:end+len(delim)]
+              out.extend("\n" if c=="\n" else " " for c in segment)
+              i=end+len(delim); continue
+          prefix="".join(out)
+          if re.search(r"(?:\bAS|\bDO(?:\s+LANGUAGE\s+(?:\"[^\"]+\"|[A-Za-z_][A-Za-z0-9_]*))?)\s*$",prefix,re.I):
+            out.append(delim); body_delim=delim; i+=len(delim); continue
+          end=text.find(delim,i+len(delim))
+          if end>=0:
+            segment=text[i:end+len(delim)]
+            out.extend("\n" if c=="\n" else " " for c in segment)
+            i=end+len(delim); continue
+      out.append(text[i]); i+=1
+    return "".join(out)
+
+
+
 def semantic_errors(path,text,p):
     if Path(path).suffix.lower() not in EXECUTABLE_SUFFIXES:return []
     out=[]; f=fold(text)
@@ -25,22 +136,402 @@ def semantic_errors(path,text,p):
       out.append(f"direct SQL/schema mutation is forbidden in G10 application executable artifact: {path}")
     return out
 
+def function_block(text,name):
+    executable=strip_sql_comments(text)
+    start_match=re.search(
+      rf"\bCREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+(?:itsm|\"itsm\")\s*\.\s*(?:{re.escape(name)}|\"{re.escape(name)}\")\s*\(",
+      executable,re.I
+    )
+    if not start_match:return ""
+    next_match=re.search(
+      r"\bCREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+(?:(?:[A-Za-z_][A-Za-z0-9_]*|\"[^\"]+\")\s*\.\s*)?(?:[A-Za-z_][A-Za-z0-9_]*|\"[^\"]+\")\s*\(",
+      executable[start_match.end():],re.I
+    )
+    if not next_match:return executable[start_match.start():]
+    end=start_match.end()+next_match.start()
+    return executable[start_match.start():end]
+
+def function_occurrences(text,name):
+    executable=strip_sql_comments(text)
+    return list(re.finditer(
+      rf"\bCREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+(?:itsm|\"itsm\")\s*\.\s*(?:{re.escape(name)}|\"{re.escape(name)}\")\s*\(",
+      executable,re.I
+    ))
+
+def inside_static_false(block,pos):
+    prefix=block[:pos]
+    false_starts=[m.start() for m in re.finditer(r"\bIF\s+(?:FALSE|0\s*=\s*1|1\s*=\s*0)\s+THEN\b",prefix,re.I)]
+    if not false_starts:return False
+    last=false_starts[-1]
+    return not re.search(r"\bEND\s+IF\s*;",prefix[last:],re.I)
+
+def inside_any_if(block,pos):
+    prefix=block[:pos]
+    tokens=list(re.finditer(r"\bIF\b[^;]*?\bTHEN\b|\bEND\s+IF\s*;",prefix,re.I|re.S))
+    depth=0
+    for token in tokens:
+        if re.fullmatch(r"\bEND\s+IF\s*;",token.group(0),re.I|re.S):
+            depth=max(0,depth-1)
+        else:
+            depth+=1
+    return depth>0
+
+def inside_any_case(block,pos):
+    prefix=block[:pos]
+    tokens=list(re.finditer(r"\bEND\s+CASE\s*;|\bCASE\b",prefix,re.I))
+    depth=0
+    for token in tokens:
+        if re.fullmatch(r"\bEND\s+CASE\s*;",token.group(0),re.I):
+            depth=max(0,depth-1)
+        else:
+            depth+=1
+    return depth>0
+
+def inside_any_loop(block,pos):
+    prefix=block[:pos]
+    tokens=list(re.finditer(r"\bEND\s+LOOP\s*;|\bLOOP\b",prefix,re.I))
+    depth=0
+    for token in tokens:
+        if re.fullmatch(r"\bEND\s+LOOP\s*;",token.group(0),re.I):
+            depth=max(0,depth-1)
+        else:
+            depth+=1
+    return depth>0
+
+def inside_exception_handler(block,pos):
+    prefix=block[:pos]
+    tokens=list(re.finditer(r"\bBEGIN\b|\bEXCEPTION\b|\bEND\s*;",prefix,re.I))
+    stack=[]
+    for token in tokens:
+        value=token.group(0).upper()
+        if value=="BEGIN":
+            stack.append(False)
+        elif value=="EXCEPTION":
+            if re.search(r"\bRAISE\s*$",prefix[:token.start()],re.I):
+                continue
+            if stack: stack[-1]=True
+        else:
+            if stack: stack.pop()
+    return any(stack)
+
+def unconditional_terminator_before(block,pos):
+    for match in re.finditer(r"\b(?:RETURN|RAISE)\b",block[:pos],re.I):
+        if not inside_any_if(block,match.start()) and not inside_any_case(block,match.start()) and not inside_any_loop(block,match.start()) and not inside_exception_handler(block,match.start()):
+            return True
+    return False
+
 def sql_errors(text,p):
-    out=[]; f=fold(text)
+    executable=strip_sql_comments(text)
+    out=[]
+    if re.search(r"\bSET\s+(?:(?:LOCAL|SESSION)\s+)?standard_conforming_strings\b",text,re.I):
+      out.append("G10 exact SQL cannot mutate standard_conforming_strings because comment/literal attestation requires fixed standard string semantics")
+    f=fold(executable)
     for m in ("incident_id","alert_id","incident_transition","incident_assignment","incident_comment","provider_link","sync_outbox","tenant_id"):
       if fold(m) not in f:out.append(f"G10 exact SQL missing marker: {m}")
+
+    validated_functions=("g10_get_incident","g10_next_sync_candidate","g10_create_incident","g10_transition_incident")
+    context_scan=executable
+    # Canonical SECURITY DEFINER/INVOKER function configuration is definition-time metadata,
+    # not a mutable session statement. Mask only the exact attached function SET clauses.
+    context_scan=re.sub(
+      r"(CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\b.*?\bLANGUAGE\s+plpgsql\b(?:\s+SECURITY\s+(?:DEFINER|INVOKER))?)"
+      r"\s+SET\s+search_path\s*=\s*pg_catalog\s*,\s*itsm(?:\s*,\s*alerting)?\s+(?=AS\s+\$)",
+      lambda m:m.group(1)+" ",
+      context_scan,flags=re.I|re.S
+    )
+    # Canonical tenant RLS binding is transaction-local (third argument TRUE) and bounded
+    # to the already-authorized jlmirror.tenant_id key. Any other set_config remains forbidden.
+    context_scan=re.sub(
+      r"\bPERFORM\s+(?:pg_catalog\s*\.\s*)?(?:set_config|\"set_config\")\s*\(\s*'jlmirror\.tenant_id'\s*,\s*p_tenant_id\s*,\s*TRUE\s*\)\s*;",
+      " ",
+      context_scan,flags=re.I
+    )
+    context_without_literals=mask_sql_literals(context_scan)
+    executable_without_literals=mask_sql_literals(executable)
+    if re.search(r'\b(?:pg_catalog\s*\.\s*)?(?:set_config|"set_config")\s*\(',context_without_literals,re.I):
+      out.append("G10 exact SQL forbids noncanonical executable set_config because mutable session semantics must remain statically attestable")
+    if re.search(r"\bSET\s+(?:(?:LOCAL|SESSION)\s+)?search_path\b",context_without_literals,re.I) or re.search(r"\bSET\s+SCHEMA\b",context_without_literals,re.I):
+      out.append("G10 exact SQL forbids statement-level search_path/SET SCHEMA changes because mutation targets must remain explicitly qualified")
+    if re.search(r"\bEXECUTE\b(?!\s+(?:FUNCTION\b|ON\s+FUNCTION\b))",context_without_literals,re.I):
+      out.append("G10 exact SQL forbids dynamic EXECUTE because validated DDL and guard semantics must remain statically attestable")
+    for name in validated_functions:
+      for ident_match in re.finditer(
+        r'\b(?:CREATE\s+(?:OR\s+REPLACE\s+)?|DROP\s+(?:IF\s+EXISTS\s+)?|ALTER\s+)FUNCTION\s+(?P<schema>"[^"]+"|[A-Za-z_][A-Za-z0-9_]*)\s*\.\s*(?P<fn>"[^"]+"|[A-Za-z_][A-Za-z0-9_]*)\s*\(',
+        executable,re.I
+      ):
+        schema_token,fn_token=ident_match.group("schema"),ident_match.group("fn")
+        if schema_token.startswith('"'):
+          quoted_schema=schema_token[1:-1]
+          if quoted_schema.casefold()=="itsm" and quoted_schema!="itsm":
+            out.append(f'G10 quoted canonical schema identifier must preserve exact case: "{quoted_schema}"')
+        if fn_token.startswith('"'):
+          quoted_name=fn_token[1:-1]
+          if quoted_name.casefold()==name.casefold() and quoted_name!=name:
+            out.append(f'G10 quoted validated function identifier must preserve exact case: "{quoted_name}"')
+      if len(function_occurrences(executable,name))!=1:
+        out.append(f"G10 validated function must have exactly one definition: {name}")
+
+      if re.search(rf"\bDROP\s+FUNCTION\b[^;]*\b(?:itsm|\"itsm\")\s*\.\s*(?:{re.escape(name)}|\"{re.escape(name)}\")\s*\(",executable,re.I|re.S):
+        out.append(f"G10 validated function cannot be dropped/recreated inside the exact SQL artifact: {name}")
+
+      if re.search(rf"\bALTER\s+(?:FUNCTION|ROUTINE)\b[^;]*\b(?:itsm|\"itsm\")\s*\.\s*(?:{re.escape(name)}|\"{re.escape(name)}\")\s*\([^;]*\)\s+RENAME\s+TO\b",executable,re.I|re.S):
+        out.append(f"G10 validated function cannot be renamed inside the exact SQL artifact: {name}")
+      if re.search(rf"\bALTER\s+(?:FUNCTION|ROUTINE)\b[^;]*\bRENAME\s+TO\s+(?:{re.escape(name)}|\"{re.escape(name)}\")\b",executable,re.I|re.S):
+        out.append(f"G10 validated function name cannot be installed by rename: {name}")
+      if re.search(rf"\bALTER\s+(?:FUNCTION|ROUTINE)\b[^;]*\b(?:itsm|\"itsm\")\s*\.\s*(?:{re.escape(name)}|\"{re.escape(name)}\")\s*\([^;]*\)\s+SET\s+SCHEMA\b",executable,re.I|re.S):
+        out.append(f"G10 validated function cannot be moved to another schema: {name}")
+
+      owner_alters=list(re.finditer(
+        rf"\bALTER\s+(?:FUNCTION|ROUTINE)\b[^;]*\b(?:itsm|\"itsm\")\s*\.\s*(?:{re.escape(name)}|\"{re.escape(name)}\")\s*\([^;]*\)\s+OWNER\s+TO\s+(?P<owner>\"[^\"]+\"|[A-Za-z_][A-Za-z0-9_]*)\s*;",
+        executable,re.I|re.S
+      ))
+      if any(m.group("owner").strip('"').casefold()!="jlmirror_g10_itsm_executor" for m in owner_alters):
+        out.append(f"G10 validated function owner alteration must target only jlmirror_g10_itsm_executor: {name}")
+
+      unqualified_ddl=(
+        rf"\bCREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+(?!itsm\.){re.escape(name)}\s*\(",
+        rf"\bDROP\s+FUNCTION\s+(?:IF\s+EXISTS\s+)?(?!itsm\.){re.escape(name)}\s*\(",
+        rf"\bALTER\s+(?:FUNCTION|ROUTINE)\s+(?!itsm\.){re.escape(name)}\s*\("
+      )
+      if any(re.search(pattern,executable,re.I|re.S) for pattern in unqualified_ddl):
+        out.append(f"G10 validated function DDL must be explicitly itsm-qualified: {name}")
+
+    incident_read=function_block(executable,"g10_get_incident")
+    incident_read_exec=mask_sql_literals(incident_read)
+    alert_match=re.search(
+      r"SELECT\s+to_jsonb\s*\(\s*x\s*\)\s+INTO\s+v_alert\s+FROM\s*\(\s*"
+      r"SELECT\s+alert_id\s*,\s*lifecycle_state\s*,\s*(?:[A-Za-z_][A-Za-z0-9_]*\s*\.\s*)?opened_at\s*,\s*resolved_at\s+"
+      r"FROM\s+alerting\.alert\s+WHERE\s+tenant_id\s*=\s*p_tenant_id\s+AND\s+alert_id\s*=\s*v_incident\s*->>\s*'alert_id'\s*"
+      r"\)\s*x\s*;",
+      incident_read,re.I|re.S
+    )
+    alert_exec=False
+    if alert_match:
+      span=incident_read_exec[alert_match.start():alert_match.end()]
+      alert_exec=bool(
+        re.search(r"SELECT\s+to_jsonb\s*\(\s*x\s*\)\s+INTO\s+v_alert\s+FROM\s*\(",span,re.I|re.S)
+        and re.search(r"SELECT\s+alert_id\s*,\s*lifecycle_state\s*,\s*(?:[A-Za-z_][A-Za-z0-9_]*\s*\.\s*)?opened_at\s*,\s*resolved_at\s+FROM\s+alerting\.alert\b",span,re.I|re.S)
+      )
+    if not alert_match or not alert_exec:
+      out.append("G10 Incident Alert summary must directly project executable alerting.alert.opened_at with canonical tenant+alert provenance")
+
+    elif inside_static_false(incident_read_exec,alert_match.start()) or inside_any_if(incident_read_exec,alert_match.start()) or inside_any_case(incident_read_exec,alert_match.start()) or inside_any_loop(incident_read_exec,alert_match.start()) or inside_exception_handler(incident_read_exec,alert_match.start()) or unconditional_terminator_before(incident_read_exec,alert_match.start()):
+      out.append("G10 Incident Alert summary projection must be top-level reachable on the valid read path")
+
+    discovery=function_block(executable,"g10_next_sync_candidate")
+    discovery_exec=mask_sql_literals(discovery)
+    pending_branch=r"\(\s*o\.sync_state\s*=\s*'pending'\s+AND\s+o\.available_at\s*<=\s*transaction_timestamp\s*\(\s*\)\s*\)"
+    expired_branch=r"\(\s*o\.sync_state\s*=\s*'dispatching'\s+AND\s+o\.claim_expires_at\s*<=\s*transaction_timestamp\s*\(\s*\)\s*\)"
+    candidate_query=re.search(
+      r"SELECT\s+to_jsonb\s*\(\s*x\s*\)\s+INTO\s+v_result\s+FROM\s*\((?P<body>.*?)\)\s*x\s*;\s*"
+      r"RETURN\s+v_result\s*;",
+      discovery,re.I|re.S
+    )
+    if not candidate_query:
+      out.append("G10 worker discovery must populate and return v_result from the bounded candidate query")
+    elif not re.match(r"SELECT\s+to_jsonb\s*\(\s*x\s*\)\s+INTO\s+v_result\s+FROM\s*\(",discovery_exec[candidate_query.start():],re.I|re.S) or not re.search(r"RETURN\s+v_result\s*;",discovery_exec[candidate_query.start():candidate_query.end()],re.I|re.S):
+      out.append("G10 worker discovery evidence must be executable SQL, not literal contents")
+    elif inside_static_false(discovery_exec,candidate_query.start()) or inside_any_if(discovery_exec,candidate_query.start()) or inside_any_case(discovery_exec,candidate_query.start()) or inside_any_loop(discovery_exec,candidate_query.start()) or inside_exception_handler(discovery_exec,candidate_query.start()) or unconditional_terminator_before(discovery_exec,candidate_query.start()):
+      out.append("G10 worker candidate query must be top-level reachable on the valid-input path before any unconditional terminator")
+    else:
+      candidate_body=candidate_query.group("body")
+      canonical_source=re.search(
+        r"\bFROM\s+itsm\.incident_sync_outbox\s+o\b",
+        candidate_body,re.I
+      )
+      reachable_expired=re.search(
+        r"WHERE\s+o\.tenant_id\s*=\s*p_tenant_id\s+AND\s*\(\s*"+
+        pending_branch+r"\s*OR\s*"+expired_branch+
+        r"\s*\)\s*(?:ORDER\s+BY\b.*?\s+)?LIMIT\s+1\s*$",
+        candidate_body,re.I|re.S
+      )
+      source_to_filter=(candidate_body[canonical_source.end():reachable_expired.start()] if canonical_source and reachable_expired else "")
+      canonical_payload_join=re.fullmatch(
+        r"\s*(?:JOIN\s+itsm\.incident\s+i\s+ON\s+i\.tenant_id\s*=\s*o\.tenant_id\s+AND\s+i\.incident_id\s*=\s*o\.incident_id\s*)?",
+        source_to_filter,re.I|re.S
+      )
+      if not canonical_source or not reachable_expired or canonical_source.start()>=reachable_expired.start() or not canonical_payload_join:
+        out.append("G10 returned worker candidate must read the canonical sync-outbox relation with only the tenant-bound Incident payload join and the complete tenant-scoped pending OR expired-dispatching filter")
+
+    membership_loop=None; membership_do_body=""; membership_loop_start=-1; membership_post_start=-1
+    for do_match in re.finditer(r"\bDO\s+\$\$(?P<body>.*?)\$\$\s*;",executable,re.I|re.S):
+      do_body=do_match.group("body")
+      candidate_loop=re.search(
+        r"FOR\s+v_role\s+IN\s+SELECT\s+\*\s+FROM\s+pg_catalog\.pg_roles\s+WHERE\s+rolname\s+IN\s*\("
+        r"\s*'jlmirror_g10_itsm_executor'\s*,\s*'jlmirror_g10_itsm_app_invoker'\s*,\s*'jlmirror_g10_itsm_worker_invoker'\s*"
+        r"\)\s+LOOP(?P<body>.*?)END\s+LOOP\s*;",
+        do_body,re.I|re.S
+      )
+      if candidate_loop:
+        membership_loop=candidate_loop
+        membership_do_body=do_body
+        membership_loop_start=candidate_loop.start()
+        membership_post_start=do_match.start("body")+candidate_loop.end()
+        break
+    loop_body=membership_loop.group("body") if membership_loop else ""
+    membership_do_exec=mask_sql_literals(membership_do_body)
+    loop_exec=mask_sql_literals(loop_body)
+    attribute_guard=re.search(
+      r"IF\s+v_role\.rolcanlogin\s+OR\s+v_role\.rolsuper\s+OR\s+v_role\.rolcreatedb\s+OR\s+v_role\.rolcreaterole\s+"
+      r"OR\s+v_role\.rolinherit\s+OR\s+v_role\.rolreplication\s+OR\s+v_role\.rolbypassrls\s+THEN\s+"
+      r"RAISE\s+EXCEPTION\s+[^;]+,\s*v_role\.rolname\s*;\s*END\s+IF\s*;",
+      loop_exec,re.I|re.S
+    )
+    membership_guard=re.search(
+      r"IF\s+EXISTS\s*\(\s*SELECT\s+1\s+FROM\s+pg_catalog\.pg_auth_members\s+WHERE\s+"
+      r"(?:roleid\s*=\s*v_role\.oid\s+OR\s+member\s*=\s*v_role\.oid|"
+      r"member\s*=\s*v_role\.oid\s+OR\s+roleid\s*=\s*v_role\.oid)"
+      r"\s*\)\s*THEN\s+RAISE\s+EXCEPTION\s+",
+      loop_exec,re.I|re.S
+    )
+    if not membership_loop or not attribute_guard or not membership_guard:
+      out.append("G10 privileged-role preflight must use the exact literal three-role loop with complete unsafe-attribute and membership guards")
+    elif inside_any_if(membership_do_exec,membership_loop_start) or inside_any_case(membership_do_exec,membership_loop_start) or inside_any_loop(membership_do_exec,membership_loop_start) or inside_exception_handler(membership_do_exec,membership_loop_start) or unconditional_terminator_before(membership_do_exec,membership_loop_start):
+      out.append("G10 privileged-role membership loop must be top-level and reachable during installation")
+    elif inside_any_if(loop_exec,attribute_guard.start()) or inside_any_case(loop_exec,attribute_guard.start()) or inside_any_loop(loop_exec,attribute_guard.start()) or inside_exception_handler(loop_exec,attribute_guard.start()) or unconditional_terminator_before(loop_exec,attribute_guard.start()):
+      out.append("G10 privileged-role unsafe-attribute guard must be top-level and executable for every protected role")
+    elif inside_any_if(loop_exec,membership_guard.start()) or inside_any_case(loop_exec,membership_guard.start()) or inside_any_loop(loop_exec,membership_guard.start()) or inside_exception_handler(loop_exec,membership_guard.start()) or re.search(r"\b(?:CONTINUE|EXIT)\b(?:\s+WHEN\s+[^;]+)?\s*;",loop_exec[:membership_guard.start()],re.I|re.S):
+      out.append("G10 privileged-role membership guard must be top-level and executable for every role in the exact three-role loop")
+
+    protected_roles=r"(?:jlmirror_g10_itsm_executor|jlmirror_g10_itsm_app_invoker|jlmirror_g10_itsm_worker_invoker|\"jlmirror_g10_itsm_executor\"|\"jlmirror_g10_itsm_app_invoker\"|\"jlmirror_g10_itsm_worker_invoker\")"
+    if membership_loop and membership_guard:
+      loop_tail=loop_body[membership_guard.end():]
+      loop_tail_exec=mask_sql_literals(loop_tail)
+      loop_tail_role_mutation=(
+        re.search(rf"\bALTER\s+(?:ROLE|USER)\s+{protected_roles}(?=\s|;)[^;]*;",loop_tail_exec,re.I|re.S)
+        or re.search(rf"\bCREATE\s+(?:ROLE|USER|GROUP)\s+{protected_roles}(?=\s|;)[^;]*;",loop_tail_exec,re.I|re.S)
+        or re.search(rf"\b(?:GRANT|REVOKE)\b[^;]*{protected_roles}[^;]*;",loop_tail_exec,re.I|re.S)
+      )
+      if loop_tail_role_mutation:
+        out.append("G10 protected-role loop cannot mutate protected roles after completing the per-role guards")
+
+    if membership_post_start>=0:
+      post_membership=executable[membership_post_start:]
+      membership_mutation=False
+      for stmt in re.finditer(r"\b(?P<verb>GRANT|REVOKE)\b(?P<body>[^;]*);",post_membership,re.I|re.S):
+        body=stmt.group("body")
+        body_without_quoted=re.sub(r'"(?:[^"]|"")*"',lambda m:" "*len(m.group(0)),body)
+        target_kw="TO" if stmt.group("verb").upper()=="GRANT" else "FROM"
+        target_match=re.search(rf"\b{target_kw}\b",body_without_quoted,re.I)
+        if not target_match:
+          continue
+        before_target=body_without_quoted[:target_match.start()]
+        if re.search(r"\bON\b",before_target,re.I):
+          continue
+        if re.search(protected_roles,body,re.I):
+          membership_mutation=True
+          break
+      membership_change=(
+        r"\bCREATE\s+(?:ROLE|USER)\b[^;]*\b(?:IN\s+ROLE|ROLE|ADMIN)\b[^;]*;",
+        r"\bALTER\s+GROUP\b[^;]*\b(?:ADD|DROP)\s+USER\b[^;]*;"
+      )
+      role_attribute_change=re.search(
+        rf"\bALTER\s+(?:ROLE|USER)\s+{protected_roles}(?=\s|;)[^;]*;",
+        post_membership,re.I|re.S
+      )
+      protected_role_create=re.search(
+        rf"\bCREATE\s+(?:ROLE|USER|GROUP)\s+{protected_roles}(?=\s|;)[^;]*;",
+        post_membership,re.I|re.S
+      )
+      if membership_mutation or any(re.search(pattern,post_membership,re.I) for pattern in membership_change) or role_attribute_change or protected_role_create:
+        out.append("G10 protected roles cannot be created, have membership changed, or have role attributes changed after the final installation membership preflight")
+
+    create=function_block(executable,"g10_create_incident")
+    create_exec=mask_sql_literals(create)
+    lock_match=re.search(
+      r"\bPERFORM\s+pg_advisory_xact_lock\s*\(\s*hashtextextended\s*\(\s*p_tenant_id\s*\|\|\s*chr\s*\(\s*31\s*\)\s*\|\|\s*p_logical_action_id\s*,\s*10\s*\)\s*\)\s*;",
+      create_exec,re.I|re.S
+    )
+    lookup_match=re.search(
+      r"SELECT\s+\*\s+INTO\s+v_existing\s+FROM\s+itsm\.incident\s+"
+      r"WHERE\s+tenant_id\s*=\s*p_tenant_id\s+AND\s+logical_action_id\s*=\s*p_logical_action_id\s*;",
+      create_exec,re.I|re.S
+    )
+    if not lock_match or not lookup_match or lock_match.start()>=lookup_match.start():
+      out.append("G10 Incident create must acquire the logical-action advisory lock before equivalence lookup")
+    elif unconditional_terminator_before(create_exec,lock_match.start()) or inside_any_if(create_exec,lock_match.start()) or inside_any_case(create_exec,lock_match.start()) or inside_any_loop(create_exec,lock_match.start()) or inside_exception_handler(create_exec,lock_match.start()):
+      out.append("G10 Incident create logical-action lock must be top-level and dominate the equivalence lookup on the valid-input path")
+    elif unconditional_terminator_before(create_exec,lookup_match.start()) or inside_any_if(create_exec,lookup_match.start()) or inside_any_case(create_exec,lookup_match.start()) or inside_any_loop(create_exec,lookup_match.start()) or inside_exception_handler(create_exec,lookup_match.start()):
+      out.append("G10 Incident create equivalence lookup must be top-level reachable on the valid-input path")
+
+    create_norm=re.sub(r"\s+"," ",create).strip()
+    replay_lookup="SELECT * INTO v_existing FROM itsm.incident WHERE tenant_id=p_tenant_id AND logical_action_id=p_logical_action_id;"
+    replay_found="IF FOUND THEN"
+    replay_conflict="IF v_existing.content_hash<>v_hash THEN RAISE EXCEPTION 'g10.incident_equivalence_conflict'; END IF;"
+    replay_duplicate="RETURN jsonb_build_object('incident_id',v_existing.incident_id,'duplicate',TRUE);"
+    replay_insert="INSERT INTO itsm.incident("
+    lookup_pos=create_norm.find(replay_lookup)
+    found_pos=create_norm.find(replay_found,lookup_pos+len(replay_lookup)) if lookup_pos>=0 else -1
+    conflict_pos=create_norm.find(replay_conflict,found_pos+len(replay_found)) if found_pos>=0 else -1
+    duplicate_pos=create_norm.find(replay_duplicate,conflict_pos+len(replay_conflict)) if conflict_pos>=0 else -1
+    insert_pos=create_norm.find(replay_insert,duplicate_pos+len(replay_duplicate)) if duplicate_pos>=0 else -1
+    if not (0<=lookup_pos<found_pos<conflict_pos<duplicate_pos<insert_pos):
+      out.append("G10 Incident create replay handler must reject content mismatch before duplicate success")
+    elif lookup_match:
+      found_exec=re.search(r"\bIF\s+FOUND\s+THEN\b",create_exec[lookup_match.end():],re.I)
+      if not found_exec:
+        out.append("G10 Incident create replay handler must be executable, not literal contents")
+      else:
+        found_exec_pos=lookup_match.end()+found_exec.start()
+        between=create_exec[lookup_match.end():found_exec_pos]
+        if between.strip() or inside_static_false(create_exec,found_exec_pos) or inside_any_if(create_exec,found_exec_pos) or inside_any_case(create_exec,found_exec_pos) or inside_any_loop(create_exec,found_exec_pos) or inside_exception_handler(create_exec,found_exec_pos) or unconditional_terminator_before(create_exec,found_exec_pos):
+          out.append("G10 Incident create replay handler must be directly bound and reachable after the equivalence lookup")
+
+    transition=function_block(executable,"g10_transition_incident")
+    transition_exec=mask_sql_literals(transition)
+    replay_bound=re.search(
+      r"SELECT\s+\*\s+INTO\s+v_existing_transition\s+FROM\s+itsm\.incident_transition\s+"
+      r"WHERE\s+tenant_id\s*=\s*p_tenant_id\s+AND\s+incident_id\s*=\s*p_incident_id\s+"
+      r"AND\s+logical_action_id\s*=\s*p_logical_action_id\s*;\s*"
+      r"IF\s+FOUND\s+THEN\s+"
+      r"IF\s+v_existing_transition\.to_state\s+IS\s+DISTINCT\s+FROM\s+p_target_state\s+THEN\s+"
+      r"RAISE\s+EXCEPTION\s+'g10\.transition_equivalence_conflict'\s*;\s*END\s+IF\s*;\s*"
+      r"RETURN\s+jsonb_build_object\s*\((?P<return_body>.*?)\)\s*;\s*END\s+IF\s*;",
+      transition,re.I|re.S
+    )
+    if not replay_bound:
+      out.append("G10 transition replay must bind FOUND to the same tenant+incident+logical-action lookup before conflict/duplicate handling")
+    elif not re.match(r"SELECT\s+\*\s+INTO\s+v_existing_transition\b",transition_exec[replay_bound.start():],re.I|re.S) or not re.search(r"RETURN\s+jsonb_build_object\s*\(",transition_exec[replay_bound.start():replay_bound.end()],re.I|re.S):
+      out.append("G10 transition replay evidence must be executable SQL, not literal contents")
+    elif inside_any_if(transition_exec,replay_bound.start()) or inside_any_case(transition_exec,replay_bound.start()) or inside_any_loop(transition_exec,replay_bound.start()) or inside_exception_handler(transition_exec,replay_bound.start()) or unconditional_terminator_before(transition_exec,replay_bound.start()):
+      out.append("G10 transition replay lookup/conflict block must be top-level reachable on the main transition path")
+    elif not re.search(r"'duplicate'\s*,\s*TRUE",replay_bound.group("return_body"),re.I):
+      out.append("G10 transition replay lookup must return explicit duplicate success only after equivalence validation")
+
     allowed_rel={x.casefold() for x in p["exact_sql_allowed_relations"]}
-    for schema,table in re.findall(r'\bcreate\s+table(?:\s+if\s+not\s+exists)?\s+"?([a-zA-Z_][\w]*)"?\s*\.\s*"?([a-zA-Z_][\w]*)"?',text,re.I):
+    for schema,table in re.findall(r'\bcreate\s+table(?:\s+if\s+not\s+exists)?\s+"?([a-zA-Z_][\w]*)"?\s*\.\s*"?([a-zA-Z_][\w]*)"?',executable,re.I):
       rel=f"{schema}.{table}".casefold()
       if schema.casefold()=="itsm" and rel not in allowed_rel:
         out.append(f"G10 exact SQL creates unauthorized itsm relation: {schema}.{table}")
-    for pattern in (
-      r"\b(?:insert\s+into|update|delete\s+from)\s+alerting\.",
-      r"\b(?:insert\s+into|update|delete\s+from)\s+human_operations\.",
-      r"\b(?:insert\s+into|update|delete\s+from)\s+notification\.",
-      r"\bcreate\s+(?:table|schema)\s+(?:alerting|human_operations|notification|monitoring)\."
-    ):
-      if re.search(pattern,text,re.I):out.append(f"G10 SQL contains forbidden cross-domain mutation: {pattern}")
+    external_schema=r'(?:"(?:alerting|human_operations|notification|monitoring)"|(?:alerting|human_operations|notification|monitoring))'
+    cross_domain_write_privileges=r"(?:ALL(?:\s+PRIVILEGES)?|INSERT|UPDATE|DELETE|TRUNCATE|REFERENCES|TRIGGER)"
+    cross_domain_schema_write_privileges=r"(?:ALL(?:\s+PRIVILEGES)?|CREATE)"
+    cross_domain_patterns=(
+      rf"\bINSERT\s+INTO\s+{external_schema}\s*\.",
+      rf"\bUPDATE\s+(?:ONLY\s+)?{external_schema}\s*\.",
+      rf"\bDELETE\s+FROM\s+(?:ONLY\s+)?{external_schema}\s*\.",
+      rf"\bMERGE\s+INTO\s+(?:ONLY\s+)?{external_schema}\s*\.",
+      rf"\bCOPY\s+{external_schema}\s*\.\s*(?:\"[^\"]+\"|[A-Za-z_][A-Za-z0-9_]*)\s*(?:\([^;]*?\))?\s+FROM\b",
+      rf"\bTRUNCATE\b[^;]*{external_schema}\s*\.",
+      rf"\bSELECT\b[^;]*\bINTO\s+(?:TABLE\s+)?{external_schema}\s*\.",
+      rf"\b(?:CREATE|DROP)\s+(?:TABLE|VIEW|MATERIALIZED\s+VIEW|SEQUENCE|FUNCTION|PROCEDURE|ROUTINE|TYPE|DOMAIN)\s+(?:IF\s+(?:NOT\s+)?EXISTS\s+)?{external_schema}\s*\.",
+      rf"\bALTER\s+(?:TABLE|VIEW|MATERIALIZED\s+VIEW|SEQUENCE)\s+(?:IF\s+EXISTS\s+)?(?:ONLY\s+)?{external_schema}\s*\.",
+      rf"\bCREATE\s+(?:UNIQUE\s+)?INDEX\b[^;]*\bON\s+(?:ONLY\s+)?{external_schema}\s*\.",
+      rf"\bCREATE\s+(?:CONSTRAINT\s+)?TRIGGER\b[^;]*\bON\s+(?:ONLY\s+)?{external_schema}\s*\.",
+      rf"\bDROP\s+TRIGGER\b[^;]*\bON\s+(?:ONLY\s+)?{external_schema}\s*\.",
+      rf"\bCREATE\s+(?:OR\s+REPLACE\s+)?RULE\b[^;]*\bAS\s+ON\s+(?:SELECT|INSERT|UPDATE|DELETE)\s+TO\s+(?:ONLY\s+)?{external_schema}\s*\.",
+      rf"\bDROP\s+RULE\b[^;]*\bON\s+(?:ONLY\s+)?{external_schema}\s*\.",
+      rf"\bCREATE\s+POLICY\b[^;]*\bON\s+(?:ONLY\s+)?{external_schema}\s*\.",
+      rf"\bALTER\s+POLICY\b[^;]*\bON\s+(?:ONLY\s+)?{external_schema}\s*\.",
+      rf"\bDROP\s+POLICY\b[^;]*\bON\s+(?:ONLY\s+)?{external_schema}\s*\.",
+      rf"\b(?:CREATE|ALTER|DROP)\s+SCHEMA\s+(?:IF\s+(?:NOT\s+)?EXISTS\s+)?{external_schema}\b",
+      rf"\bGRANT\b(?=[^;]*\b{cross_domain_write_privileges}\b[^;]*\bON\b)[^;]*\bON\s+(?:TABLE\s+)?(?:ONLY\s+)?{external_schema}\s*\.",
+      rf"\bGRANT\b(?=[^;]*\b{cross_domain_write_privileges}\b[^;]*\bON\b)[^;]*\bON\s+ALL\s+TABLES\s+IN\s+SCHEMA\s+{external_schema}\b",
+      rf"\bGRANT\b(?=[^;]*\b{cross_domain_schema_write_privileges}\b[^;]*\bON\b)[^;]*\bON\s+SCHEMA\s+{external_schema}\b"
+    )
+    for pattern in cross_domain_patterns:
+      if re.search(pattern,executable_without_literals,re.I|re.S):
+        out.append(f"G10 SQL contains forbidden cross-domain mutation: {pattern}")
     return out
 
 def workflow_errors(text,p):

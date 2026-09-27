@@ -434,6 +434,8 @@ def falsify_g10_privileged_role_membership_fence():
     require_rejected(GOOD_SQL+"\nCREATE ROLE jlmirror_g10_itsm_app_invoker SUPERUSER;\n")
     require_rejected(GOOD_SQL+"\nCREATE USER \"jlmirror_g10_itsm_worker_invoker\" CREATEDB;\n")
     require_rejected(GOOD_SQL+"\nCREATE GROUP jlmirror_g10_itsm_app_invoker WITH SUPERUSER;\n")
+    require_rejected(GOOD_SQL+"\nDROP OWNED BY jlmirror_g10_itsm_app_invoker; DROP ROLE jlmirror_g10_itsm_app_invoker; CREATE ROLE g10_evil LOGIN CREATEROLE; ALTER ROLE g10_evil RENAME TO jlmirror_g10_itsm_app_invoker;\n")
+    require_rejected(GOOD_SQL+"\nDROP ROLE IF EXISTS jlmirror_g10_itsm_worker_invoker;\n")
     require_rejected(GOOD_SQL.replace(
       "  END LOOP;\nEND;\n$$;",
       "  END LOOP;\n  GRANT jlmirror_g10_itsm_executor TO jlmirror_g10_itsm_app_invoker;\nEND;\n$$;"
@@ -861,6 +863,7 @@ COMMIT;
     require_rejected(GOOD_SQL+"\nCREATE SCHEMA decoy;\nALTER FUNCTION itsm.g10_next_sync_candidate(text) SET SCHEMA decoy;\n")
     require_rejected(GOOD_SQL+"\nCREATE SCHEMA decoy;\nALTER ROUTINE itsm.g10_next_sync_candidate(text) SET SCHEMA decoy;\n")
     require_rejected(GOOD_SQL+"\nALTER FUNCTION itsm.g10_next_sync_candidate(text) OWNER TO jlmirror_g10_itsm_worker_invoker;\n")
+    require_rejected(GOOD_SQL+"\nALTER FUNCTION itsm.g10_assign_incident(text,text,text,text,text,jsonb) OWNER TO jlmirror_g10_itsm_app_invoker;\n")
 
 def falsify_g10_hidden_relation():
     require_rejected(GOOD_SQL+"\nCREATE TABLE itsm.hidden(id text);\n")
@@ -875,6 +878,7 @@ def falsify_g10_cross_domain_mutation():
     require_rejected(GOOD_SQL+"\nSELECT set_config('standard_' || 'conforming_strings','off',false);\nSELECT 'abc\\'--xyz'; INSERT INTO alerting.alert(tenant_id) VALUES ('t');\n")
     require_rejected(GOOD_SQL+"\nSELECT set_config('application_name','g10',false);\n")
     require_rejected(GOOD_SQL+"\nSELECT pg_catalog.\"set_config\"('search_path','alerting',false);\nDELETE FROM alert;\n")
+    require_rejected(GOOD_SQL+"\nSELECT \"pg_catalog\".\"set_config\"('search_path','alerting',false);\nDELETE FROM alert;\n")
     require_rejected(GOOD_SQL+"\nSET search_path TO alerting, public;\nINSERT INTO alert(tenant_id) VALUES ('t');\n")
     require_rejected(GOOD_SQL+"\nSET SCHEMA 'alerting';\nDELETE FROM alert;\n")
     require_rejected(GOOD_SQL+"\nSELECT $$--$$; INSERT INTO alerting.alert(tenant_id) VALUES ('t');\n")
@@ -902,6 +906,9 @@ def falsify_g10_cross_domain_mutation():
     require_rejected(GOOD_SQL+"\nDROP SCHEMA monitoring;\n")
     require_rejected(GOOD_SQL+"\nCREATE INDEX evil ON alerting.alert(tenant_id);\n")
     require_rejected(GOOD_SQL+"\nCREATE UNIQUE INDEX evil_unique ON ONLY \"notification\".\"delivery\"(tenant_id);\n")
+    require_rejected(GOOD_SQL+"\nDROP INDEX alerting.some_index;\n")
+    require_rejected(GOOD_SQL+"\nDROP INDEX IF EXISTS \"notification\".\"some_index\";\n")
+    require_rejected(GOOD_SQL+"\nALTER INDEX monitoring.some_index RENAME TO changed;\n")
     require_rejected(GOOD_SQL+"\nCREATE TRIGGER g10_block_alert BEFORE UPDATE OR DELETE ON alerting.alert FOR EACH ROW EXECUTE FUNCTION itsm.g10_reject_immutable_mutation();\n")
     require_rejected(GOOD_SQL+"\nCREATE CONSTRAINT TRIGGER g10_block_notify AFTER INSERT ON \"notification\".\"delivery\" DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION itsm.g10_reject_immutable_mutation();\n")
     require_rejected(GOOD_SQL+"\nDROP TRIGGER g10_existing ON human_operations.some_table;\n")

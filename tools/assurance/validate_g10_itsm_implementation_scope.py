@@ -229,7 +229,8 @@ def sql_errors(text,p):
     for m in ("incident_id","alert_id","incident_transition","incident_assignment","incident_comment","provider_link","sync_outbox","tenant_id"):
       if fold(m) not in f:out.append(f"G10 exact SQL missing marker: {m}")
 
-    validated_functions=("g10_reject_immutable_mutation","g10_validate_authority","g10_create_incident","g10_transition_incident","g10_assign_incident","g10_add_comment","g10_next_sync_candidate","g10_claim_sync","g10_complete_sync","g10_schedule_sync_retry","g10_reconcile_sync","g10_get_incident","g10_list_alert_incidents")
+    validated_functions=("g10_get_incident","g10_next_sync_candidate","g10_create_incident","g10_transition_incident")
+    owner_guard_functions=("g10_reject_immutable_mutation","g10_validate_authority","g10_create_incident","g10_transition_incident","g10_assign_incident","g10_add_comment","g10_next_sync_candidate","g10_claim_sync","g10_complete_sync","g10_schedule_sync_retry","g10_reconcile_sync","g10_get_incident","g10_list_alert_incidents")
     context_scan=executable
     # Canonical SECURITY DEFINER/INVOKER function configuration is definition-time metadata,
     # not a mutable session statement. Mask only the exact attached function SET clauses.
@@ -281,13 +282,6 @@ def sql_errors(text,p):
       if re.search(rf"\bALTER\s+(?:FUNCTION|ROUTINE)\b[^;]*\b(?:itsm|\"itsm\")\s*\.\s*(?:{re.escape(name)}|\"{re.escape(name)}\")\s*\([^;]*\)\s+SET\s+SCHEMA\b",executable,re.I|re.S):
         out.append(f"G10 validated function cannot be moved to another schema: {name}")
 
-      owner_alters=list(re.finditer(
-        rf"\bALTER\s+(?:FUNCTION|ROUTINE)\b[^;]*\b(?:itsm|\"itsm\")\s*\.\s*(?:{re.escape(name)}|\"{re.escape(name)}\")\s*\([^;]*\)\s+OWNER\s+TO\s+(?P<owner>\"[^\"]+\"|[A-Za-z_][A-Za-z0-9_]*)\s*;",
-        executable,re.I|re.S
-      ))
-      if any(m.group("owner").strip('"').casefold()!="jlmirror_g10_itsm_executor" for m in owner_alters):
-        out.append(f"G10 validated function owner alteration must target only jlmirror_g10_itsm_executor: {name}")
-
       unqualified_ddl=(
         rf"\bCREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+(?!itsm\.){re.escape(name)}\s*\(",
         rf"\bDROP\s+FUNCTION\s+(?:IF\s+EXISTS\s+)?(?!itsm\.){re.escape(name)}\s*\(",
@@ -295,6 +289,14 @@ def sql_errors(text,p):
       )
       if any(re.search(pattern,executable,re.I|re.S) for pattern in unqualified_ddl):
         out.append(f"G10 validated function DDL must be explicitly itsm-qualified: {name}")
+
+    for name in owner_guard_functions:
+      owner_alters=list(re.finditer(
+        rf"\bALTER\s+(?:FUNCTION|ROUTINE)\b[^;]*\b(?:itsm|\"itsm\")\s*\.\s*(?:{re.escape(name)}|\"{re.escape(name)}\")\s*\([^;]*\)\s+OWNER\s+TO\s+(?P<owner>\"[^\"]+\"|[A-Za-z_][A-Za-z0-9_]*)\s*;",
+        executable,re.I|re.S
+      ))
+      if any(m.group("owner").strip('"').casefold()!="jlmirror_g10_itsm_executor" for m in owner_alters):
+        out.append(f"G10 installed function owner alteration must target only jlmirror_g10_itsm_executor: {name}")
 
     incident_read=function_block(executable,"g10_get_incident")
     incident_read_exec=mask_sql_literals(incident_read)

@@ -249,7 +249,7 @@ def sql_errors(text,p):
     )
     context_without_literals=mask_sql_literals(context_scan)
     executable_without_literals=mask_sql_literals(executable)
-    if re.search(r'\b(?:(?:pg_catalog|"pg_catalog")\s*\.\s*)?(?:set_config|"set_config")\s*\(',context_without_literals,re.I):
+    if re.search(r'(?<![A-Za-z0-9_])(?:(?:pg_catalog|"pg_catalog")\s*\.\s*)?(?:set_config|"set_config")\s*\(',context_without_literals,re.I):
       out.append("G10 exact SQL forbids noncanonical executable set_config because mutable session semantics must remain statically attestable")
     if re.search(r"\bSET\s+(?:(?:LOCAL|SESSION)\s+)?search_path\b",context_without_literals,re.I) or re.search(r"\bSET\s+SCHEMA\b",context_without_literals,re.I):
       out.append("G10 exact SQL forbids statement-level search_path/SET SCHEMA changes because mutation targets must remain explicitly qualified")

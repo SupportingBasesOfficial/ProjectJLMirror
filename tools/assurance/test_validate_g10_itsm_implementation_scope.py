@@ -436,6 +436,9 @@ def falsify_g10_privileged_role_membership_fence():
     require_rejected(GOOD_SQL+"\nCREATE GROUP jlmirror_g10_itsm_app_invoker WITH SUPERUSER;\n")
     require_rejected(GOOD_SQL+"\nDROP OWNED BY jlmirror_g10_itsm_app_invoker; DROP ROLE jlmirror_g10_itsm_app_invoker; CREATE ROLE g10_evil LOGIN CREATEROLE; ALTER ROLE g10_evil RENAME TO jlmirror_g10_itsm_app_invoker;\n")
     require_rejected(GOOD_SQL+"\nDROP ROLE IF EXISTS jlmirror_g10_itsm_worker_invoker;\n")
+    require_rejected(GOOD_SQL+"\nCREATE ROLE g10_backdoor LOGIN SUPERUSER PASSWORD 'x';\n")
+    require_rejected(GOOD_SQL+"\nCREATE USER g10_shadow CREATEDB;\n")
+    require_rejected(GOOD_SQL+"\nCREATE GROUP g10_shadow_group;\n")
     require_rejected(GOOD_SQL.replace(
       "  END LOOP;\nEND;\n$$;",
       "  END LOOP;\n  GRANT jlmirror_g10_itsm_executor TO jlmirror_g10_itsm_app_invoker;\nEND;\n$$;"
@@ -713,6 +716,7 @@ END;
 $$;"""
 
     require_rejected(GOOD_SQL+"\nCREATE OR REPLACE FUNCTION \"itsm\".\"g10_next_sync_candidate\"(p_tenant_id text) RETURNS jsonb LANGUAGE plpgsql AS $ BEGIN RETURN '{}'::jsonb; END; $;\n")
+    require_rejected(GOOD_SQL+"\nCREATE OR REPLACE FUNCTION itsm.g10_validate_authority(p_tenant_id text,p_actor_principal_id text,p_authority_snapshot jsonb) RETURNS void LANGUAGE plpgsql SECURITY INVOKER SET search_path=pg_catalog,itsm AS $ BEGIN NULL; END; $;\n")
     require_rejected(GOOD_SQL.replace(
       "CREATE OR REPLACE FUNCTION itsm.g10_get_incident(",
       "CREATE OR REPLACE FUNCTION \"ITSM\".g10_get_incident("

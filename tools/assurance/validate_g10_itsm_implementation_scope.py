@@ -229,7 +229,7 @@ def sql_errors(text,p):
     for m in ("incident_id","alert_id","incident_transition","incident_assignment","incident_comment","provider_link","sync_outbox","tenant_id"):
       if fold(m) not in f:out.append(f"G10 exact SQL missing marker: {m}")
 
-    validated_functions=("g10_get_incident","g10_next_sync_candidate","g10_create_incident","g10_transition_incident")
+    validated_functions=("g10_validate_authority","g10_get_incident","g10_next_sync_candidate","g10_create_incident","g10_transition_incident")
     owner_guard_functions=("g10_reject_immutable_mutation","g10_validate_authority","g10_create_incident","g10_transition_incident","g10_assign_incident","g10_add_comment","g10_next_sync_candidate","g10_claim_sync","g10_complete_sync","g10_schedule_sync_retry","g10_reconcile_sync","g10_get_incident","g10_list_alert_incidents")
     context_scan=executable
     # Canonical SECURITY DEFINER/INVOKER function configuration is definition-time metadata,
@@ -297,6 +297,20 @@ def sql_errors(text,p):
       ))
       if any(m.group("owner").strip('"').casefold()!="jlmirror_g10_itsm_executor" for m in owner_alters):
         out.append(f"G10 installed function owner alteration must target only jlmirror_g10_itsm_executor: {name}")
+
+    authority_block=function_block(executable,"g10_validate_authority")
+    authority_exec=mask_sql_literals(authority_block)
+    authority_required=(
+      r"jsonb_typeof\s*\(\s*p_authority_snapshot\s*\)\s*<>\s*'object'",
+      r"p_authority_snapshot\s*->>\s*'current'",
+      r"p_authority_snapshot\s*->>\s*'tenant_id'\s+IS\s+DISTINCT\s+FROM\s+p_tenant_id",
+      r"p_authority_snapshot\s*->>\s*'principal_id'\s+IS\s+DISTINCT\s+FROM\s+p_actor_principal_id",
+      r"p_authority_snapshot\s*->>\s*'action'",
+      r"p_authority_snapshot\s*->>\s*'policy_revision'",
+      r"RAISE\s+EXCEPTION\s+'g10\.current_authority_required'"
+    )
+    if not authority_block or any(not re.search(pattern,authority_exec,re.I|re.S) for pattern in authority_required):
+      out.append("G10 authority helper must enforce current tenant principal action and policy revision")
 
     incident_read=function_block(executable,"g10_get_incident")
     incident_read_exec=mask_sql_literals(incident_read)
@@ -445,6 +459,19 @@ def sql_errors(text,p):
       )
       if membership_mutation or any(re.search(pattern,post_membership,re.I) for pattern in membership_change) or role_attribute_change or protected_role_create or protected_role_drop or protected_role_rename:
         out.append("G10 protected roles cannot be created, dropped, renamed into, have membership changed, or have role attributes changed after the final installation membership preflight")
+
+    canonical_principals={
+      "jlmirror_g10_itsm_executor",
+      "jlmirror_g10_itsm_app_invoker",
+      "jlmirror_g10_itsm_worker_invoker"
+    }
+    for principal_create in re.finditer(
+      r"\bCREATE\s+(?:ROLE|USER|GROUP)\s+(?P<name>\"[^\"]+\"|[A-Za-z_][A-Za-z0-9_]*)\b",
+      executable,re.I|re.S
+    ):
+      created=principal_create.group("name").strip('"').casefold()
+      if created not in canonical_principals:
+        out.append(f"G10 exact SQL cannot create noncanonical database principals: {created}")
 
     create=function_block(executable,"g10_create_incident")
     create_exec=mask_sql_literals(create)

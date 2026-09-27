@@ -3048,6 +3048,110 @@
       ],
       "systemic_guardrail_updated": true,
       "guardrail_generation": 1000082
+    },
+    {
+      "id": "LEARN-PR177-113",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4110363913,
+      "class_id": "ADV-TRUST-CONTEXT-GAP",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "The noncanonical set_config fence accepted unquoted pg_catalog and quoted function names but omitted a quoted lowercase pg_catalog schema token. PostgreSQL resolves \"pg_catalog\".\"set_config\" normally, so mutable search_path state could bypass static mutation attestation.",
+      "horizontal_audit": [
+        "quoted pg_catalog schema",
+        "quoted set_config",
+        "search_path mutation",
+        "unqualified cross-domain DML",
+        "session-state attestation"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_cross_domain_mutation"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000083
+    },
+    {
+      "id": "LEARN-PR177-114",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4110363916,
+      "class_id": "ADV-TRUST-CONTEXT-GAP",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "Function-owner enforcement was scoped to four deeply validated functions while the G10 installer creates additional privileged SECURITY DEFINER functions. An unlisted function such as g10_assign_incident could therefore be transferred to a runtime invoker after the final audit.",
+      "horizontal_audit": [
+        "all installed G10 functions",
+        "ALTER FUNCTION OWNER TO",
+        "SECURITY DEFINER ownership",
+        "runtime invoker takeover",
+        "function inventory completeness"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_duplicate_validated_function_definition"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000084
+    },
+    {
+      "id": "LEARN-PR177-115",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4110363920,
+      "class_id": "ADV-TRUST-CONTEXT-GAP",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "Protected-role fencing checked direct mutations of the current protected role name but did not reject DROP of a protected role or ALTER ROLE ... RENAME TO a protected destination. A hostile role could therefore be renamed into a protected identity after preflight.",
+      "horizontal_audit": [
+        "DROP ROLE protected principal",
+        "ALTER ROLE RENAME TO protected destination",
+        "DROP OWNED replacement sequence",
+        "protected principal identity continuity",
+        "post-preflight role final state"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_privileged_role_membership_fence"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000085
+    },
+    {
+      "id": "LEARN-PR177-116",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4110363924,
+      "class_id": "ADV-TRUST-CONTEXT-GAP",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "Cross-domain index fencing covered CREATE INDEX targets but omitted schema-qualified ALTER INDEX and DROP INDEX, allowing destructive or state-changing index DDL in protected external domains.",
+      "horizontal_audit": [
+        "DROP INDEX external schema",
+        "ALTER INDEX external schema",
+        "quoted external indexes",
+        "IF EXISTS",
+        "destructive cross-domain DDL"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_cross_domain_mutation"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000086
     }
   ]
 }

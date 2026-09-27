@@ -303,7 +303,7 @@ def sql_errors(text,p):
       out.append("G10 authority helper must have at most one definition in reduced or complete artifacts")
     if authority_occurrences:
       authority_block=function_block(executable,"g10_validate_authority")
-      authority_exec=mask_sql_literals(authority_block)
+      authority_exec=authority_block
       authority_required=(
         r"jsonb_typeof\s*\(\s*p_authority_snapshot\s*\)\s*<>\s*'object'",
         r"p_authority_snapshot\s*->>\s*'current'",

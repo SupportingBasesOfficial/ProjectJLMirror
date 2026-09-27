@@ -229,7 +229,7 @@ def sql_errors(text,p):
     for m in ("incident_id","alert_id","incident_transition","incident_assignment","incident_comment","provider_link","sync_outbox","tenant_id"):
       if fold(m) not in f:out.append(f"G10 exact SQL missing marker: {m}")
 
-    validated_functions=("g10_get_incident","g10_next_sync_candidate","g10_create_incident","g10_transition_incident")
+    validated_functions=("g10_reject_immutable_mutation","g10_validate_authority","g10_create_incident","g10_transition_incident","g10_assign_incident","g10_add_comment","g10_next_sync_candidate","g10_claim_sync","g10_complete_sync","g10_schedule_sync_retry","g10_reconcile_sync","g10_get_incident","g10_list_alert_incidents")
     context_scan=executable
     # Canonical SECURITY DEFINER/INVOKER function configuration is definition-time metadata,
     # not a mutable session statement. Mask only the exact attached function SET clauses.
@@ -242,13 +242,13 @@ def sql_errors(text,p):
     # Canonical tenant RLS binding is transaction-local (third argument TRUE) and bounded
     # to the already-authorized jlmirror.tenant_id key. Any other set_config remains forbidden.
     context_scan=re.sub(
-      r"\bPERFORM\s+(?:pg_catalog\s*\.\s*)?(?:set_config|\"set_config\")\s*\(\s*'jlmirror\.tenant_id'\s*,\s*p_tenant_id\s*,\s*TRUE\s*\)\s*;",
+      r"\bPERFORM\s+(?:(?:pg_catalog|\"pg_catalog\")\s*\.\s*)?(?:set_config|\"set_config\")\s*\(\s*'jlmirror\.tenant_id'\s*,\s*p_tenant_id\s*,\s*TRUE\s*\)\s*;",
       " ",
       context_scan,flags=re.I
     )
     context_without_literals=mask_sql_literals(context_scan)
     executable_without_literals=mask_sql_literals(executable)
-    if re.search(r'\b(?:pg_catalog\s*\.\s*)?(?:set_config|"set_config")\s*\(',context_without_literals,re.I):
+    if re.search(r'\b(?:(?:pg_catalog|"pg_catalog")\s*\.\s*)?(?:set_config|"set_config")\s*\(',context_without_literals,re.I):
       out.append("G10 exact SQL forbids noncanonical executable set_config because mutable session semantics must remain statically attestable")
     if re.search(r"\bSET\s+(?:(?:LOCAL|SESSION)\s+)?search_path\b",context_without_literals,re.I) or re.search(r"\bSET\s+SCHEMA\b",context_without_literals,re.I):
       out.append("G10 exact SQL forbids statement-level search_path/SET SCHEMA changes because mutation targets must remain explicitly qualified")
@@ -433,8 +433,16 @@ def sql_errors(text,p):
         rf"\bCREATE\s+(?:ROLE|USER|GROUP)\s+{protected_roles}(?=\s|;)[^;]*;",
         post_membership,re.I|re.S
       )
-      if membership_mutation or any(re.search(pattern,post_membership,re.I) for pattern in membership_change) or role_attribute_change or protected_role_create:
-        out.append("G10 protected roles cannot be created, have membership changed, or have role attributes changed after the final installation membership preflight")
+      protected_role_drop=re.search(
+        rf"\bDROP\s+(?:ROLE|USER|GROUP)\s+(?:IF\s+EXISTS\s+)?{protected_roles}(?=\s|;)[^;]*;",
+        post_membership,re.I|re.S
+      )
+      protected_role_rename=re.search(
+        rf"\bALTER\s+(?:ROLE|USER)\s+(?:\"[^\"]+\"|[A-Za-z_][A-Za-z0-9_]*)\s+RENAME\s+TO\s+{protected_roles}(?=\s|;)",
+        post_membership,re.I|re.S
+      )
+      if membership_mutation or any(re.search(pattern,post_membership,re.I) for pattern in membership_change) or role_attribute_change or protected_role_create or protected_role_drop or protected_role_rename:
+        out.append("G10 protected roles cannot be created, dropped, renamed into, have membership changed, or have role attributes changed after the final installation membership preflight")
 
     create=function_block(executable,"g10_create_incident")
     create_exec=mask_sql_literals(create)
@@ -517,6 +525,8 @@ def sql_errors(text,p):
       rf"\b(?:CREATE|DROP)\s+(?:TABLE|VIEW|MATERIALIZED\s+VIEW|SEQUENCE|FUNCTION|PROCEDURE|ROUTINE|TYPE|DOMAIN)\s+(?:IF\s+(?:NOT\s+)?EXISTS\s+)?{external_schema}\s*\.",
       rf"\bALTER\s+(?:TABLE|VIEW|MATERIALIZED\s+VIEW|SEQUENCE)\s+(?:IF\s+EXISTS\s+)?(?:ONLY\s+)?{external_schema}\s*\.",
       rf"\bCREATE\s+(?:UNIQUE\s+)?INDEX\b[^;]*\bON\s+(?:ONLY\s+)?{external_schema}\s*\.",
+      rf"\bDROP\s+INDEX\s+(?:CONCURRENTLY\s+)?(?:IF\s+EXISTS\s+)?{external_schema}\s*\.",
+      rf"\bALTER\s+INDEX\s+(?:IF\s+EXISTS\s+)?{external_schema}\s*\.",
       rf"\bCREATE\s+(?:CONSTRAINT\s+)?TRIGGER\b[^;]*\bON\s+(?:ONLY\s+)?{external_schema}\s*\.",
       rf"\bDROP\s+TRIGGER\b[^;]*\bON\s+(?:ONLY\s+)?{external_schema}\s*\.",
       rf"\bCREATE\s+(?:OR\s+REPLACE\s+)?RULE\b[^;]*\bAS\s+ON\s+(?:SELECT|INSERT|UPDATE|DELETE)\s+TO\s+(?:ONLY\s+)?{external_schema}\s*\.",

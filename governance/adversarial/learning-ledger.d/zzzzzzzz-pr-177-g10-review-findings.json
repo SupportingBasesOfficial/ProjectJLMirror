@@ -3152,6 +3152,58 @@
       ],
       "systemic_guardrail_updated": true,
       "guardrail_generation": 1000086
+    },
+    {
+      "id": "LEARN-PR177-117",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4113555324,
+      "class_id": "ADV-TRUST-CONTEXT-GAP",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "The authority helper g10_validate_authority was protected by owner fencing but omitted from the validated-function uniqueness and body contract. A second no-op definition could therefore replace current-authority validation while preserving downstream call sites.",
+      "horizontal_audit": [
+        "g10_validate_authority uniqueness",
+        "authority helper body semantics",
+        "current authority snapshot",
+        "tenant and principal binding",
+        "policy revision enforcement"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_duplicate_validated_function_definition"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000087
+    },
+    {
+      "id": "LEARN-PR177-118",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4113555327,
+      "class_id": "ADV-TRUST-CONTEXT-GAP",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "Role governance rejected mutations of the three canonical principals but still allowed arbitrary CREATE ROLE/USER/GROUP statements. Because the installer executes with role-management authority, an approved artifact could leave an unrelated privileged login principal behind.",
+      "horizontal_audit": [
+        "CREATE ROLE arbitrary principal",
+        "CREATE USER",
+        "CREATE GROUP",
+        "privileged login backdoor",
+        "principal allowlist"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_privileged_role_membership_fence"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000088
     }
   ]
 }

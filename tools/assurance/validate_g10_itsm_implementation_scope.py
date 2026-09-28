@@ -303,27 +303,16 @@ def sql_errors(text,p):
       out.append("G10 authority helper must have at most one definition in reduced or complete artifacts")
     if authority_occurrences:
       authority_block=function_block(executable,"g10_validate_authority")
-      authority_norm=re.sub(r"\s+"," ",authority_block).casefold()
       authority_required=(
-        "jsonb_typeof(p_authority_snapshot)<>'object'",
-        "p_authority_snapshot->>'current'",
-        "p_authority_snapshot->>'tenant_id' is distinct from p_tenant_id",
-        "p_authority_snapshot->>'principal_id' is distinct from p_actor_principal_id",
-        "p_authority_snapshot->>'action'",
-        "p_authority_snapshot->>'policy_revision'",
-        "raise exception 'g10.current_authority_required'"
+        r"jsonb_typeof\s*\(\s*p_authority_snapshot\s*\)\s*<>\s*'object'",
+        r"COALESCE\s*\(\s*\(\s*p_authority_snapshot\s*->>\s*'current'\s*\)\s*::\s*BOOLEAN\s*,\s*FALSE\s*\)\s+IS\s+NOT\s+TRUE",
+        r"p_authority_snapshot\s*->>\s*'tenant_id'\s+IS\s+DISTINCT\s+FROM\s+p_tenant_id",
+        r"p_authority_snapshot\s*->>\s*'principal_id'\s+IS\s+DISTINCT\s+FROM\s+p_actor_principal_id",
+        r"COALESCE\s*\(\s*p_authority_snapshot\s*->>\s*'action'\s*,\s*''\s*\)\s*=\s*''",
+        r"COALESCE\s*\(\s*p_authority_snapshot\s*->>\s*'policy_revision'\s*,\s*''\s*\)\s*=\s*''",
+        r"RAISE\s+EXCEPTION\s+'g10\.current_authority_required'\s*;"
       )
-      compact_authority=authority_norm.replace(" ","")
-      authority_checks=(
-        authority_required[0].replace(" ","") in compact_authority,
-        authority_required[1].replace(" ","") in compact_authority,
-        authority_required[2].replace(" ","") in compact_authority,
-        authority_required[3].replace(" ","") in compact_authority,
-        authority_required[4].replace(" ","") in compact_authority,
-        authority_required[5].replace(" ","") in compact_authority,
-        authority_required[6] in authority_norm
-      )
-      if not all(authority_checks):
+      if any(not re.search(pattern,authority_block,re.I|re.S) for pattern in authority_required):
         out.append("G10 authority helper must enforce current tenant principal action and policy revision")
       else:
         authority_guard=re.search(
@@ -337,6 +326,7 @@ def sql_errors(text,p):
           guard_pos=authority_guard.start()
           if inside_static_false(authority_block,guard_pos) or inside_any_if(authority_block,guard_pos) or inside_any_case(authority_block,guard_pos) or inside_any_loop(authority_block,guard_pos) or inside_exception_handler(authority_block,guard_pos) or unconditional_terminator_before(authority_block,guard_pos):
             out.append("G10 authority helper guard must be top-level reachable on the valid call path")
+
 
     incident_read=function_block(executable,"g10_get_incident")
     incident_read_exec=mask_sql_literals(incident_read)

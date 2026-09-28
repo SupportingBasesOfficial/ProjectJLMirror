@@ -437,6 +437,7 @@ def falsify_g10_privileged_role_membership_fence():
     require_rejected(GOOD_SQL+"\nDROP OWNED BY jlmirror_g10_itsm_app_invoker; DROP ROLE jlmirror_g10_itsm_app_invoker; CREATE ROLE g10_evil LOGIN CREATEROLE; ALTER ROLE g10_evil RENAME TO jlmirror_g10_itsm_app_invoker;\n")
     require_rejected(GOOD_SQL+"\nDROP ROLE IF EXISTS jlmirror_g10_itsm_worker_invoker;\n")
     require_rejected(GOOD_SQL+"\nCREATE ROLE g10_backdoor LOGIN SUPERUSER PASSWORD 'x';\n")
+    require_rejected(GOOD_SQL+"\nCREATE ROLE \"g10\"\"backdoor\" LOGIN SUPERUSER;\n")
     require_rejected(GOOD_SQL+"\nCREATE USER g10_shadow CREATEDB;\n")
     require_rejected(GOOD_SQL+"\nCREATE GROUP g10_shadow_group;\n")
     require_rejected(GOOD_SQL.replace(
@@ -913,6 +914,10 @@ def falsify_g10_cross_domain_mutation():
     require_rejected(GOOD_SQL+"\nDROP INDEX alerting.some_index;\n")
     require_rejected(GOOD_SQL+"\nDROP INDEX IF EXISTS \"notification\".\"some_index\";\n")
     require_rejected(GOOD_SQL+"\nALTER INDEX monitoring.some_index RENAME TO changed;\n")
+    require_rejected(GOOD_SQL+"\nALTER FUNCTION alerting.g7_get_alert(text,text) RENAME TO g7_get_alert_disabled;\n")
+    require_rejected(GOOD_SQL+"\nALTER PROCEDURE monitoring.some_proc(text) RENAME TO changed;\n")
+    require_rejected(GOOD_SQL+"\nALTER TYPE \"notification\".\"delivery_state\" RENAME TO changed;\n")
+    require_rejected(GOOD_SQL+"\nALTER DOMAIN human_operations.some_domain RENAME TO changed;\n")
     require_rejected(GOOD_SQL+"\nCREATE TRIGGER g10_block_alert BEFORE UPDATE OR DELETE ON alerting.alert FOR EACH ROW EXECUTE FUNCTION itsm.g10_reject_immutable_mutation();\n")
     require_rejected(GOOD_SQL+"\nCREATE CONSTRAINT TRIGGER g10_block_notify AFTER INSERT ON \"notification\".\"delivery\" DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION itsm.g10_reject_immutable_mutation();\n")
     require_rejected(GOOD_SQL+"\nDROP TRIGGER g10_existing ON human_operations.some_table;\n")

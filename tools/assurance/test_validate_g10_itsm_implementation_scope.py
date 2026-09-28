@@ -449,6 +449,7 @@ def falsify_g10_privileged_role_membership_fence():
       "  LOOP\n    IF v_role.rolcanlogin THEN\n      RAISE EXCEPTION 'g10.role_unsafe:%',v_role.rolname;\n    END IF;\n    IF EXISTS ("
     ))
 def falsify_g10_authority_predicate_integrity():
+    canonical_sql=(Path(__file__).resolve().parents[2]/"sql/itsm/001_incident.sql").read_text(encoding="utf-8")
     canonical="""  IF jsonb_typeof(p_authority_snapshot)<>'object'
      OR COALESCE((p_authority_snapshot->>'current')::BOOLEAN,FALSE) IS NOT TRUE
      OR p_authority_snapshot->>'tenant_id' IS DISTINCT FROM p_tenant_id
@@ -456,8 +457,8 @@ def falsify_g10_authority_predicate_integrity():
      OR COALESCE(p_authority_snapshot->>'action','')=''
      OR COALESCE(p_authority_snapshot->>'policy_revision','')='' THEN"""
     weakened=canonical.replace("\n     OR "," AND FALSE\n     OR ")
-    mutated=GOOD_SQL.replace(canonical,weakened,1)
-    assert mutated != GOOD_SQL, "authority predicate AND FALSE mutation was a no-op"
+    mutated=canonical_sql.replace(canonical,weakened,1)
+    assert mutated != canonical_sql, "authority predicate AND FALSE mutation was a no-op"
     require_rejected(mutated)
 
 def falsify_g10_incident_create_replay_equivalence():

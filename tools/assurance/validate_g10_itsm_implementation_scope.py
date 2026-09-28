@@ -303,17 +303,27 @@ def sql_errors(text,p):
       out.append("G10 authority helper must have at most one definition in reduced or complete artifacts")
     if authority_occurrences:
       authority_block=function_block(executable,"g10_validate_authority")
-      authority_exec=authority_block
+      authority_norm=re.sub(r"\s+"," ",authority_block).casefold()
       authority_required=(
-        r"jsonb_typeof\s*\(\s*p_authority_snapshot\s*\)\s*<>\s*'object'",
-        r"p_authority_snapshot\s*->>\s*'current'",
-        r"p_authority_snapshot\s*->>\s*'tenant_id'\s+IS\s+DISTINCT\s+FROM\s+p_tenant_id",
-        r"p_authority_snapshot\s*->>\s*'principal_id'\s+IS\s+DISTINCT\s+FROM\s+p_actor_principal_id",
-        r"p_authority_snapshot\s*->>\s*'action'",
-        r"p_authority_snapshot\s*->>\s*'policy_revision'",
-        r"RAISE\s+EXCEPTION\s+'g10\.current_authority_required'"
+        "jsonb_typeof(p_authority_snapshot)<>'object'",
+        "p_authority_snapshot->>'current'",
+        "p_authority_snapshot->>'tenant_id' is distinct from p_tenant_id",
+        "p_authority_snapshot->>'principal_id' is distinct from p_actor_principal_id",
+        "p_authority_snapshot->>'action'",
+        "p_authority_snapshot->>'policy_revision'",
+        "raise exception 'g10.current_authority_required'"
       )
-      if any(not re.search(pattern,authority_exec,re.I|re.S) for pattern in authority_required):
+      compact_authority=authority_norm.replace(" ","")
+      authority_checks=(
+        authority_required[0].replace(" ","") in compact_authority,
+        authority_required[1].replace(" ","") in compact_authority,
+        authority_required[2].replace(" ","") in compact_authority,
+        authority_required[3].replace(" ","") in compact_authority,
+        authority_required[4].replace(" ","") in compact_authority,
+        authority_required[5].replace(" ","") in compact_authority,
+        authority_required[6] in authority_norm
+      )
+      if not all(authority_checks):
         out.append("G10 authority helper must enforce current tenant principal action and policy revision")
 
     incident_read=function_block(executable,"g10_get_incident")

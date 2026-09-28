@@ -220,6 +220,31 @@ def unconditional_terminator_before(block,pos):
             return True
     return False
 
+def enclosing_exception_swallows(block,pos):
+    token_re=re.compile(r"\bBEGIN\b|\bEXCEPTION\b|\bEND\s*;",re.I)
+    stack=[]
+    for token in token_re.finditer(block[:pos]):
+      value=token.group(0).upper()
+      if value=="BEGIN":
+        stack.append({"enclosing":True,"exception":None})
+      elif value=="EXCEPTION":
+        if stack: stack[-1]["exception"]=token.end()
+      elif stack:
+        stack.pop()
+    for token in token_re.finditer(block,pos):
+      value=token.group(0).upper()
+      if value=="BEGIN":
+        stack.append({"enclosing":False,"exception":None})
+      elif value=="EXCEPTION":
+        if stack: stack[-1]["exception"]=token.end()
+      elif stack:
+        frame=stack.pop()
+        if frame["enclosing"] and frame["exception"] is not None:
+          handler=block[frame["exception"]:token.start()]
+          if re.search(r"\bWHEN\s+OTHERS\s+THEN\b",handler,re.I|re.S) and not re.search(r"\bRAISE\s*;",handler,re.I|re.S):
+            return True
+    return False
+
 def sql_errors(text,p):
     executable=strip_sql_comments(text)
     out=[]
@@ -323,6 +348,8 @@ def sql_errors(text,p):
         guard_pos=authority_guard.start()
         if inside_static_false(authority_block,guard_pos) or inside_any_if(authority_block,guard_pos) or inside_any_case(authority_block,guard_pos) or inside_any_loop(authority_block,guard_pos) or inside_exception_handler(authority_block,guard_pos) or unconditional_terminator_before(authority_block,guard_pos):
           out.append("G10 authority helper guard must be top-level reachable on the valid call path")
+        elif enclosing_exception_swallows(authority_block,guard_pos):
+          out.append("G10 authority helper exception must propagate through enclosing blocks")
 
 
     incident_read=function_block(executable,"g10_get_incident")

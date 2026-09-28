@@ -3362,6 +3362,32 @@
       ],
       "systemic_guardrail_updated": true,
       "guardrail_generation": 1000094
+    },
+    {
+      "id": "LEARN-PR177-125",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4126528770,
+      "class_id": "ADV-TRUST-CONTEXT-GAP",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "Authority-guard validation proved the canonical IF was reachable and not itself inside an exception handler, but did not inspect enclosing BEGIN blocks whose later EXCEPTION WHEN OTHERS handler could swallow the required g10.current_authority_required exception. The validator now requires enclosing blocks to propagate the exception.",
+      "horizontal_audit": [
+        "nested BEGIN around authority guard",
+        "EXCEPTION WHEN OTHERS",
+        "swallowed current-authority exception",
+        "enclosing block propagation",
+        "authority failure fail-closed semantics"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_authority_exception_propagation"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000095
     }
   ]
 }

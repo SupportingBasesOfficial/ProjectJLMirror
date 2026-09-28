@@ -325,6 +325,18 @@ def sql_errors(text,p):
       )
       if not all(authority_checks):
         out.append("G10 authority helper must enforce current tenant principal action and policy revision")
+      else:
+        authority_guard=re.search(
+          r"\bIF\s+jsonb_typeof\s*\(\s*p_authority_snapshot\s*\)\s*<>\s*'object'.*?"
+          r"RAISE\s+EXCEPTION\s+'g10\.current_authority_required'\s*;.*?\bEND\s+IF\s*;",
+          authority_block,re.I|re.S
+        )
+        if not authority_guard:
+          out.append("G10 authority helper must keep the canonical validation as one executable guard")
+        else:
+          guard_pos=authority_guard.start()
+          if inside_static_false(authority_block,guard_pos) or inside_any_if(authority_block,guard_pos) or inside_any_case(authority_block,guard_pos) or inside_any_loop(authority_block,guard_pos) or inside_exception_handler(authority_block,guard_pos) or unconditional_terminator_before(authority_block,guard_pos):
+            out.append("G10 authority helper guard must be top-level reachable on the valid call path")
 
     incident_read=function_block(executable,"g10_get_incident")
     incident_read_exec=mask_sql_literals(incident_read)
@@ -480,10 +492,11 @@ def sql_errors(text,p):
       "jlmirror_g10_itsm_worker_invoker"
     }
     for principal_create in re.finditer(
-      r"\bCREATE\s+(?:ROLE|USER|GROUP)\s+(?P<name>\"[^\"]+\"|[A-Za-z_][A-Za-z0-9_]*)\b",
+      r"\bCREATE\s+(?:ROLE|USER|GROUP)\s+(?P<name>\"(?:[^\"]|\"\")*\"|[A-Za-z_][A-Za-z0-9_]*)",
       executable,re.I|re.S
     ):
-      created=principal_create.group("name").strip('"').casefold()
+      created_token=principal_create.group("name")
+      created=(created_token[1:-1].replace('""','"') if created_token.startswith('"') else created_token).casefold()
       if created not in canonical_principals:
         out.append(f"G10 exact SQL cannot create noncanonical database principals: {created}")
 
@@ -567,6 +580,7 @@ def sql_errors(text,p):
       rf"\bSELECT\b[^;]*\bINTO\s+(?:TABLE\s+)?{external_schema}\s*\.",
       rf"\b(?:CREATE|DROP)\s+(?:TABLE|VIEW|MATERIALIZED\s+VIEW|SEQUENCE|FUNCTION|PROCEDURE|ROUTINE|TYPE|DOMAIN)\s+(?:IF\s+(?:NOT\s+)?EXISTS\s+)?{external_schema}\s*\.",
       rf"\bALTER\s+(?:TABLE|VIEW|MATERIALIZED\s+VIEW|SEQUENCE)\s+(?:IF\s+EXISTS\s+)?(?:ONLY\s+)?{external_schema}\s*\.",
+      rf"\bALTER\s+(?:FUNCTION|PROCEDURE|ROUTINE|TYPE|DOMAIN)\s+(?:IF\s+EXISTS\s+)?{external_schema}\s*\.",
       rf"\bCREATE\s+(?:UNIQUE\s+)?INDEX\b[^;]*\bON\s+(?:ONLY\s+)?{external_schema}\s*\.",
       rf"\bDROP\s+INDEX\s+(?:CONCURRENTLY\s+)?(?:IF\s+EXISTS\s+)?{external_schema}\s*\.",
       rf"\bALTER\s+INDEX\s+(?:IF\s+EXISTS\s+)?{external_schema}\s*\.",

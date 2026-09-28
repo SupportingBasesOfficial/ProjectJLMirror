@@ -464,6 +464,20 @@ def falsify_g10_privileged_role_membership_fence():
       "  LOOP\n    IF v_role.rolcanlogin OR v_role.rolsuper OR v_role.rolcreatedb OR v_role.rolcreaterole\n       OR v_role.rolinherit OR v_role.rolreplication OR v_role.rolbypassrls THEN\n      RAISE EXCEPTION 'g10.role_unsafe:%',v_role.rolname;\n    END IF;\n    IF EXISTS (",
       "  LOOP\n    IF v_role.rolcanlogin THEN\n      RAISE EXCEPTION 'g10.role_unsafe:%',v_role.rolname;\n    END IF;\n    IF EXISTS ("
     ))
+def falsify_g10_authority_exception_propagation():
+    canonical="""  IF jsonb_typeof(p_authority_snapshot)<>'object'
+     OR COALESCE((p_authority_snapshot->>'current')::BOOLEAN,FALSE) IS NOT TRUE
+     OR p_authority_snapshot->>'tenant_id' IS DISTINCT FROM p_tenant_id
+     OR p_authority_snapshot->>'principal_id' IS DISTINCT FROM p_actor_principal_id
+     OR COALESCE(p_authority_snapshot->>'action','')=''
+     OR COALESCE(p_authority_snapshot->>'policy_revision','')='' THEN
+    RAISE EXCEPTION 'g10.current_authority_required';
+  END IF;"""
+    wrapped="  BEGIN\n"+canonical+"\n  EXCEPTION WHEN OTHERS THEN NULL;\n  END;"
+    mutated=GOOD_SQL.replace(canonical,wrapped,1)
+    assert mutated != GOOD_SQL, "authority swallowed-exception mutation was a no-op"
+    require_rejected(mutated)
+
 def falsify_g10_authority_predicate_integrity():
     pattern=re.compile(
       r"IF\s+jsonb_typeof\s*\(\s*p_authority_snapshot\s*\)\s*<>\s*'object'\s+"
@@ -988,6 +1002,7 @@ def main():
  falsify_g10_alert_opened_at_projection()
  falsify_g10_expired_sync_discovery()
  falsify_g10_privileged_role_membership_fence()
+ falsify_g10_authority_exception_propagation()
  falsify_g10_authority_predicate_integrity()
  falsify_g10_incident_create_replay_equivalence()
  falsify_g10_concurrent_incident_create_serialization()

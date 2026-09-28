@@ -448,6 +448,18 @@ def falsify_g10_privileged_role_membership_fence():
       "  LOOP\n    IF v_role.rolcanlogin OR v_role.rolsuper OR v_role.rolcreatedb OR v_role.rolcreaterole\n       OR v_role.rolinherit OR v_role.rolreplication OR v_role.rolbypassrls THEN\n      RAISE EXCEPTION 'g10.role_unsafe:%',v_role.rolname;\n    END IF;\n    IF EXISTS (",
       "  LOOP\n    IF v_role.rolcanlogin THEN\n      RAISE EXCEPTION 'g10.role_unsafe:%',v_role.rolname;\n    END IF;\n    IF EXISTS ("
     ))
+def falsify_g10_authority_predicate_integrity():
+    canonical="""  IF jsonb_typeof(p_authority_snapshot)<>'object'
+     OR COALESCE((p_authority_snapshot->>'current')::BOOLEAN,FALSE) IS NOT TRUE
+     OR p_authority_snapshot->>'tenant_id' IS DISTINCT FROM p_tenant_id
+     OR p_authority_snapshot->>'principal_id' IS DISTINCT FROM p_actor_principal_id
+     OR COALESCE(p_authority_snapshot->>'action','')=''
+     OR COALESCE(p_authority_snapshot->>'policy_revision','')='' THEN"""
+    weakened=canonical.replace("\n     OR "," AND FALSE\n     OR ")
+    mutated=GOOD_SQL.replace(canonical,weakened,1)
+    assert mutated != GOOD_SQL, "authority predicate AND FALSE mutation was a no-op"
+    require_rejected(mutated)
+
 def falsify_g10_incident_create_replay_equivalence():
     weakened=GOOD_SQL.replace(
       "    IF v_existing.content_hash<>v_hash THEN RAISE EXCEPTION 'g10.incident_equivalence_conflict'; END IF;\n",
@@ -869,6 +881,8 @@ COMMIT;
     require_rejected(GOOD_SQL+"\nCREATE SCHEMA decoy;\nALTER ROUTINE itsm.g10_next_sync_candidate(text) SET SCHEMA decoy;\n")
     require_rejected(GOOD_SQL+"\nALTER FUNCTION itsm.g10_next_sync_candidate(text) OWNER TO jlmirror_g10_itsm_worker_invoker;\n")
     require_rejected(GOOD_SQL+"\nALTER FUNCTION itsm.g10_assign_incident(text,text,text,text,text,jsonb) OWNER TO jlmirror_g10_itsm_app_invoker;\n")
+    require_rejected(GOOD_SQL+"\nREASSIGN OWNED BY jlmirror_g10_itsm_executor TO jlmirror_g10_itsm_app_invoker;\n")
+    require_rejected(GOOD_SQL+"\nDROP OWNED BY jlmirror_g10_itsm_executor CASCADE;\n")
 
 def falsify_g10_hidden_relation():
     require_rejected(GOOD_SQL+"\nCREATE TABLE itsm.hidden(id text);\n")
@@ -900,6 +914,9 @@ def falsify_g10_cross_domain_mutation():
     require_rejected(GOOD_SQL+"\nTRUNCATE TABLE itsm.incident_comment, ONLY \"notification\".\"delivery\" RESTART IDENTITY;\n")
     require_rejected(GOOD_SQL+"\nSELECT 1 AS x INTO alerting.evil;\n")
     require_rejected(GOOD_SQL+"\nSELECT 1 AS x INTO TABLE \"notification\".\"evil\";\n")
+    require_rejected(GOOD_SQL+"\nCREATE UNLOGGED TABLE alerting.evil(x int);\n")
+    require_rejected(GOOD_SQL+"\nCREATE TEMP TABLE monitoring.evil(x int);\n")
+    require_rejected(GOOD_SQL+"\nCREATE GLOBAL TEMPORARY TABLE \"notification\".\"evil\"(x int);\n")
     require_rejected(GOOD_SQL+"\nDROP TABLE alerting.alert;\n")
     require_rejected(GOOD_SQL+"\nALTER TABLE alerting.alert ADD COLUMN attacker text;\n")
     require_rejected(GOOD_SQL+"\nALTER TABLE ONLY alerting.alert DISABLE TRIGGER ALL;\n")
@@ -949,6 +966,7 @@ def main():
  falsify_g10_alert_opened_at_projection()
  falsify_g10_expired_sync_discovery()
  falsify_g10_privileged_role_membership_fence()
+ falsify_g10_authority_predicate_integrity()
  falsify_g10_incident_create_replay_equivalence()
  falsify_g10_concurrent_incident_create_serialization()
  falsify_g10_transition_replay_equivalence()

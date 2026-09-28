@@ -3204,6 +3204,86 @@
       ],
       "systemic_guardrail_updated": true,
       "guardrail_generation": 1000088
+    },
+    {
+      "id": "LEARN-PR177-119",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4113618424,
+      "class_id": "ADV-TRUST-CONTEXT-GAP",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "Principal creation parsing accepted quoted identifiers only when they contained no escaped quote. PostgreSQL doubles quotes inside quoted identifiers, so a noncanonical privileged principal such as \"g10\"\"backdoor\" could evade the principal allowlist.",
+      "horizontal_audit": [
+        "quoted role identifiers",
+        "doubled quote escaping",
+        "CREATE ROLE",
+        "CREATE USER",
+        "CREATE GROUP",
+        "principal allowlist parser"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_privileged_role_membership_fence"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000089
+    },
+    {
+      "id": "LEARN-PR177-120",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4113618433,
+      "class_id": "ADV-TRUST-CONTEXT-GAP",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "Authority-helper validation proved required fragments but not that the canonical guard was one reachable executable block. Wrapping the guard in IF FALSE preserved all strings while disabling current-authority enforcement.",
+      "horizontal_audit": [
+        "g10_validate_authority reachability",
+        "IF FALSE",
+        "single executable guard",
+        "current authority enforcement",
+        "unconditional terminators"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_duplicate_validated_function_definition"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000090
+    },
+    {
+      "id": "LEARN-PR177-121",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4113618436,
+      "class_id": "ADV-TRUST-CONTEXT-GAP",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "Cross-domain ALTER fencing covered relations and sequences but omitted external functions, procedures, routines, types, and domains. Elevated G10 DDL could therefore rename or alter another domain's API or type.",
+      "horizontal_audit": [
+        "ALTER FUNCTION external schema",
+        "ALTER PROCEDURE",
+        "ALTER ROUTINE",
+        "ALTER TYPE",
+        "ALTER DOMAIN",
+        "cross-domain API identity"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_cross_domain_mutation"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000091
     }
   ]
 }

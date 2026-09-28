@@ -449,16 +449,21 @@ def falsify_g10_privileged_role_membership_fence():
       "  LOOP\n    IF v_role.rolcanlogin THEN\n      RAISE EXCEPTION 'g10.role_unsafe:%',v_role.rolname;\n    END IF;\n    IF EXISTS ("
     ))
 def falsify_g10_authority_predicate_integrity():
-    canonical_sql=(Path(__file__).resolve().parents[2]/"sql/itsm/001_incident.sql").read_text(encoding="utf-8")
-    canonical="""  IF jsonb_typeof(p_authority_snapshot)<>'object'
-     OR COALESCE((p_authority_snapshot->>'current')::BOOLEAN,FALSE) IS NOT TRUE
-     OR p_authority_snapshot->>'tenant_id' IS DISTINCT FROM p_tenant_id
-     OR p_authority_snapshot->>'principal_id' IS DISTINCT FROM p_actor_principal_id
-     OR COALESCE(p_authority_snapshot->>'action','')=''
-     OR COALESCE(p_authority_snapshot->>'policy_revision','')='' THEN"""
-    weakened=canonical.replace("\n     OR "," AND FALSE\n     OR ")
-    mutated=canonical_sql.replace(canonical,weakened,1)
-    assert mutated != canonical_sql, "authority predicate AND FALSE mutation was a no-op"
+    pattern=re.compile(
+      r"IF\s+jsonb_typeof\s*\(\s*p_authority_snapshot\s*\)\s*<>\s*'object'\s+"
+      r"OR\s+COALESCE\s*\(\s*\(\s*p_authority_snapshot\s*->>\s*'current'\s*\)\s*::\s*BOOLEAN\s*,\s*FALSE\s*\)\s+IS\s+NOT\s+TRUE\s+"
+      r"OR\s+p_authority_snapshot\s*->>\s*'tenant_id'\s+IS\s+DISTINCT\s+FROM\s+p_tenant_id\s+"
+      r"OR\s+p_authority_snapshot\s*->>\s*'principal_id'\s+IS\s+DISTINCT\s+FROM\s+p_actor_principal_id\s+"
+      r"OR\s+COALESCE\s*\(\s*p_authority_snapshot\s*->>\s*'action'\s*,\s*''\s*\)\s*=\s*''\s+"
+      r"OR\s+COALESCE\s*\(\s*p_authority_snapshot\s*->>\s*'policy_revision'\s*,\s*''\s*\)\s*=\s*''\s+THEN",
+      re.I|re.S
+    )
+    match=pattern.search(GOOD_SQL)
+    assert match is not None, "canonical authority predicate was not found in GOOD_SQL"
+    canonical=match.group(0)
+    weakened=canonical.replace(" OR "," AND FALSE OR ",1)
+    mutated=GOOD_SQL[:match.start()]+weakened+GOOD_SQL[match.end():]
+    assert mutated != GOOD_SQL, "authority predicate AND FALSE mutation was a no-op"
     require_rejected(mutated)
 
 def falsify_g10_incident_create_replay_equivalence():

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 import json,subprocess,tempfile
+import re
 from pathlib import Path
 
 VALIDATOR=Path(__file__).with_name("validate_g10_itsm_implementation_scope.py")

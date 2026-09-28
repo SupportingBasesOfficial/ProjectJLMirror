@@ -3284,6 +3284,84 @@
       ],
       "systemic_guardrail_updated": true,
       "guardrail_generation": 1000091
+    },
+    {
+      "id": "LEARN-PR177-122",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4125712693,
+      "class_id": "ADV-TRUST-CONTEXT-GAP",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "Authority-helper validation matched required fragments independently, allowing boolean neutralization such as AND FALSE to preserve every fragment while making the reachable guard ineffective. The validator now requires the exact combined canonical predicate and ordering.",
+      "horizontal_audit": [
+        "authority predicate operator integrity",
+        "AND FALSE neutralization",
+        "current snapshot validation",
+        "tenant/principal binding",
+        "action/policy revision"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_authority_predicate_integrity"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000092
+    },
+    {
+      "id": "LEARN-PR177-123",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4125712702,
+      "class_id": "ADV-TRUST-CONTEXT-GAP",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "Per-function OWNER TO fencing did not cover PostgreSQL bulk ownership commands. REASSIGN OWNED and DROP OWNED could transfer or destroy executor-owned functions after the final audit while bypassing statement-specific owner checks.",
+      "horizontal_audit": [
+        "REASSIGN OWNED",
+        "DROP OWNED",
+        "bulk ownership transfer",
+        "executor-owned functions",
+        "post-audit ownership state"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_duplicate_validated_function_definition"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000093
+    },
+    {
+      "id": "LEARN-PR177-124",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4125712711,
+      "class_id": "ADV-TRUST-CONTEXT-GAP",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "Cross-domain CREATE TABLE fencing required TABLE immediately after CREATE and omitted valid PostgreSQL persistence/temporary modifiers such as UNLOGGED, TEMP, TEMPORARY, GLOBAL TEMP and LOCAL TEMP.",
+      "horizontal_audit": [
+        "CREATE UNLOGGED TABLE",
+        "CREATE TEMP TABLE",
+        "CREATE TEMPORARY TABLE",
+        "GLOBAL/LOCAL temporary tables",
+        "external schema relation creation"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_cross_domain_mutation"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000094
     }
   ]
 }

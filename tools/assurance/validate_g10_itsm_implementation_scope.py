@@ -255,6 +255,8 @@ def sql_errors(text,p):
       out.append("G10 exact SQL forbids statement-level search_path/SET SCHEMA changes because mutation targets must remain explicitly qualified")
     if re.search(r"\bEXECUTE\b(?!\s+(?:FUNCTION\b|ON\s+FUNCTION\b))",context_without_literals,re.I):
       out.append("G10 exact SQL forbids dynamic EXECUTE because validated DDL and guard semantics must remain statically attestable")
+    if re.search(r"\b(?:REASSIGN|DROP)\s+OWNED\b",context_without_literals,re.I):
+      out.append("G10 exact SQL forbids bulk ownership reassignment or destruction")
     for name in validated_functions:
       for ident_match in re.finditer(
         r'\b(?:CREATE\s+(?:OR\s+REPLACE\s+)?|DROP\s+(?:IF\s+EXISTS\s+)?|ALTER\s+)FUNCTION\s+(?P<schema>"[^"]+"|[A-Za-z_][A-Za-z0-9_]*)\s*\.\s*(?P<fn>"[^"]+"|[A-Za-z_][A-Za-z0-9_]*)\s*\(',
@@ -303,29 +305,24 @@ def sql_errors(text,p):
       out.append("G10 authority helper must have at most one definition in reduced or complete artifacts")
     if authority_occurrences:
       authority_block=function_block(executable,"g10_validate_authority")
-      authority_required=(
-        r"jsonb_typeof\s*\(\s*p_authority_snapshot\s*\)\s*<>\s*'object'",
-        r"COALESCE\s*\(\s*\(\s*p_authority_snapshot\s*->>\s*'current'\s*\)\s*::\s*BOOLEAN\s*,\s*FALSE\s*\)\s+IS\s+NOT\s+TRUE",
-        r"p_authority_snapshot\s*->>\s*'tenant_id'\s+IS\s+DISTINCT\s+FROM\s+p_tenant_id",
-        r"p_authority_snapshot\s*->>\s*'principal_id'\s+IS\s+DISTINCT\s+FROM\s+p_actor_principal_id",
-        r"COALESCE\s*\(\s*p_authority_snapshot\s*->>\s*'action'\s*,\s*''\s*\)\s*=\s*''",
-        r"COALESCE\s*\(\s*p_authority_snapshot\s*->>\s*'policy_revision'\s*,\s*''\s*\)\s*=\s*''",
-        r"RAISE\s+EXCEPTION\s+'g10\.current_authority_required'\s*;"
+      authority_guard=re.search(
+        r"\bIF\s+"
+        r"jsonb_typeof\s*\(\s*p_authority_snapshot\s*\)\s*<>\s*'object'\s+OR\s+"
+        r"COALESCE\s*\(\s*\(\s*p_authority_snapshot\s*->>\s*'current'\s*\)\s*::\s*BOOLEAN\s*,\s*FALSE\s*\)\s+IS\s+NOT\s+TRUE\s+OR\s+"
+        r"p_authority_snapshot\s*->>\s*'tenant_id'\s+IS\s+DISTINCT\s+FROM\s+p_tenant_id\s+OR\s+"
+        r"p_authority_snapshot\s*->>\s*'principal_id'\s+IS\s+DISTINCT\s+FROM\s+p_actor_principal_id\s+OR\s+"
+        r"COALESCE\s*\(\s*p_authority_snapshot\s*->>\s*'action'\s*,\s*''\s*\)\s*=\s*''\s+OR\s+"
+        r"COALESCE\s*\(\s*p_authority_snapshot\s*->>\s*'policy_revision'\s*,\s*''\s*\)\s*=\s*''\s+THEN\s+"
+        r"RAISE\s+EXCEPTION\s+'g10\.current_authority_required'\s*;\s*"
+        r"END\s+IF\s*;",
+        authority_block,re.I|re.S
       )
-      if any(not re.search(pattern,authority_block,re.I|re.S) for pattern in authority_required):
-        out.append("G10 authority helper must enforce current tenant principal action and policy revision")
+      if not authority_guard:
+        out.append("G10 authority helper must preserve the exact combined current-authority predicate")
       else:
-        authority_guard=re.search(
-          r"\bIF\s+jsonb_typeof\s*\(\s*p_authority_snapshot\s*\)\s*<>\s*'object'.*?"
-          r"RAISE\s+EXCEPTION\s+'g10\.current_authority_required'\s*;.*?\bEND\s+IF\s*;",
-          authority_block,re.I|re.S
-        )
-        if not authority_guard:
-          out.append("G10 authority helper must keep the canonical validation as one executable guard")
-        else:
-          guard_pos=authority_guard.start()
-          if inside_static_false(authority_block,guard_pos) or inside_any_if(authority_block,guard_pos) or inside_any_case(authority_block,guard_pos) or inside_any_loop(authority_block,guard_pos) or inside_exception_handler(authority_block,guard_pos) or unconditional_terminator_before(authority_block,guard_pos):
-            out.append("G10 authority helper guard must be top-level reachable on the valid call path")
+        guard_pos=authority_guard.start()
+        if inside_static_false(authority_block,guard_pos) or inside_any_if(authority_block,guard_pos) or inside_any_case(authority_block,guard_pos) or inside_any_loop(authority_block,guard_pos) or inside_exception_handler(authority_block,guard_pos) or unconditional_terminator_before(authority_block,guard_pos):
+          out.append("G10 authority helper guard must be top-level reachable on the valid call path")
 
 
     incident_read=function_block(executable,"g10_get_incident")
@@ -568,7 +565,9 @@ def sql_errors(text,p):
       rf"\bCOPY\s+{external_schema}\s*\.\s*(?:\"[^\"]+\"|[A-Za-z_][A-Za-z0-9_]*)\s*(?:\([^;]*?\))?\s+FROM\b",
       rf"\bTRUNCATE\b[^;]*{external_schema}\s*\.",
       rf"\bSELECT\b[^;]*\bINTO\s+(?:TABLE\s+)?{external_schema}\s*\.",
-      rf"\b(?:CREATE|DROP)\s+(?:TABLE|VIEW|MATERIALIZED\s+VIEW|SEQUENCE|FUNCTION|PROCEDURE|ROUTINE|TYPE|DOMAIN)\s+(?:IF\s+(?:NOT\s+)?EXISTS\s+)?{external_schema}\s*\.",
+      rf"\bCREATE\s+(?:(?:(?:GLOBAL|LOCAL)\s+)?(?:TEMP|TEMPORARY)\s+|UNLOGGED\s+)?TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?{external_schema}\s*\.",
+      rf"\b(?:CREATE|DROP)\s+(?:VIEW|MATERIALIZED\s+VIEW|SEQUENCE|FUNCTION|PROCEDURE|ROUTINE|TYPE|DOMAIN)\s+(?:IF\s+(?:NOT\s+)?EXISTS\s+)?{external_schema}\s*\.",
+      rf"\bDROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?{external_schema}\s*\.",
       rf"\bALTER\s+(?:TABLE|VIEW|MATERIALIZED\s+VIEW|SEQUENCE)\s+(?:IF\s+EXISTS\s+)?(?:ONLY\s+)?{external_schema}\s*\.",
       rf"\bALTER\s+(?:FUNCTION|PROCEDURE|ROUTINE|TYPE|DOMAIN)\s+(?:IF\s+EXISTS\s+)?{external_schema}\s*\.",
       rf"\bCREATE\s+(?:UNIQUE\s+)?INDEX\b[^;]*\bON\s+(?:ONLY\s+)?{external_schema}\s*\.",

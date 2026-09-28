@@ -51,6 +51,21 @@ BEGIN
 END;
 $$;
 
+CREATE OR REPLACE FUNCTION itsm.g10_validate_authority(
+ p_tenant_id text,p_actor_principal_id text,p_authority_snapshot jsonb
+) RETURNS void LANGUAGE plpgsql SECURITY INVOKER AS $$
+BEGIN
+  IF jsonb_typeof(p_authority_snapshot)<>'object'
+     OR COALESCE((p_authority_snapshot->>'current')::BOOLEAN,FALSE) IS NOT TRUE
+     OR p_authority_snapshot->>'tenant_id' IS DISTINCT FROM p_tenant_id
+     OR p_authority_snapshot->>'principal_id' IS DISTINCT FROM p_actor_principal_id
+     OR COALESCE(p_authority_snapshot->>'action','')=''
+     OR COALESCE(p_authority_snapshot->>'policy_revision','')='' THEN
+    RAISE EXCEPTION 'g10.current_authority_required';
+  END IF;
+END;
+$$;
+
 CREATE OR REPLACE FUNCTION itsm.g10_create_incident(
  p_tenant_id text,p_alert_id text,p_title text,p_description text,
  p_actor_principal_id text,p_logical_action_id text,p_authority_snapshot jsonb

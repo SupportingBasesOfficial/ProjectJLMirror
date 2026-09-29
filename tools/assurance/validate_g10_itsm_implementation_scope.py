@@ -82,6 +82,21 @@ def strip_sql_comments(text):
 def mask_sql_literals(text):
     out=[]; i=0; body_delim=None
     while i<len(text):
+      if text.startswith("--",i):
+        end=text.find("\n",i)
+        if end<0:
+          out.extend(" " for _ in text[i:]); break
+        out.extend(" " for _ in text[i:end]); out.append("\n"); i=end+1; continue
+      if text.startswith("/*",i):
+        start=i; depth=1; i+=2
+        while i<len(text) and depth:
+          if text.startswith("/*",i):
+            depth+=1; i+=2; continue
+          if text.startswith("*/",i):
+            depth-=1; i+=2; continue
+          i+=1
+        out.extend("\n" if c=="\n" else " " for c in text[start:i])
+        continue
       if text[i] in "Ee" and i+1<len(text) and text[i+1]=="'" and (i==0 or not (text[i-1].isalnum() or text[i-1]=="_")):
         out.extend((" "," ")); i+=2
         while i<len(text):

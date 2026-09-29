@@ -477,6 +477,10 @@ def falsify_g10_authority_exception_propagation():
     mutated=GOOD_SQL.replace(canonical,wrapped,1)
     assert mutated != GOOD_SQL, "authority swallowed-exception mutation was a no-op"
     require_rejected(mutated)
+    conditional="  BEGIN\n"+canonical+"\n  EXCEPTION WHEN OTHERS THEN IF FALSE THEN RAISE; END IF; NULL;\n  END;"
+    mutated_conditional=GOOD_SQL.replace(canonical,conditional,1)
+    assert mutated_conditional != GOOD_SQL, "authority conditional-rethrow mutation was a no-op"
+    require_rejected(mutated_conditional)
 
 def falsify_g10_authority_predicate_integrity():
     pattern=re.compile(
@@ -939,6 +943,8 @@ def falsify_g10_cross_domain_mutation():
     require_rejected(GOOD_SQL+"\nSELECT $$--$$; INSERT INTO alerting.alert(tenant_id) VALUES ('t');\n")
     require_rejected(GOOD_SQL+"\nUPDATE alerting.alert SET lifecycle_state='resolved';\n")
     require_rejected(GOOD_SQL+"\nDELETE FROM human_operations.some_table;\n")
+    require_rejected(GOOD_SQL+"\nDELETE FROM U&\"alerting\".alert;\n")
+    require_rejected(GOOD_SQL+"\nDELETE FROM U&\"a\\006certing\".alert;\n")
     require_rejected(GOOD_SQL+"\nMERGE INTO notification.delivery d USING notification.delivery s ON FALSE WHEN NOT MATCHED THEN INSERT DEFAULT VALUES;\n")
     require_rejected(GOOD_SQL+"\nUPDATE ONLY alerting.alert SET lifecycle_state='resolved';\n")
     require_rejected(GOOD_SQL+"\nDELETE FROM ONLY alerting.alert;\n")

@@ -251,7 +251,7 @@ def enclosing_exception_swallows(block,pos):
         frame=stack.pop()
         if frame["enclosing"] and frame["exception"] is not None:
           handler=block[frame["exception"]:token.start()]
-          if re.search(r"\bWHEN\s+OTHERS\s+THEN\b",handler,re.I|re.S) and not has_unconditional_bare_raise(handler):
+          if re.search(r"\bWHEN\s+(?:OTHERS|raise_exception|SQLSTATE\s+'P0001')\s+THEN\b",handler,re.I|re.S) and not has_unconditional_bare_raise(handler):
             return True
     return False
 
@@ -266,6 +266,13 @@ def sql_errors(text,p):
 
     validated_functions=("g10_get_incident","g10_next_sync_candidate","g10_create_incident","g10_transition_incident")
     owner_guard_functions=("g10_reject_immutable_mutation","g10_validate_authority","g10_create_incident","g10_transition_incident","g10_assign_incident","g10_add_comment","g10_next_sync_candidate","g10_claim_sync","g10_complete_sync","g10_schedule_sync_retry","g10_reconcile_sync","g10_get_incident","g10_list_alert_incidents")
+    for installed_name in owner_guard_functions:
+      if len(function_occurrences(executable,installed_name))!=1:
+        out.append(f"G10 installed function must have exactly one definition: {installed_name}")
+      installed_block=function_block(executable,installed_name)
+      if not installed_block or not re.search(r"\bRETURNS\b|\bRETURN\b",installed_block,re.I|re.S):
+        out.append(f"G10 installed function must retain an executable return contract: {installed_name}")
+
     context_scan=executable
     # Canonical SECURITY DEFINER/INVOKER function configuration is definition-time metadata,
     # not a mutable session statement. Mask only the exact attached function SET clauses.
@@ -605,7 +612,9 @@ def sql_errors(text,p):
       rf"\bTRUNCATE\b[^;]*{external_schema}\s*\.",
       rf"\bSELECT\b[^;]*\bINTO\s+(?:TABLE\s+)?{external_schema}\s*\.",
       rf"\bCREATE\s+(?:(?:(?:GLOBAL|LOCAL)\s+)?(?:TEMP|TEMPORARY)\s+|UNLOGGED\s+)?TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?{external_schema}\s*\.",
-      rf"\b(?:CREATE|DROP)\s+(?:VIEW|MATERIALIZED\s+VIEW|SEQUENCE|FUNCTION|PROCEDURE|ROUTINE|TYPE|DOMAIN)\s+(?:IF\s+(?:NOT\s+)?EXISTS\s+)?{external_schema}\s*\.",
+      rf"\bCREATE\s+(?:OR\s+REPLACE\s+)?(?:VIEW|MATERIALIZED\s+VIEW|FUNCTION|PROCEDURE|ROUTINE)\s+(?:IF\s+NOT\s+EXISTS\s+)?{external_schema}\s*\.",
+      rf"\bCREATE\s+(?:SEQUENCE|TYPE|DOMAIN)\s+(?:IF\s+NOT\s+EXISTS\s+)?{external_schema}\s*\.",
+      rf"\bDROP\s+(?:VIEW|MATERIALIZED\s+VIEW|SEQUENCE|FUNCTION|PROCEDURE|ROUTINE|TYPE|DOMAIN)\s+(?:IF\s+EXISTS\s+)?{external_schema}\s*\.",
       rf"\bDROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?{external_schema}\s*\.",
       rf"\bALTER\s+(?:TABLE|VIEW|MATERIALIZED\s+VIEW|SEQUENCE)\s+(?:IF\s+EXISTS\s+)?(?:ONLY\s+)?{external_schema}\s*\.",
       rf"\bALTER\s+(?:FUNCTION|PROCEDURE|ROUTINE|TYPE|DOMAIN)\s+(?:IF\s+EXISTS\s+)?{external_schema}\s*\.",

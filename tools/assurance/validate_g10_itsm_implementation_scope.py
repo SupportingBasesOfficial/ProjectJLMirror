@@ -220,6 +220,16 @@ def unconditional_terminator_before(block,pos):
             return True
     return False
 
+def has_unconditional_bare_raise(handler):
+    for match in re.finditer(r"\bRAISE\s*;",handler,re.I):
+      pos=match.start()
+      if inside_static_false(handler,pos) or inside_any_if(handler,pos) or inside_any_case(handler,pos) or inside_any_loop(handler,pos) or inside_exception_handler(handler,pos):
+        continue
+      if unconditional_terminator_before(handler,pos):
+        continue
+      return True
+    return False
+
 def enclosing_exception_swallows(block,pos):
     token_re=re.compile(r"\bBEGIN\b|\bEXCEPTION\b|\bEND\s*;",re.I)
     stack=[]
@@ -241,7 +251,7 @@ def enclosing_exception_swallows(block,pos):
         frame=stack.pop()
         if frame["enclosing"] and frame["exception"] is not None:
           handler=block[frame["exception"]:token.start()]
-          if re.search(r"\bWHEN\s+OTHERS\s+THEN\b",handler,re.I|re.S) and not re.search(r"\bRAISE\s*;",handler,re.I|re.S):
+          if re.search(r"\bWHEN\s+OTHERS\s+THEN\b",handler,re.I|re.S) and not has_unconditional_bare_raise(handler):
             return True
     return False
 
@@ -274,6 +284,8 @@ def sql_errors(text,p):
     )
     context_without_literals=mask_sql_literals(context_scan)
     executable_without_literals=mask_sql_literals(executable)
+    if re.search(r'(?<![A-Za-z0-9_])U&"',executable_without_literals,re.I):
+      out.append("G10 exact SQL forbids Unicode-escaped identifiers because authority-sensitive identifiers must remain lexically canonical")
     if re.search(r'(?<![A-Za-z0-9_])(?:(?:pg_catalog|"pg_catalog")\s*\.\s*)?(?:set_config|"set_config")\s*\(',context_without_literals,re.I):
       out.append("G10 exact SQL forbids noncanonical executable set_config because mutable session semantics must remain statically attestable")
     if re.search(r"\bSET\s+(?:(?:LOCAL|SESSION)\s+)?search_path\b",context_without_literals,re.I) or re.search(r"\bSET\s+SCHEMA\b",context_without_literals,re.I):

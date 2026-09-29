@@ -487,6 +487,20 @@ def falsify_g10_authority_exception_propagation():
     assert mutated_conditional != GOOD_SQL, "authority conditional-rethrow mutation was a no-op"
     require_rejected(mutated_conditional)
 
+def falsify_g10_authority_named_exception_propagation():
+    canonical="""  IF jsonb_typeof(p_authority_snapshot)<>'object'
+     OR COALESCE((p_authority_snapshot->>'current')::BOOLEAN,FALSE) IS NOT TRUE
+     OR p_authority_snapshot->>'tenant_id' IS DISTINCT FROM p_tenant_id
+     OR p_authority_snapshot->>'principal_id' IS DISTINCT FROM p_actor_principal_id
+     OR COALESCE(p_authority_snapshot->>'action','')=''
+     OR COALESCE(p_authority_snapshot->>'policy_revision','')='' THEN
+    RAISE EXCEPTION 'g10.current_authority_required';
+  END IF;"""
+    wrapped="  BEGIN\n"+canonical+"\n  EXCEPTION WHEN raise_exception THEN NULL;\n  END;"
+    mutated=GOOD_SQL.replace(canonical,wrapped,1)
+    assert mutated != GOOD_SQL, "authority named-handler mutation was a no-op"
+    require_rejected(mutated)
+
 def falsify_g10_authority_predicate_integrity():
     pattern=re.compile(
       r"IF\s+jsonb_typeof\s*\(\s*p_authority_snapshot\s*\)\s*<>\s*'object'\s+"
@@ -926,6 +940,7 @@ COMMIT;
     require_rejected(GOOD_SQL+"\nCREATE SCHEMA decoy;\nALTER ROUTINE itsm.g10_next_sync_candidate(text) SET SCHEMA decoy;\n")
     require_rejected(GOOD_SQL+"\nALTER FUNCTION itsm.g10_next_sync_candidate(text) OWNER TO jlmirror_g10_itsm_worker_invoker;\n")
     require_rejected(GOOD_SQL+"\nALTER FUNCTION itsm.g10_assign_incident(text,text,text,text,text,jsonb) OWNER TO jlmirror_g10_itsm_app_invoker;\n")
+    require_rejected(GOOD_SQL+"\nCREATE OR REPLACE FUNCTION itsm.g10_assign_incident(p_tenant_id text,p_incident_id text,p_assignee_type text,p_assignee_id text,p_actor_principal_id text,p_authority_snapshot jsonb) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER AS $ BEGIN RETURN '{}'::jsonb; END; $;\n")
     require_rejected(GOOD_SQL+"\nREASSIGN OWNED BY jlmirror_g10_itsm_executor TO jlmirror_g10_itsm_app_invoker;\n")
     require_rejected(GOOD_SQL+"\nDROP OWNED BY jlmirror_g10_itsm_executor CASCADE;\n")
 
@@ -964,6 +979,9 @@ def falsify_g10_cross_domain_mutation():
     require_rejected(GOOD_SQL+"\nCREATE UNLOGGED TABLE alerting.evil(x int);\n")
     require_rejected(GOOD_SQL+"\nCREATE TEMP TABLE monitoring.evil(x int);\n")
     require_rejected(GOOD_SQL+"\nCREATE GLOBAL TEMPORARY TABLE \"notification\".\"evil\"(x int);\n")
+    require_rejected(GOOD_SQL+"\nCREATE OR REPLACE FUNCTION alerting.g7_get_alert() RETURNS void LANGUAGE plpgsql AS $ BEGIN NULL; END; $;\n")
+    require_rejected(GOOD_SQL+"\nCREATE OR REPLACE PROCEDURE alerting.evil() LANGUAGE plpgsql AS $ BEGIN NULL; END; $;\n")
+    require_rejected(GOOD_SQL+"\nCREATE OR REPLACE VIEW alerting.alert_public AS SELECT 1 AS x;\n")
     require_rejected(GOOD_SQL+"\nDROP TABLE alerting.alert;\n")
     require_rejected(GOOD_SQL+"\nALTER TABLE alerting.alert ADD COLUMN attacker text;\n")
     require_rejected(GOOD_SQL+"\nALTER TABLE ONLY alerting.alert DISABLE TRIGGER ALL;\n")
@@ -1014,6 +1032,7 @@ def main():
  falsify_g10_expired_sync_discovery()
  falsify_g10_privileged_role_membership_fence()
  falsify_g10_authority_exception_propagation()
+ falsify_g10_authority_named_exception_propagation()
  falsify_g10_authority_predicate_integrity()
  falsify_g10_incident_create_replay_equivalence()
  falsify_g10_concurrent_incident_create_serialization()

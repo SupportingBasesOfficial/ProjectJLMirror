@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 import json,subprocess,tempfile
+import shutil
 import re
 from pathlib import Path
 
@@ -167,7 +168,11 @@ def case(files,ok):
       "--head-ref","impl/g10-itsm-test","--labels-json",'["jlmirror-slice:g10-itsm"]',
       "--head-repo",REPO,"--base-repo",REPO],stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
   if (cp.returncode==0)!=ok:raise AssertionError(cp.stdout+"\n"+cp.stderr)
- finally:td.cleanup()
+ finally:
+  try:
+   td.cleanup()
+  except OSError:
+   shutil.rmtree(td.name,ignore_errors=True)
 
 def require_rejected(sql_text):
     case({"sql/itsm/001_incident.sql":sql_text},False)

@@ -54,7 +54,7 @@ $$;
 
 CREATE OR REPLACE FUNCTION itsm.g10_validate_authority(
  p_tenant_id text,p_actor_principal_id text,p_authority_snapshot jsonb
-) RETURNS void LANGUAGE plpgsql SECURITY INVOKER SET search_path=pg_catalog,itsm AS $
+) RETURNS void LANGUAGE plpgsql SECURITY INVOKER SET search_path=pg_catalog,itsm AS $$
 BEGIN
   IF jsonb_typeof(p_authority_snapshot)<>'object'
      OR COALESCE((p_authority_snapshot->>'current')::BOOLEAN,FALSE) IS NOT TRUE
@@ -70,7 +70,7 @@ $$;
 CREATE OR REPLACE FUNCTION itsm.g10_create_incident(
  p_tenant_id text,p_alert_id text,p_title text,p_description text,
  p_actor_principal_id text,p_logical_action_id text,p_authority_snapshot jsonb
-) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,itsm,alerting AS $
+) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,itsm,alerting AS $$
 DECLARE v_existing record;
 BEGIN
   PERFORM pg_advisory_xact_lock(hashtextextended(p_tenant_id||chr(31)||p_logical_action_id,10));
@@ -89,7 +89,7 @@ $$;
 CREATE OR REPLACE FUNCTION itsm.g10_transition_incident(
  p_tenant_id text,p_incident_id text,p_target_state text,p_actor_principal_id text,
  p_logical_action_id text,p_authority_snapshot jsonb
-) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,itsm AS $
+) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,itsm AS $$
 DECLARE v_existing_transition record;
 BEGIN
   SELECT * INTO v_existing_transition
@@ -107,7 +107,7 @@ END;
 $$;
 
 CREATE OR REPLACE FUNCTION itsm.g10_next_sync_candidate(p_tenant_id text)
-RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,itsm AS $
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,itsm AS $$
 DECLARE v_result jsonb;
 BEGIN
   SELECT to_jsonb(x) INTO v_result FROM (
@@ -126,7 +126,7 @@ END;
 $$;
 
 CREATE OR REPLACE FUNCTION itsm.g10_get_incident(p_tenant_id text,p_incident_id text)
-RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,itsm,alerting AS $
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,itsm,alerting AS $$
 DECLARE v_alert jsonb;
 BEGIN
   SELECT to_jsonb(x) INTO v_alert FROM (

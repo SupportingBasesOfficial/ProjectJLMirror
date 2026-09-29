@@ -266,12 +266,34 @@ def sql_errors(text,p):
 
     validated_functions=("g10_get_incident","g10_next_sync_candidate","g10_create_incident","g10_transition_incident")
     owner_guard_functions=("g10_reject_immutable_mutation","g10_validate_authority","g10_create_incident","g10_transition_incident","g10_assign_incident","g10_add_comment","g10_next_sync_candidate","g10_claim_sync","g10_complete_sync","g10_schedule_sync_retry","g10_reconcile_sync","g10_get_incident","g10_list_alert_incidents")
-    for installed_name in owner_guard_functions:
+    installed_function_contracts={
+      "g10_reject_immutable_mutation":("INVOKER","pg_catalog,itsm"),
+      "g10_validate_authority":("INVOKER","pg_catalog,itsm"),
+      "g10_create_incident":("DEFINER","pg_catalog,itsm,alerting"),
+      "g10_transition_incident":("DEFINER","pg_catalog,itsm"),
+      "g10_assign_incident":("DEFINER","pg_catalog,itsm"),
+      "g10_add_comment":("DEFINER","pg_catalog,itsm"),
+      "g10_next_sync_candidate":("DEFINER","pg_catalog,itsm"),
+      "g10_claim_sync":("DEFINER","pg_catalog,itsm"),
+      "g10_complete_sync":("DEFINER","pg_catalog,itsm"),
+      "g10_schedule_sync_retry":("DEFINER","pg_catalog,itsm"),
+      "g10_reconcile_sync":("DEFINER","pg_catalog,itsm"),
+      "g10_get_incident":("DEFINER","pg_catalog,itsm,alerting"),
+      "g10_list_alert_incidents":("DEFINER","pg_catalog,itsm")
+    }
+    for installed_name,(security_mode,search_path) in installed_function_contracts.items():
       if len(function_occurrences(executable,installed_name))!=1:
         out.append(f"G10 installed function must have exactly one definition: {installed_name}")
+        continue
       installed_block=function_block(executable,installed_name)
-      if not installed_block or not re.search(r"\bRETURNS\b|\bRETURN\b",installed_block,re.I|re.S):
-        out.append(f"G10 installed function must retain an executable return contract: {installed_name}")
+      if not installed_block:
+        out.append(f"G10 installed function definition must remain extractable: {installed_name}")
+        continue
+      if not re.search(rf"\bSECURITY\s+{security_mode}\b",installed_block,re.I):
+        out.append(f"G10 installed function security mode drift: {installed_name}")
+      path_pattern=r"\bSET\s+search_path\s*=\s*"+r"\s*,\s*".join(re.escape(x) for x in search_path.split(","))
+      if not re.search(path_pattern,installed_block,re.I):
+        out.append(f"G10 installed function search_path drift: {installed_name}")
 
     context_scan=executable
     # Canonical SECURITY DEFINER/INVOKER function configuration is definition-time metadata,

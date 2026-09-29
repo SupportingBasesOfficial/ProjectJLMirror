@@ -18,6 +18,10 @@ DOCS_ALLOWED_EXACT = {
 GOVERNANCE_ALLOWED_PREFIXES = (
     "docs/",
     "governance/",
+    "tools/assurance/",
+    ".github/workflows/",
+    "implementation/",
+    "sql/",
 )
 GOVERNANCE_ALLOWED_EXACT = DOCS_ALLOWED_EXACT
 
@@ -25,6 +29,13 @@ RUNTIME_FORBIDDEN_PREFIXES = (
     "apps/",
     "src/",
     "sql/",
+    "tests/",
+    "docker/",
+    "contracts/",
+)
+GOVERNANCE_FORBIDDEN_PREFIXES = (
+    "apps/",
+    "src/",
     "tests/",
     "docker/",
     "contracts/",
@@ -57,9 +68,10 @@ def scope_errors(*, head_ref: str, changed_paths: list[str]) -> list[str]:
     else:
         return []
 
+    forbidden_prefixes = RUNTIME_FORBIDDEN_PREFIXES if scope == "docs" else GOVERNANCE_FORBIDDEN_PREFIXES
     errors: list[str] = []
     for path in changed_paths:
-        if path in RUNTIME_FORBIDDEN_EXACT or path.startswith(RUNTIME_FORBIDDEN_PREFIXES):
+        if path in RUNTIME_FORBIDDEN_EXACT or path.startswith(forbidden_prefixes):
             errors.append(f"{scope}-scope branch carries forbidden runtime/substrate path: {path}")
             continue
         if path not in allowed_exact and not path.startswith(allowed_prefixes):

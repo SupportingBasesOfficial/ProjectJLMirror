@@ -4,15 +4,15 @@ CREATE SCHEMA IF NOT EXISTS itsm;
 
 DO $$
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='jlmirror_g10_itsm_executor') THEN
+  IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname='jlmirror_g10_itsm_executor') THEN
     CREATE ROLE jlmirror_g10_itsm_executor
       NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='jlmirror_g10_itsm_app_invoker') THEN
+  IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname='jlmirror_g10_itsm_app_invoker') THEN
     CREATE ROLE jlmirror_g10_itsm_app_invoker
       NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='jlmirror_g10_itsm_worker_invoker') THEN
+  IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname='jlmirror_g10_itsm_worker_invoker') THEN
     CREATE ROLE jlmirror_g10_itsm_worker_invoker
       NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
   END IF;
@@ -22,7 +22,7 @@ $$;
 DO $$
 DECLARE v_role RECORD;
 BEGIN
-  FOR v_role IN SELECT * FROM pg_roles
+  FOR v_role IN SELECT * FROM pg_catalog.pg_roles
     WHERE rolname IN ('jlmirror_g10_itsm_executor','jlmirror_g10_itsm_app_invoker','jlmirror_g10_itsm_worker_invoker')
   LOOP
     IF v_role.rolcanlogin OR v_role.rolsuper OR v_role.rolcreatedb OR v_role.rolcreaterole
@@ -30,7 +30,7 @@ BEGIN
       RAISE EXCEPTION 'g10.role_unsafe:%',v_role.rolname;
     END IF;
     IF EXISTS (
-      SELECT 1 FROM pg_auth_members
+      SELECT 1 FROM pg_catalog.pg_auth_members
       WHERE roleid=v_role.oid OR member=v_role.oid
     ) THEN
       RAISE EXCEPTION 'g10.role_unsafe_membership:%',v_role.rolname;
@@ -45,7 +45,7 @@ DECLARE
   v_unexpected TEXT;
 BEGIN
   SELECT oid INTO v_executor_oid
-  FROM pg_roles WHERE rolname='jlmirror_g10_itsm_executor';
+  FROM pg_catalog.pg_roles WHERE rolname='jlmirror_g10_itsm_executor';
 
   SELECT format('class=%s,objid=%s,dbid=%s',d.classid::regclass::TEXT,d.objid,d.dbid)
     INTO v_unexpected
@@ -420,7 +420,7 @@ CREATE OR REPLACE FUNCTION itsm.g10_assign_incident(
 LANGUAGE plpgsql SECURITY DEFINER
 SET search_path=pg_catalog,itsm
 AS $$
-DECLARE v_id TEXT;v_existing itsm.incident_assignment%ROWTYPE;
+DECLARE v_id TEXT;v_existing itsm.incident_assignment%ROWTYPE;v_effective_at TIMESTAMPTZ;
 BEGIN
   PERFORM itsm.g10_validate_authority(p_tenant_id,p_actor_principal_id,p_authority_snapshot);
   IF COALESCE(p_assignee_principal_id,'')='' OR COALESCE(p_logical_action_id,'')='' THEN
@@ -428,6 +428,7 @@ BEGIN
   END IF;
   PERFORM set_config('jlmirror.tenant_id',p_tenant_id,true);
   PERFORM pg_advisory_xact_lock(hashtextextended(p_tenant_id||chr(31)||p_incident_id,1));
+  v_effective_at:=clock_timestamp();
   PERFORM 1 FROM itsm.incident WHERE tenant_id=p_tenant_id AND incident_id=p_incident_id;
   IF NOT FOUND THEN RAISE EXCEPTION 'g10.incident_missing'; END IF;
 
@@ -441,16 +442,16 @@ BEGIN
     RETURN jsonb_build_object('incident_assignment_id',v_existing.incident_assignment_id,'duplicate',TRUE);
   END IF;
 
-  UPDATE itsm.incident_assignment SET effective_until=transaction_timestamp()
+  UPDATE itsm.incident_assignment SET effective_until=v_effective_at
    WHERE tenant_id=p_tenant_id AND incident_id=p_incident_id AND effective_until IS NULL;
 
   v_id:='g10-assignment:'||md5(p_tenant_id||chr(31)||p_incident_id||chr(31)||p_logical_action_id);
   INSERT INTO itsm.incident_assignment(
     tenant_id,incident_assignment_id,incident_id,assignee_principal_id,
-    assigned_by_principal_id,logical_action_id,authority_snapshot
+    assigned_by_principal_id,logical_action_id,authority_snapshot,effective_from
   ) VALUES (
     p_tenant_id,v_id,p_incident_id,p_assignee_principal_id,
-    p_actor_principal_id,p_logical_action_id,p_authority_snapshot
+    p_actor_principal_id,p_logical_action_id,p_authority_snapshot,v_effective_at
   );
   RETURN jsonb_build_object('incident_assignment_id',v_id,'duplicate',FALSE);
 END;
@@ -815,9 +816,9 @@ DECLARE
   v_row RECORD;
   v_oid OID;
 BEGIN
-  SELECT oid INTO v_executor FROM pg_roles WHERE rolname='jlmirror_g10_itsm_executor';
-  SELECT oid INTO v_app FROM pg_roles WHERE rolname='jlmirror_g10_itsm_app_invoker';
-  SELECT oid INTO v_worker FROM pg_roles WHERE rolname='jlmirror_g10_itsm_worker_invoker';
+  SELECT oid INTO v_executor FROM pg_catalog.pg_roles WHERE rolname='jlmirror_g10_itsm_executor';
+  SELECT oid INTO v_app FROM pg_catalog.pg_roles WHERE rolname='jlmirror_g10_itsm_app_invoker';
+  SELECT oid INTO v_worker FROM pg_catalog.pg_roles WHERE rolname='jlmirror_g10_itsm_worker_invoker';
 
   FOR v_row IN
     SELECT signature,exposure FROM (VALUES

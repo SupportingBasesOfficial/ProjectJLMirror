@@ -321,6 +321,15 @@ def falsify_governance_only_pr_scope() -> None:
     )
     assert unsupported_governance_tool and "tools/assurance/unrelated_validator.py" in unsupported_governance_tool[0]
 
+    governance_technical_allowed = [
+        "governance/adversarial/example.json",
+        "tools/assurance/validate_example.py",
+        ".github/workflows/example.yml",
+        "implementation/example/AUTHORIZATION.md",
+        "sql/example/001_guard.sql",
+    ]
+    assert not gps.scope_errors(head_ref="governance/example", changed_paths=governance_technical_allowed)
+
     governance_errors = gps.scope_errors(
         head_ref="governance/example",
         changed_paths=["governance/adversarial/example.json", "src/domain/runtime.py"],
@@ -447,8 +456,8 @@ def _g10_review_guardrail_errors(sql: str) -> list[str]:
         errors.append("G10 Alert summary must not reference non-canonical created_at")
     if "(o.sync_state='dispatching' AND o.claim_expires_at<=transaction_timestamp())" not in sql:
         errors.append("G10 sync discovery must surface expired dispatching leases")
-    if "FROM pg_auth_members" not in sql or "roleid=v_role.oid OR member=v_role.oid" not in sql:
-        errors.append("G10 privileged roles must reject incoming and outgoing memberships")
+    if "FROM pg_catalog.pg_auth_members" not in sql or "roleid=v_role.oid OR member=v_role.oid" not in sql:
+        errors.append("G10 privileged roles must reject incoming and outgoing memberships through pg_catalog")
     if "hashtextextended(p_tenant_id||chr(31)||p_logical_action_id,10)" not in sql:
         errors.append("G10 Incident creation must serialize same logical action")
     if "g10.transition_equivalence_conflict" not in sql or "v_existing_transition.to_state IS DISTINCT FROM p_target_state" not in sql:
@@ -474,7 +483,7 @@ FROM alerting.alert;
 SELECT 1
 FROM q o
 WHERE (o.sync_state='dispatching' AND o.claim_expires_at<=transaction_timestamp());
-SELECT 1 FROM pg_auth_members WHERE roleid=v_role.oid OR member=v_role.oid;
+SELECT 1 FROM pg_catalog.pg_auth_members WHERE roleid=v_role.oid OR member=v_role.oid;
 SELECT hashtextextended(p_tenant_id||chr(31)||p_logical_action_id,10);
 IF v_existing_transition.to_state IS DISTINCT FROM p_target_state THEN
   RAISE EXCEPTION 'g10.transition_equivalence_conflict';
@@ -540,13 +549,13 @@ def falsify_g10_privileged_role_membership() -> None:
     )
     safe = _g10_safe_guardrail_sql()
     unsafe = safe.replace(
-        "SELECT 1 FROM pg_auth_members WHERE roleid=v_role.oid OR member=v_role.oid;",
-        "SELECT 1 FROM pg_roles WHERE oid=v_role.oid;",
+        "SELECT 1 FROM pg_catalog.pg_auth_members WHERE roleid=v_role.oid OR member=v_role.oid;",
+        "SELECT 1 FROM pg_catalog.pg_roles WHERE oid=v_role.oid;",
     )
     _assert_g10_guardrail_case(
         unsafe=unsafe,
         safe=safe,
-        expected_fragment="incoming and outgoing memberships",
+        expected_fragment="incoming and outgoing memberships through pg_catalog",
     )
 
 

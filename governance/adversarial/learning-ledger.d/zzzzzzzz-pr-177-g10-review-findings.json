@@ -3440,6 +3440,84 @@
       ],
       "systemic_guardrail_updated": true,
       "guardrail_generation": 1000097
+    },
+    {
+      "id": "LEARN-PR177-128",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4128804912,
+      "class_id": "ADV-TRUST-CONTEXT-GAP",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "Uniqueness and deep definition checks covered only four central functions, while additional installed privileged G10 APIs remained replaceable by a second CREATE OR REPLACE definition. The validator now requires exactly one definition for every installed G10 function inventory entry while retaining deep semantic checks on the core functions.",
+      "horizontal_audit": [
+        "all 13 installed G10 functions",
+        "duplicate CREATE OR REPLACE FUNCTION",
+        "g10_assign_incident replacement",
+        "SECURITY DEFINER API inventory",
+        "definition final-state uniqueness"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_duplicate_validated_function_definition"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000098
+    },
+    {
+      "id": "LEARN-PR177-129",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4128804923,
+      "class_id": "ADV-TRUST-CONTEXT-GAP",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "Enclosing exception propagation analysis only recognized WHEN OTHERS. PL/pgSQL's bare RAISE EXCEPTION uses SQLSTATE P0001, catchable as raise_exception or SQLSTATE 'P0001', so a named handler could swallow the current-authority failure. All handlers capable of catching P0001 now require an unconditional reachable bare rethrow.",
+      "horizontal_audit": [
+        "WHEN raise_exception",
+        "WHEN SQLSTATE P0001",
+        "authority exception propagation",
+        "named PL/pgSQL handlers",
+        "fail-closed current authority"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_authority_exception_propagation"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000099
+    },
+    {
+      "id": "LEARN-PR177-130",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4128804927,
+      "class_id": "ADV-TRUST-CONTEXT-GAP",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "Cross-domain object DDL fencing required the object type immediately after CREATE and omitted PostgreSQL CREATE OR REPLACE forms for views, functions, procedures, and routines. An elevated G10 installer could therefore replace protected-domain objects without rejection.",
+      "horizontal_audit": [
+        "CREATE OR REPLACE FUNCTION external schema",
+        "CREATE OR REPLACE PROCEDURE",
+        "CREATE OR REPLACE VIEW",
+        "protected external domains",
+        "cross-domain object replacement"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_cross_domain_mutation"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000100
     }
   ]
 }

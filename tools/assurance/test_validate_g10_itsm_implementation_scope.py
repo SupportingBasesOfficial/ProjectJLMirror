@@ -136,6 +136,69 @@ BEGIN
   RETURN '{}'::jsonb;
 END;
 $$;
+CREATE OR REPLACE FUNCTION itsm.g10_reject_immutable_mutation()
+RETURNS trigger LANGUAGE plpgsql SECURITY INVOKER SET search_path=pg_catalog,itsm AS $$
+BEGIN
+  RAISE EXCEPTION 'g10.immutable';
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION itsm.g10_assign_incident(
+ p_tenant_id text,p_incident_id text,p_assignee_principal_id text,p_actor_principal_id text,p_logical_action_id text,p_authority_snapshot jsonb
+) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,itsm AS $$
+BEGIN
+  RETURN jsonb_build_object('incident_id',p_incident_id,'duplicate',FALSE);
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION itsm.g10_add_comment(
+ p_tenant_id text,p_incident_id text,p_body text,p_actor_principal_id text,p_logical_action_id text,p_authority_snapshot jsonb
+) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,itsm AS $$
+BEGIN
+  RETURN jsonb_build_object('incident_id',p_incident_id,'duplicate',FALSE);
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION itsm.g10_claim_sync(
+ p_tenant_id text,p_outbox_id text,p_executor_id text,p_claim_seconds integer
+) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,itsm AS $$
+BEGIN
+  RETURN jsonb_build_object('outbox_id',p_outbox_id);
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION itsm.g10_complete_sync(
+ p_tenant_id text,p_outbox_id text,p_executor_id text,p_result_state text,p_provider_ticket_ref text,p_provider_evidence jsonb,p_failure_class text
+) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,itsm AS $$
+BEGIN
+  RETURN jsonb_build_object('outbox_id',p_outbox_id);
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION itsm.g10_schedule_sync_retry(
+ p_tenant_id text,p_incident_id text
+) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,itsm AS $$
+BEGIN
+  RETURN jsonb_build_object('incident_id',p_incident_id);
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION itsm.g10_reconcile_sync(
+ p_tenant_id text,p_outbox_id text
+) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,itsm AS $$
+BEGIN
+  RETURN jsonb_build_object('outbox_id',p_outbox_id);
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION itsm.g10_list_alert_incidents(
+ p_tenant_id text,p_alert_id text
+) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,itsm AS $$
+BEGIN
+  RETURN '[]'::jsonb;
+END;
+$$;
+
 COMMIT;
 """
 

@@ -832,7 +832,7 @@ def falsify_g10_transition_replay_equivalence():
 
 def falsify_g10_duplicate_validated_function_definition():
     canonical_worker="""CREATE OR REPLACE FUNCTION itsm.g10_next_sync_candidate(p_tenant_id text)
-RETURNS jsonb LANGUAGE plpgsql AS $$
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,itsm AS $
 DECLARE v_result jsonb;
 BEGIN
   SELECT to_jsonb(x) INTO v_result FROM (

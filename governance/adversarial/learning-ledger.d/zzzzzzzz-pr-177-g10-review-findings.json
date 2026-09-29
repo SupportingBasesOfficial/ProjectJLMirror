@@ -3388,6 +3388,58 @@
       ],
       "systemic_guardrail_updated": true,
       "guardrail_generation": 1000095
+    },
+    {
+      "id": "LEARN-PR177-126",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4126757257,
+      "class_id": "ADV-TRUST-CONTEXT-GAP",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "The enclosing-exception analysis treated any textual bare RAISE inside a WHEN OTHERS handler as propagation. A conditional or otherwise unreachable RAISE could therefore satisfy the check while the authority exception remained swallowed. Propagation now requires a top-level reachable bare RAISE.",
+      "horizontal_audit": [
+        "conditional RAISE in exception handler",
+        "IF FALSE THEN RAISE",
+        "handler reachability",
+        "fail-closed authority propagation",
+        "nested exception control flow"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_authority_exception_propagation"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000096
+    },
+    {
+      "id": "LEARN-PR177-127",
+      "pr": 177,
+      "source": "external_review",
+      "review_comment_id": 4126757263,
+      "class_id": "ADV-TRUST-CONTEXT-GAP",
+      "invariant_ids": [
+        "INV-AUTH-001"
+      ],
+      "root_cause": "Cross-domain fencing recognized quoted and unquoted canonical schema tokens but omitted PostgreSQL Unicode-escaped identifiers such as U&\"alerting\", which can resolve to the same protected schema. The exact G10 SQL now fails closed on Unicode-escaped identifiers entirely.",
+      "horizontal_audit": [
+        "PostgreSQL U& quoted identifiers",
+        "Unicode escape sequences",
+        "external schema aliases",
+        "cross-domain DELETE",
+        "lexical canonicalization"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_g10_cross_domain_mutation"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1000097
     }
   ]
 }

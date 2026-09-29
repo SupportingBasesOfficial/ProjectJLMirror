@@ -320,6 +320,10 @@ def falsify_g10_authority_exception_propagation():
  g10_itsm_scope.falsify_g10_authority_exception_propagation()
  def deny(selection,ledger,state,evaluation): selection['canonical_product_implementation_authority']='granted'
  must_fail(deny,'Product authority escalation')
+def falsify_g10_authority_named_exception_propagation():
+ g10_itsm_scope.falsify_g10_authority_named_exception_propagation()
+ def deny(selection,ledger,state,evaluation): selection['canonical_product_implementation_authority']='granted'
+ must_fail(deny,'Product authority escalation')
 def falsify_g10_authority_predicate_integrity():
  g10_itsm_scope.falsify_g10_authority_predicate_integrity()
  def deny(selection,ledger,state,evaluation): selection['canonical_product_implementation_authority']='granted'
@@ -371,6 +375,7 @@ def main():
  falsify_g10_expired_sync_discovery()
  falsify_g10_privileged_role_membership_fence()
  falsify_g10_authority_exception_propagation()
+ falsify_g10_authority_named_exception_propagation()
  falsify_g10_authority_predicate_integrity()
  falsify_g10_incident_create_replay_equivalence()
  falsify_g10_concurrent_incident_create_serialization()

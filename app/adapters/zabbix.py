@@ -74,9 +74,20 @@ _NATIVE_VALUE_TYPE_MAP = {
 
 _SEVERITY_VALID = frozenset({0, 1, 2, 3, 4, 5})
 
+_HOST_STATUS_MAP = {"0": "enabled", "1": "disabled"}
+_AVAILABILITY_MAP = {"0": "unknown", "1": "available", "2": "unavailable"}
+_MAINTENANCE_STATUS_MAP = {"0": "none", "1": "active"}
+_MAINTENANCE_TYPE_MAP = {"0": "with_data", "1": "no_data"}
+
 _INVENTORY_FIELDS = [
     "type", "type_full", "os", "os_full", "vendor", "model",
-    "serialno_a", "serialno_b", "asset_tag", "hardware", "software", "location",
+    "serialno_a", "serialno_b", "asset_tag", "hardware", "hardware_full",
+    "software", "software_full", "location",
+    "macaddress_a", "macaddress_b", "contact",
+    "poc_1_name", "poc_1_email", "poc_1_phone_a",
+    "poc_2_name", "poc_2_email", "poc_2_phone_a",
+    "site_city", "site_rack", "site_notes",
+    "url_a", "url_b", "url_c",
 ]
 
 
@@ -201,7 +212,12 @@ class ZabbixAdapter:
             credential.api_token,
             "host.get",
             {
-                "output": ["hostid", "host", "name"],
+                "output": [
+                    "hostid", "host", "name",
+                    "status", "available", "snmp_available", "ipmi_available", "jmx_available",
+                    "error", "snmp_error",
+                    "maintenance_status", "maintenance_type",
+                ],
                 "groupids": list(host_group_refs),
                 "limit": max_hosts + 1,
                 "selectInterfaces": ["interfaceid", "type", "main", "useip", "ip", "dns", "port"],
@@ -448,6 +464,18 @@ def _parse_host(row: dict[str, Any]) -> ZabbixHostEvidence:
     technical_name = str(row.get("host", "") or "")
     display_name = str(row.get("name", "") or technical_name)
 
+    host_status = _HOST_STATUS_MAP.get(str(row.get("status", "0")), "enabled")
+    agent_availability = _AVAILABILITY_MAP.get(str(row.get("available", "0")), "unknown")
+    snmp_availability = _AVAILABILITY_MAP.get(str(row.get("snmp_available", "0")), "unknown")
+    ipmi_availability = _AVAILABILITY_MAP.get(str(row.get("ipmi_available", "0")), "unknown")
+    jmx_availability = _AVAILABILITY_MAP.get(str(row.get("jmx_available", "0")), "unknown")
+    agent_error = _str_or_none(row.get("error"), 2048)
+    snmp_error = _str_or_none(row.get("snmp_error"), 2048)
+    maintenance_status = _MAINTENANCE_STATUS_MAP.get(str(row.get("maintenance_status", "0")), "none")
+    maintenance_type: str | None = None
+    if maintenance_status == "active":
+        maintenance_type = _MAINTENANCE_TYPE_MAP.get(str(row.get("maintenance_type", "0")))
+
     raw_inv = row.get("inventory") or {}
     if isinstance(raw_inv, list):
         raw_inv = {}
@@ -467,8 +495,25 @@ def _parse_host(row: dict[str, Any]) -> ZabbixHostEvidence:
         serial_secondary=_inv_field("serialno_b", 512),
         asset_tag=_inv_field("asset_tag", 512),
         hardware=_inv_field("hardware", 2048),
+        hardware_full=_inv_field("hardware_full", 2048),
         software=_inv_field("software", 2048),
+        software_full=_inv_field("software_full", 2048),
         location=_inv_field("location", 1024),
+        mac_primary=_inv_field("macaddress_a", 32),
+        mac_secondary=_inv_field("macaddress_b", 32),
+        contact=_inv_field("contact", 512),
+        poc_1_name=_inv_field("poc_1_name", 512),
+        poc_1_email=_inv_field("poc_1_email", 255),
+        poc_1_phone=_inv_field("poc_1_phone_a", 64),
+        poc_2_name=_inv_field("poc_2_name", 512),
+        poc_2_email=_inv_field("poc_2_email", 255),
+        poc_2_phone=_inv_field("poc_2_phone_a", 64),
+        site_city=_inv_field("site_city", 255),
+        site_rack=_inv_field("site_rack", 255),
+        site_notes=_inv_field("site_notes", 2048),
+        url_a=_inv_field("url_a", 512),
+        url_b=_inv_field("url_b", 512),
+        url_c=_inv_field("url_c", 512),
     )
 
     raw_interfaces = row.get("interfaces") or []
@@ -519,6 +564,15 @@ def _parse_host(row: dict[str, Any]) -> ZabbixHostEvidence:
         groups=tuple(groups),
         templates=tuple(templates),
         tags=tuple(tags),
+        host_status=host_status,
+        agent_availability=agent_availability,
+        snmp_availability=snmp_availability,
+        ipmi_availability=ipmi_availability,
+        jmx_availability=jmx_availability,
+        agent_error=agent_error,
+        snmp_error=snmp_error,
+        maintenance_status=maintenance_status,
+        maintenance_type=maintenance_type,
     )
 
 

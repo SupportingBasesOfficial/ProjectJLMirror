@@ -120,8 +120,25 @@ class ZabbixInventoryEvidence:
     serial_secondary: str | None = None
     asset_tag: str | None = None
     hardware: str | None = None
+    hardware_full: str | None = None
     software: str | None = None
+    software_full: str | None = None
     location: str | None = None
+    mac_primary: str | None = None
+    mac_secondary: str | None = None
+    contact: str | None = None
+    poc_1_name: str | None = None
+    poc_1_email: str | None = None
+    poc_1_phone: str | None = None
+    poc_2_name: str | None = None
+    poc_2_email: str | None = None
+    poc_2_phone: str | None = None
+    site_city: str | None = None
+    site_rack: str | None = None
+    site_notes: str | None = None
+    url_a: str | None = None
+    url_b: str | None = None
+    url_c: str | None = None
 
     def __post_init__(self) -> None:
         for field_name, value, max_len in (
@@ -135,11 +152,34 @@ class ZabbixInventoryEvidence:
             ("serial_secondary", self.serial_secondary, 512),
             ("asset_tag", self.asset_tag, 512),
             ("hardware", self.hardware, 2048),
+            ("hardware_full", self.hardware_full, 2048),
             ("software", self.software, 2048),
+            ("software_full", self.software_full, 2048),
             ("location", self.location, 1024),
+            ("mac_primary", self.mac_primary, 32),
+            ("mac_secondary", self.mac_secondary, 32),
+            ("contact", self.contact, 512),
+            ("poc_1_name", self.poc_1_name, 512),
+            ("poc_1_email", self.poc_1_email, 255),
+            ("poc_1_phone", self.poc_1_phone, 64),
+            ("poc_2_name", self.poc_2_name, 512),
+            ("poc_2_email", self.poc_2_email, 255),
+            ("poc_2_phone", self.poc_2_phone, 64),
+            ("site_city", self.site_city, 255),
+            ("site_rack", self.site_rack, 255),
+            ("site_notes", self.site_notes, 2048),
+            ("url_a", self.url_a, 512),
+            ("url_b", self.url_b, 512),
+            ("url_c", self.url_c, 512),
         ):
             if value is not None:
                 _canonical_explicit_text(value, field_name, max_len=max_len)
+
+
+_VALID_HOST_STATUS = frozenset({"enabled", "disabled"})
+_VALID_AVAILABILITY = frozenset({"unknown", "available", "unavailable"})
+_VALID_MAINTENANCE_STATUS = frozenset({"none", "active"})
+_VALID_MAINTENANCE_TYPE = frozenset({"with_data", "no_data"})
 
 
 @dataclass(frozen=True)
@@ -152,6 +192,15 @@ class ZabbixHostEvidence:
     groups: tuple[ZabbixNamedRefEvidence, ...]
     templates: tuple[ZabbixNamedRefEvidence, ...]
     tags: tuple[ZabbixTagEvidence, ...]
+    host_status: str = "enabled"
+    agent_availability: str = "unknown"
+    snmp_availability: str = "unknown"
+    ipmi_availability: str = "unknown"
+    jmx_availability: str = "unknown"
+    agent_error: str | None = None
+    snmp_error: str | None = None
+    maintenance_status: str = "none"
+    maintenance_type: str | None = None
 
     def __post_init__(self) -> None:
         _canonical_explicit_text(self.hostid, "hostid", max_len=256)
@@ -178,6 +227,27 @@ class ZabbixHostEvidence:
             raise ValueError("duplicate template ref in host evidence")
         if len({(value.tag, value.value) for value in self.tags}) != len(self.tags):
             raise ValueError("duplicate tag/value pair in host evidence")
+        if self.host_status not in _VALID_HOST_STATUS:
+            raise ValueError(f"host_status must be one of {_VALID_HOST_STATUS}")
+        for av_field, av_value in (
+            ("agent_availability", self.agent_availability),
+            ("snmp_availability", self.snmp_availability),
+            ("ipmi_availability", self.ipmi_availability),
+            ("jmx_availability", self.jmx_availability),
+        ):
+            if av_value not in _VALID_AVAILABILITY:
+                raise ValueError(f"{av_field} must be one of {_VALID_AVAILABILITY}")
+        if self.agent_error is not None:
+            _canonical_explicit_text(self.agent_error, "agent_error", max_len=2048)
+        if self.snmp_error is not None:
+            _canonical_explicit_text(self.snmp_error, "snmp_error", max_len=2048)
+        if self.maintenance_status not in _VALID_MAINTENANCE_STATUS:
+            raise ValueError(f"maintenance_status must be one of {_VALID_MAINTENANCE_STATUS}")
+        if self.maintenance_type is not None:
+            if self.maintenance_type not in _VALID_MAINTENANCE_TYPE:
+                raise ValueError(f"maintenance_type must be one of {_VALID_MAINTENANCE_TYPE}")
+            if self.maintenance_status != "active":
+                raise ValueError("maintenance_type must only be set when maintenance_status is active")
         if len(_canonical_json_bytes(self.canonical_evidence())) > MAX_NORMALIZED_EVIDENCE_BYTES:
             raise ValueError("normalized host evidence exceeds application persistence-safe byte ceiling")
 
@@ -193,12 +263,38 @@ class ZabbixHostEvidence:
             ("serial_secondary", self.inventory.serial_secondary),
             ("asset_tag", self.inventory.asset_tag),
             ("hardware", self.inventory.hardware),
+            ("hardware_full", self.inventory.hardware_full),
             ("software", self.inventory.software),
+            ("software_full", self.inventory.software_full),
             ("location", self.inventory.location),
+            ("mac_primary", self.inventory.mac_primary),
+            ("mac_secondary", self.inventory.mac_secondary),
+            ("contact", self.inventory.contact),
+            ("poc_1_name", self.inventory.poc_1_name),
+            ("poc_1_email", self.inventory.poc_1_email),
+            ("poc_1_phone", self.inventory.poc_1_phone),
+            ("poc_2_name", self.inventory.poc_2_name),
+            ("poc_2_email", self.inventory.poc_2_email),
+            ("poc_2_phone", self.inventory.poc_2_phone),
+            ("site_city", self.inventory.site_city),
+            ("site_rack", self.inventory.site_rack),
+            ("site_notes", self.inventory.site_notes),
+            ("url_a", self.inventory.url_a),
+            ("url_b", self.inventory.url_b),
+            ("url_c", self.inventory.url_c),
         ) if value is not None}
         return {
             "technical_name": self.technical_name,
             "display_name": self.display_name,
+            "host_status": self.host_status,
+            "agent_availability": self.agent_availability,
+            "snmp_availability": self.snmp_availability,
+            "ipmi_availability": self.ipmi_availability,
+            "jmx_availability": self.jmx_availability,
+            **({"agent_error": self.agent_error} if self.agent_error is not None else {}),
+            **({"snmp_error": self.snmp_error} if self.snmp_error is not None else {}),
+            "maintenance_status": self.maintenance_status,
+            **({"maintenance_type": self.maintenance_type} if self.maintenance_type is not None else {}),
             "inventory": inventory,
             "interfaces": [
                 {

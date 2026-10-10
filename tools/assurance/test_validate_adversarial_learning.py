@@ -611,6 +611,50 @@ def falsify_g10_provider_sync_identity_stability() -> None:
     assert not _g10_review_guardrail_errors(safe)
 
 
+def falsify_g11_header_as_machine_auth() -> None:
+    expect_failure(
+        lambda r: mutate_text(
+            r,
+            Path("tools/assurance/test_validate_adversarial_learning.py"),
+            "    falsify_g11_header_as_machine_auth()\n",
+            "",
+        )
+    )
+
+
+def falsify_g11_schema_contract_drift() -> None:
+    expect_failure(
+        lambda r: mutate_text(
+            r,
+            Path("tools/assurance/test_validate_adversarial_learning.py"),
+            "    falsify_g11_schema_contract_drift()\n",
+            "",
+        )
+    )
+
+
+def falsify_g11_durable_work_recovery() -> None:
+    expect_failure(
+        lambda r: mutate_text(
+            r,
+            Path("tools/assurance/test_validate_adversarial_learning.py"),
+            "    falsify_g11_durable_work_recovery()\n",
+            "",
+        )
+    )
+
+
+def falsify_g11_boundary_type_validation() -> None:
+    expect_failure(
+        lambda r: mutate_text(
+            r,
+            Path("tools/assurance/test_validate_adversarial_learning.py"),
+            "    falsify_g11_boundary_type_validation()\n",
+            "",
+        )
+    )
+
+
 def main() -> None:
     baseline_errors = s.validate(ROOT)
     assert not baseline_errors, "strict baseline errors:\n" + "\n".join(baseline_errors)
@@ -650,6 +694,10 @@ def main() -> None:
     falsify_g10_privileged_role_membership()
     falsify_g10_expired_sync_discovery()
     falsify_g10_alert_timestamp_contract()
+    falsify_g11_header_as_machine_auth()
+    falsify_g11_schema_contract_drift()
+    falsify_g11_durable_work_recovery()
+    falsify_g11_boundary_type_validation()
     expect_failure(lambda r: mutate_json(r, v.LEDGER, lambda d: d["entries"][1].__setitem__("review_comment_id", 3961647090)))
     expect_failure(lambda r: mutate_json(r, v.LEDGER, lambda d: d["entries"][6].__setitem__("guardrail_generation", 1)))
     expect_failure(lambda r: mutate_json(r, v.LEDGER, lambda d: d["entries"][0].__setitem__("systemic_guardrail_updated", False)))

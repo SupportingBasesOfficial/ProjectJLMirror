@@ -104,6 +104,16 @@ This record authorizes automatic Alert create and resolve under these conditions
 - RESOLVE: automatic resolution is triggered by a matching RESOLVED/HEALTHY event only if `IncidentResponsePolicy.manual_override_only = false`; if `manual_override_only = true`, resolution requires an operator ACK action.
 - AIOps findings (future G12) may provide evidence to the evaluator but cannot directly create or resolve alerts without a separately authorized AIOps authority contract.
 
+### G10 authority boundary
+
+The `auto_open_ticket` field governs automatic ITSM ticket creation upon an alert opening event. This is distinct from automatic Alert-to-Incident creation, which is **outside current G10 authority**.
+
+Before any automatic Alert-to-Incident creation can cause runtime effects, a separately accepted G10 extension must explicitly authorize automatic Alert-to-Incident creation, preserve `Alert != Incident` as a mechanical invariant, and define the exact admission/idempotency/recovery contract. Until that G10 automatic incident extension exists:
+
+- `IncidentResponsePolicy` may request an ITSM ticket (via `auto_open_ticket`) through the existing G10 adapter boundary;
+- orchestration cannot write ITSM tables or fabricate Incident identity directly — ticket creation always flows through the authorized G10 ITSM adapter, which owns Incident identity and idempotency;
+- `Alert != Incident` remains true: an open Alert does not become or mutate an Incident automatically under current G10 authority.
+
 ### Closure conditions
 
 **Closure 1 — ApplicationErrorEvent inbound API (binding)**

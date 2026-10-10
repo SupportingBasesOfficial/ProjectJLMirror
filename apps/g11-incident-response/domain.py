@@ -68,7 +68,6 @@ def evaluate_policy(event:ApplicationErrorEvent,policy:IncidentResponsePolicy)->
     for ch in policy.notify_channels:
         if event.severity_hint in ch.get("on_severities",[]):
             actions.append("notify")
-            break
     for tr in policy.automation_triggers:
         if tr.get("trigger")=="ALERT_OPEN":
             actions.append("automation")

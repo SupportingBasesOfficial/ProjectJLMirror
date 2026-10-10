@@ -48,8 +48,13 @@ class IncidentResponseWorker:
             else:
                 result={"state":"skipped","failure_class":"no_adapter"}
         except Exception:
+            attempts=int(candidate.get("attempts",0))
+            if attempts+1<3:
+                return self.port.complete_action(
+                    tenant_id,request_id,self.executor_id,"pending",None,"adapter_execution_transient",
+                )
             return self.port.complete_action(
-                tenant_id,request_id,self.executor_id,"unknown",None,"adapter_execution_unknown",
+                tenant_id,request_id,self.executor_id,"failed",None,"adapter_execution_failed",
             )
         state=str(result.get("state","unknown"))
         if state not in {"linked","failed","skipped","unknown"}: state="unknown"

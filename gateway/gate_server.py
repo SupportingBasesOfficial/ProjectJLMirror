@@ -15,7 +15,7 @@ _GATE_META = {
     "g8": ("PgHumanOperationsGateway", True),
     "g9": ("PgNotificationGateway", True),
     "g10": ("PgIncidentGateway", True),
-    "g11": ("PgIncidentResponseGateway", False),
+    "g11": ("PgIncidentResponseGateway", True),
 }
 
 
@@ -50,8 +50,17 @@ def serve(gate: str, gate_dir: str, host: str, port: int, db_url: str) -> None:
     port_obj = getattr(pg_mod, pg_class_name)(conn)
 
     if needs_authority:
-        domain_mod = import_module("domain")
-        provider = _passthrough_provider(domain_mod)
+        if gate == "g11":
+            _all_g11_scopes = frozenset([
+                "incident_response:push",
+                "incident_response:read",
+                "incident_response:write",
+            ])
+            def provider(token, tenant_id, _s=_all_g11_scopes):
+                return "dev-passthrough-principal", _s
+        else:
+            domain_mod = import_module("domain")
+            provider = _passthrough_provider(domain_mod)
         handler_cls = http_mod.make_handler(port_obj, provider)
     else:
         handler_cls = http_mod.make_handler(port_obj)

@@ -26,14 +26,19 @@ class IncidentResponsePort(Protocol):
                         result_state:str,provider_ref:str|None,failure_class:str|None)->dict: ...
 
 
+def _require_bool(key:str,value:object)->bool:
+    if not isinstance(value,bool): raise ValueError(f"{key} must be a boolean")
+    return value
+
+
 def _policy_from_dict(tenant_id:str,raw:dict)->IncidentResponsePolicy:
     threshold=raw.get("severity_threshold","HIGH")
     if threshold not in SEVERITIES: raise ValueError("severity_threshold invalid")
     return IncidentResponsePolicy(
         tenant_id=tenant_id,
         severity_threshold=threshold,
-        auto_open_ticket=bool(raw.get("auto_open_ticket",False)),
-        manual_override_only=bool(raw.get("manual_override_only",False)),
+        auto_open_ticket=_require_bool("auto_open_ticket",raw.get("auto_open_ticket",False)),
+        manual_override_only=_require_bool("manual_override_only",raw.get("manual_override_only",False)),
         notify_channels=tuple(raw.get("notify_channels",[])),
         automation_triggers=tuple(raw.get("automation_triggers",[])),
     )

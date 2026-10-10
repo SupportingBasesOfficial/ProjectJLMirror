@@ -34,6 +34,7 @@ MIGRATION_GROUPS: tuple[tuple[str, str], ...] = (
     ("wave4", "wave4"),
     ("integration", "integration"),
     ("d2-open-rel-030", "d2-open-rel-030"),
+    ("incident_response", "incident_response"),
 )
 
 TRACKING_SCHEMA = "platform"

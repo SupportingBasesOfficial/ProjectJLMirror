@@ -55,7 +55,7 @@ PROTECTED_WAVE2_EXACT = frozenset({
 # closes that recursion while every one of the 5 protected prefixes above stays exactly as
 # strictly frozen against live drift as before. PR that installs this mechanism also performs
 # step 2 retroactively for #29 (already-known, historical merge SHA — zero red window).
-PROTECTED_WAVE2_DRIFT_BASELINE_SHA = "8b7f1c34ea3ccbe8d98bb950c353fb4662f5085a"
+PROTECTED_WAVE2_DRIFT_BASELINE_SHA = "955dfc48c2dae8bdc2432105fe67e94b7b853145"
 # `implementation/wave-2/KNOWN_DEFERRED_ITEMS.md` is a living, forward-looking governance
 # record (see its own header), not a frozen description of what Wave 2 built — unlike
 # IMPLEMENTATION_MANIFEST.json/STATE.md/README.md/RECONCILIATION_AUTHORITY_BOUNDARY.md, which

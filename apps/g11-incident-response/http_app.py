@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import json,re
+import html,json,re
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler
 from urllib.parse import urlsplit
@@ -18,16 +18,18 @@ SCOPE_READ="incident_response:read"
 SCOPE_WRITE="incident_response:write"
 
 
-def _auth(handler:BaseHTTPRequestHandler,tenant_id:str)->tuple[str,str,frozenset[str]]:
-    supplied=handler.headers.get("X-Tenant-Id","")
-    principal=handler.headers.get("X-Principal-Id","")
-    scopes=frozenset(x for x in handler.headers.get("X-Scopes","").split() if x)
-    if supplied!=tenant_id: raise PermissionError("tenant mismatch")
-    return supplied,principal,scopes
-
-
-def make_handler(port,authority_provider=None):
+def make_handler(port,authority_provider):
     service=IncidentResponseService(port=port)
+
+    def _auth(handler:BaseHTTPRequestHandler,tenant_id:str)->tuple[str,str,frozenset[str]]:
+        supplied=handler.headers.get("X-Tenant-Id","")
+        if supplied!=tenant_id: raise PermissionError("tenant mismatch")
+        bearer=handler.headers.get("Authorization","")
+        if not bearer.startswith("Bearer "): raise PermissionError("bearer required")
+        token=bearer[7:]
+        principal,scopes=authority_provider(token,tenant_id)
+        return supplied,principal,scopes
+
     class Handler(BaseHTTPRequestHandler):
         max_body=65536
         def log_message(self,format,*args): return
@@ -86,12 +88,14 @@ def make_handler(port,authority_provider=None):
                     tenant,=m.groups()
                     _,principal,scopes=_auth(self,tenant)
                     if SCOPE_PUSH not in scopes: raise PermissionError(SCOPE_PUSH)
+                    for _f in ("application_id","error_code","error_message","occurred_at"):
+                        if not isinstance(body.get(_f),str): raise ValueError(f"{_f} must be a string")
                     event=ApplicationErrorEvent(
                         tenant_id=tenant,
-                        application_id=str(body["application_id"]),
-                        error_code=str(body["error_code"]),
-                        error_message=str(body["error_message"]),
-                        occurred_at=str(body["occurred_at"]),
+                        application_id=body["application_id"],
+                        error_code=body["error_code"],
+                        error_message=body["error_message"],
+                        occurred_at=body["occurred_at"],
                         source_principal_id=principal,
                         principal_id=body.get("principal_id"),
                         operation=body.get("operation"),
@@ -127,21 +131,22 @@ def make_handler(port,authority_provider=None):
 def _render_ui(service:IncidentResponseService,tenant_id:str)->str:
     events=service.list_events(tenant_id)
     policy=service.get_policy(tenant_id)
+    h=html.escape
     rows="".join(
-        f"<tr><td>{e.get('event_id','')[:8]}…</td>"
-        f"<td>{e.get('application_id','')}</td>"
-        f"<td>{e.get('error_code','')}</td>"
-        f"<td>{e.get('severity_hint','—')}</td>"
-        f"<td>{e.get('occurred_at','')}</td>"
-        f"<td>{e.get('status','')}</td></tr>"
+        f"<tr><td>{h(e.get('event_id','')[:8])}…</td>"
+        f"<td>{h(e.get('application_id',''))}</td>"
+        f"<td>{h(e.get('error_code',''))}</td>"
+        f"<td>{h(e.get('severity_hint') or '—')}</td>"
+        f"<td>{h(e.get('occurred_at',''))}</td>"
+        f"<td>{h(e.get('status',''))}</td></tr>"
         for e in events
     )
-    auto=policy.get("auto_open_ticket","false")
-    threshold=policy.get("severity_threshold","HIGH")
+    auto=h(str(policy.get("auto_open_ticket","false")))
+    threshold=h(str(policy.get("severity_threshold","HIGH")))
     return (
         "<!doctype html><html lang=en><head><meta charset=utf-8>"
         "<title>Incident Response — JLMirror</title></head><body>"
-        f"<h1>Incident Response — {tenant_id}</h1>"
+        f"<h1>Incident Response — {h(tenant_id)}</h1>"
         f"<p>Policy: threshold={threshold} auto_open_ticket={auto}</p>"
         "<table border=1><tr><th>ID</th><th>App</th><th>Code</th>"
         "<th>Severity</th><th>Occurred</th><th>Status</th></tr>"

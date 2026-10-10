@@ -39,8 +39,8 @@ class FakePort:
                              "severity_hint": event.severity_hint}
         return {"event_id": eid, "status": "received"}
 
-    def enqueue_action(self, tenant_id, event_id, action_kind):
-        self.actions.append((tenant_id, event_id, action_kind))
+    def enqueue_action(self, tenant_id, event_id, action_kind, payload=None):
+        self.actions.append((tenant_id, event_id, action_kind, payload))
         return {"request_id": f"req:{action_kind}", "action_kind": action_kind, "status": "pending"}
 
     def list_events(self, tenant_id):
@@ -55,6 +55,20 @@ class FakePort:
     def record_action_attempt(self, *a): return None
 
 
+# --- Authority provider for tests ---
+
+_TOKEN_SCOPES = {
+    "test-all": frozenset(["incident_response:push", "incident_response:read", "incident_response:write"]),
+    "test-read": frozenset(["incident_response:read"]),
+}
+
+def _test_authority_provider(token: str, tenant_id: str) -> tuple:
+    scopes = _TOKEN_SCOPES.get(token)
+    if scopes is None:
+        raise PermissionError("invalid token")
+    return "machine-p1", scopes
+
+
 # --- HTTP test helper ---
 
 class FakeSocket:
@@ -67,12 +81,11 @@ class FakeSocket:
     def getpeername(self): return ("127.0.0.1", 9999)
 
 
-def _request(handler_cls, method, path, body=None, headers=None):
+def _request(handler_cls, method, path, body=None, headers=None, token="test-all"):
     body_bytes = json.dumps(body).encode() if body else b""
     base_headers = {
         "X-Tenant-Id": "t1",
-        "X-Principal-Id": "machine-p1",
-        "X-Scopes": "incident_response:push incident_response:read incident_response:write",
+        "Authorization": f"Bearer {token}",
     }
     if headers:
         base_headers.update(headers)
@@ -100,7 +113,7 @@ def _request(handler_cls, method, path, body=None, headers=None):
 
 def _make():
     port = FakePort()
-    handler = make_handler(port)
+    handler = make_handler(port, authority_provider=_test_authority_provider)
     return port, handler
 
 
@@ -138,7 +151,7 @@ def test_push_event_wrong_tenant_returns_403():
     status, body, _ = _request(
         Handler, "POST", "/api/v1/tenants/t2/application-error-events",
         {"application_id": "erp", "error_code": "ERR", "error_message": "x", "occurred_at": "2026-01-01T00:00Z"},
-        headers={"X-Tenant-Id": "t1"},
+        headers={"X-Tenant-Id": "t1"},  # tenant_id in header != t2 in path
     )
     assert status == 403
 
@@ -148,7 +161,7 @@ def test_push_event_without_push_scope_returns_403():
     status, _, _ = _request(
         Handler, "POST", "/api/v1/tenants/t1/application-error-events",
         {"application_id": "erp", "error_code": "E", "error_message": "m", "occurred_at": "2026-01-01T00:00Z"},
-        headers={"X-Tenant-Id": "t1", "X-Principal-Id": "p1", "X-Scopes": "incident_response:read"},
+        token="test-read",  # read-only token — no push scope
     )
     assert status == 403
 
@@ -215,7 +228,7 @@ def test_push_auto_ticket_action_enqueued_when_policy_configured():
         "application_id": "erp", "error_code": "ERR_DB", "error_message": "DB failed",
         "occurred_at": "2026-09-23T14:05:00Z", "severity_hint": "HIGH",
     })
-    assert any(a[2] == "open_ticket" for a in port.actions)
+    assert any(a[2] == "open_ticket" for a in port.actions)  # a = (tenant, event_id, kind, payload)
 
 
 def test_push_no_action_when_manual_override_only():

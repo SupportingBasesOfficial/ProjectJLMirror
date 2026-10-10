@@ -1,0 +1,85 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "id": "LEARN-PR180-001",
+      "pr": 180,
+      "source": "external_review",
+      "review_comment_id": 4236812574,
+      "class_id": "ADV-REPRESENTATION-AS-AUTHORITY",
+      "invariant_ids": [
+        "INV-AUTH-001",
+        "INV-TENANT-001"
+      ],
+      "root_cause": "The G11 authority provider stored only scopes per token and ignored the tenant_id argument; any valid token could access any tenant's incidents or mutate any policy by inserting the target tenant in the path and X-Tenant-Id header. A machine credential must resolve and enforce its authorized tenant set, rejecting requests for tenants not explicitly bound to that credential.",
+      "horizontal_audit": [
+        "G11 machine token authority provider",
+        "tenant_id argument ignored in scope lookup",
+        "cross-tenant incident read and policy write",
+        "token-to-tenant binding enforcement",
+        "G11_MACHINE_TOKEN_MAP env var format and validation"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_adversarial_learning.py",
+          "probe": "falsify_g11_token_tenant_binding"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 4
+    },
+    {
+      "id": "LEARN-PR180-002",
+      "pr": 180,
+      "source": "external_review",
+      "review_comment_id": 4236812577,
+      "class_id": "ADV-SCHEMA-CONTRACT-DRIFT",
+      "invariant_ids": [
+        "INV-PROVENANCE-001"
+      ],
+      "root_cause": "After removing the break from the notify-channel loop, multiple matching channels produced multiple identical generic 'notify' action requests. Because g11_enqueue_action stored only the action kind, g11_next_pending_action returned no channel configuration to the worker, preventing adapters from routing the notification to the correct destination. Each notify action must carry the matched channel configuration as a payload so the worker can dispatch each notification independently.",
+      "horizontal_audit": [
+        "notify action payload in g11_enqueue_action",
+        "g11_next_pending_action payload column return",
+        "worker adapter channel routing from candidate payload",
+        "multi-channel notify completeness per matching severity",
+        "action_request payload column schema migration"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_adversarial_learning.py",
+          "probe": "falsify_g11_notify_channel_identity"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 5
+    },
+    {
+      "id": "LEARN-PR180-003",
+      "pr": 180,
+      "source": "external_review",
+      "review_comment_id": 4236812582,
+      "class_id": "ADV-BOUNDARY-RUNTIME-TYPE",
+      "invariant_ids": [
+        "INV-BOUNDARY-001",
+        "INV-OBS-001"
+      ],
+      "root_cause": "The _render_ui function used e.get('severity_hint', '—') as the default, but when PostgreSQL stores a null value the field is returned as JSON null and e.get returns None rather than the absent-key default. Passing None to html.escape raised AttributeError, crashing the entire UI request for any event list containing an unhinted event. Nullable values from storage must be coerced to a safe non-null representation before any transformation is applied.",
+      "horizontal_audit": [
+        "G11 UI rendering of nullable severity_hint",
+        "e.get default sentinel versus JSON null from storage",
+        "html.escape called on None",
+        "GET handler exception handling for UI endpoint",
+        "nullable-to-string coercion before escaping at render boundary"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_adversarial_learning.py",
+          "probe": "falsify_g11_nullable_field_escape"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 8
+    }
+  ]
+}

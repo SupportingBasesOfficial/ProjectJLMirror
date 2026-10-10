@@ -94,19 +94,22 @@ def test_below_threshold_returns_empty():
     assert evaluate_policy(_event(severity_hint="HIGH"), p) == []
 
 
+def _kinds(actions):
+    return [k for k, _ in actions]
+
+
 def test_auto_open_ticket_included_when_meets_threshold():
     p = _policy(severity_threshold="HIGH", auto_open_ticket=True)
     actions = evaluate_policy(_event(severity_hint="HIGH"), p)
-    assert "open_ticket" in actions
+    assert "open_ticket" in _kinds(actions)
 
 
 def test_notify_included_when_channel_matches_severity():
-    p = _policy(
-        severity_threshold="LOW",
-        notify_channels=({"on_severities": ["HIGH", "CRITICAL"]},),
-    )
+    ch = {"on_severities": ["HIGH", "CRITICAL"], "type": "slack"}
+    p = _policy(severity_threshold="LOW", notify_channels=(ch,))
     actions = evaluate_policy(_event(severity_hint="HIGH"), p)
-    assert "notify" in actions
+    assert "notify" in _kinds(actions)
+    assert any(payload == ch for _, payload in actions if payload)
 
 
 def test_notify_not_included_when_channel_does_not_match():
@@ -115,7 +118,21 @@ def test_notify_not_included_when_channel_does_not_match():
         notify_channels=({"on_severities": ["CRITICAL"]},),
     )
     actions = evaluate_policy(_event(severity_hint="HIGH"), p)
-    assert "notify" not in actions
+    assert "notify" not in _kinds(actions)
+
+
+def test_notify_enqueues_one_action_per_matching_channel():
+    channels = (
+        {"on_severities": ["HIGH"], "type": "slack"},
+        {"on_severities": ["HIGH"], "type": "email"},
+        {"on_severities": ["LOW"], "type": "sms"},
+    )
+    p = _policy(severity_threshold="LOW", notify_channels=channels)
+    actions = evaluate_policy(_event(severity_hint="HIGH"), p)
+    notify_payloads = [payload for k, payload in actions if k == "notify"]
+    assert len(notify_payloads) == 2
+    assert any(p.get("type") == "slack" for p in notify_payloads)
+    assert any(p.get("type") == "email" for p in notify_payloads)
 
 
 def test_no_actions_with_default_policy_low_severity():
@@ -130,7 +147,7 @@ def test_automation_included_when_trigger_configured():
         automation_triggers=({"trigger": "ALERT_OPEN", "runbook_id": "rb-1"},),
     )
     actions = evaluate_policy(_event(severity_hint="HIGH"), p)
-    assert "automation" in actions
+    assert "automation" in _kinds(actions)
 
 
 # --- minute_bucket ---

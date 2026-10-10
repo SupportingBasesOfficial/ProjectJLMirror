@@ -64,16 +64,30 @@ def test_failed_ticket_records_failure():
     assert port.completed[0][3] == "fixture_failure"
 
 
-def test_adapter_exception_records_unknown():
+def test_adapter_exception_requeues_for_retry_on_first_attempt():
     class ErrorAdapter:
         version = "error@1"
         def create_ticket(self, **_): raise RuntimeError("boom")
 
-    port = FakeActionPort(_candidate())
+    port = FakeActionPort(_candidate())  # attempts=0 → first try
     worker = IncidentResponseWorker(port=port, ticket_adapter=ErrorAdapter(), notify_adapter=None, executor_id="w1")
     result = worker.process_next("t1")
-    assert result["state"] == "unknown"
-    assert port.completed[0][3] == "adapter_execution_unknown"
+    assert result["state"] == "pending"
+    assert port.completed[0][3] == "adapter_execution_transient"
+
+
+def test_adapter_exception_fails_permanently_at_max_retries():
+    class ErrorAdapter:
+        version = "error@1"
+        def create_ticket(self, **_): raise RuntimeError("boom")
+
+    candidate = _candidate()
+    candidate["attempts"] = 2  # third attempt (0-indexed before claim) → max reached
+    port = FakeActionPort(candidate)
+    worker = IncidentResponseWorker(port=port, ticket_adapter=ErrorAdapter(), notify_adapter=None, executor_id="w1")
+    result = worker.process_next("t1")
+    assert result["state"] == "failed"
+    assert port.completed[0][3] == "adapter_execution_failed"
 
 
 def test_unknown_action_kind_records_skipped():

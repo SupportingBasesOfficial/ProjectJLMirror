@@ -60,18 +60,17 @@ def severity_meets_threshold(hint:str|None,threshold:str)->bool:
     return SEVERITY_ORDER.get(hint,-1)>=SEVERITY_ORDER.get(threshold,999)
 
 
-def evaluate_policy(event:ApplicationErrorEvent,policy:IncidentResponsePolicy)->list[str]:
+def evaluate_policy(event:ApplicationErrorEvent,policy:IncidentResponsePolicy)->list[tuple[str,dict|None]]:
     if policy.manual_override_only: return []
     if not severity_meets_threshold(event.severity_hint,policy.severity_threshold): return []
-    actions:list[str]=[]
-    if policy.auto_open_ticket: actions.append("open_ticket")
+    actions:list[tuple[str,dict|None]]=[]
+    if policy.auto_open_ticket: actions.append(("open_ticket",None))
     for ch in policy.notify_channels:
         if event.severity_hint in ch.get("on_severities",[]):
-            actions.append("notify")
-            break
+            actions.append(("notify",dict(ch)))
     for tr in policy.automation_triggers:
         if tr.get("trigger")=="ALERT_OPEN":
-            actions.append("automation")
+            actions.append(("automation",None))
             break
     return actions
 

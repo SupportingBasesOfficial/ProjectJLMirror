@@ -39,8 +39,8 @@ class FakePort:
                              "severity_hint": event.severity_hint}
         return {"event_id": eid, "status": "received"}
 
-    def enqueue_action(self, tenant_id, event_id, action_kind):
-        self.actions.append((tenant_id, event_id, action_kind))
+    def enqueue_action(self, tenant_id, event_id, action_kind, payload=None):
+        self.actions.append((tenant_id, event_id, action_kind, payload))
         return {"request_id": f"req:{action_kind}", "action_kind": action_kind, "status": "pending"}
 
     def list_events(self, tenant_id):
@@ -228,7 +228,7 @@ def test_push_auto_ticket_action_enqueued_when_policy_configured():
         "application_id": "erp", "error_code": "ERR_DB", "error_message": "DB failed",
         "occurred_at": "2026-09-23T14:05:00Z", "severity_hint": "HIGH",
     })
-    assert any(a[2] == "open_ticket" for a in port.actions)
+    assert any(a[2] == "open_ticket" for a in port.actions)  # a = (tenant, event_id, kind, payload)
 
 
 def test_push_no_action_when_manual_override_only():

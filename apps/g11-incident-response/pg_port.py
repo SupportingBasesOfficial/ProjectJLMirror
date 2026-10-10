@@ -48,10 +48,12 @@ class PgIncidentResponseGateway:
             ),
         )
 
-    def enqueue_action(self,tenant_id:str,event_id:str,action_kind:str)->dict:
+    def enqueue_action(self,tenant_id:str,event_id:str,action_kind:str,payload:dict|None=None)->dict:
+        import json as _json
+        payload_json=_json.dumps(payload) if payload is not None else None
         return self._scalar(
-            "SELECT incident_response.g11_enqueue_action(%s,%s,%s)",
-            (tenant_id,event_id,action_kind),
+            "SELECT incident_response.g11_enqueue_action(%s,%s,%s,%s)",
+            (tenant_id,event_id,action_kind,payload_json),
         )
 
     def record_action_attempt(self,tenant_id:str,request_id:str,result_state:str,

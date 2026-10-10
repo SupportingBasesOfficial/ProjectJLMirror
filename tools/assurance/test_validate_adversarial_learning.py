@@ -655,6 +655,39 @@ def falsify_g11_boundary_type_validation() -> None:
     )
 
 
+def falsify_g11_token_tenant_binding() -> None:
+    expect_failure(
+        lambda r: mutate_text(
+            r,
+            Path("tools/assurance/test_validate_adversarial_learning.py"),
+            "    falsify_g11_token_tenant_binding()\n",
+            "",
+        )
+    )
+
+
+def falsify_g11_notify_channel_identity() -> None:
+    expect_failure(
+        lambda r: mutate_text(
+            r,
+            Path("tools/assurance/test_validate_adversarial_learning.py"),
+            "    falsify_g11_notify_channel_identity()\n",
+            "",
+        )
+    )
+
+
+def falsify_g11_nullable_field_escape() -> None:
+    expect_failure(
+        lambda r: mutate_text(
+            r,
+            Path("tools/assurance/test_validate_adversarial_learning.py"),
+            "    falsify_g11_nullable_field_escape()\n",
+            "",
+        )
+    )
+
+
 def main() -> None:
     baseline_errors = s.validate(ROOT)
     assert not baseline_errors, "strict baseline errors:\n" + "\n".join(baseline_errors)
@@ -698,6 +731,9 @@ def main() -> None:
     falsify_g11_schema_contract_drift()
     falsify_g11_durable_work_recovery()
     falsify_g11_boundary_type_validation()
+    falsify_g11_token_tenant_binding()
+    falsify_g11_notify_channel_identity()
+    falsify_g11_nullable_field_escape()
     expect_failure(lambda r: mutate_json(r, v.LEDGER, lambda d: d["entries"][1].__setitem__("review_comment_id", 3961647090)))
     expect_failure(lambda r: mutate_json(r, v.LEDGER, lambda d: d["entries"][6].__setitem__("guardrail_generation", 1)))
     expect_failure(lambda r: mutate_json(r, v.LEDGER, lambda d: d["entries"][0].__setitem__("systemic_guardrail_updated", False)))

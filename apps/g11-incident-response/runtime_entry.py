@@ -16,20 +16,34 @@ PORT=int(os.environ.get("G11_PORT","8011"))
 EXECUTOR_ID=os.environ.get("G11_EXECUTOR_ID","g11-default")
 TENANT_IDS=[t.strip() for t in os.environ.get("G11_TENANT_IDS","").split(",") if t.strip()]
 POLL_INTERVAL=int(os.environ.get("G11_POLL_INTERVAL_SECONDS","5"))
-# Format: "token1=scope1 scope2;token2=scope3" — each entry grants those scopes for that token
+# Format: "token=scope1 scope2|tenant1 tenant2;..." — tenants after "|" are the
+# allowed tenants for that token; use "*" to allow any tenant.
 _TOKEN_MAP_RAW=os.environ.get("G11_MACHINE_TOKEN_MAP","")
 
 
 def _make_authority_provider()->Callable:
-    token_map:dict[str,frozenset[str]]={}
+    # Each parsed entry: (scopes, allowed_tenants | None for any-tenant)
+    token_map:dict[str,tuple[frozenset[str],frozenset[str]|None]]={}
     for entry in _TOKEN_MAP_RAW.split(";"):
         entry=entry.strip()
         if "=" not in entry: continue
-        tok,scopes_str=entry.split("=",1)
-        token_map[tok.strip()]=frozenset(scopes_str.split())
+        tok,rest=entry.split("=",1)
+        tok=tok.strip()
+        if "|" in rest:
+            scopes_str,tenants_str=rest.split("|",1)
+            allowed:frozenset[str]|None=(
+                None if tenants_str.strip()=="*"
+                else frozenset(tenants_str.split())
+            )
+        else:
+            scopes_str,allowed=rest,None
+        token_map[tok]=(frozenset(scopes_str.split()),allowed)
     def _provider(token:str,tenant_id:str)->tuple[str,frozenset[str]]:
-        scopes=token_map.get(token)
-        if scopes is None: raise PermissionError("invalid token")
+        entry=token_map.get(token)
+        if entry is None: raise PermissionError("invalid token")
+        scopes,allowed_tenants=entry
+        if allowed_tenants is not None and tenant_id not in allowed_tenants:
+            raise PermissionError("token not authorized for this tenant")
         return "machine-principal",scopes
     return _provider
 

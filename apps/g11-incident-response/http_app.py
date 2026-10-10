@@ -136,7 +136,7 @@ def _render_ui(service:IncidentResponseService,tenant_id:str)->str:
         f"<tr><td>{h(e.get('event_id','')[:8])}…</td>"
         f"<td>{h(e.get('application_id',''))}</td>"
         f"<td>{h(e.get('error_code',''))}</td>"
-        f"<td>{h(e.get('severity_hint','—'))}</td>"
+        f"<td>{h(e.get('severity_hint') or '—')}</td>"
         f"<td>{h(e.get('occurred_at',''))}</td>"
         f"<td>{h(e.get('status',''))}</td></tr>"
         for e in events

@@ -12,7 +12,7 @@ This file records intentional non-decisions and deferred scopes so future contri
 - **CLOSED** — timing/debounce/confirmation semantics: same record (configurable 30 s debounce for Type 1/2; 5-minute bucket dedupe for Type 3).
 - policy conflict/precedence behavior: per-tenant policy is always unique (one record per tenant); no cross-tenant inheritance; **CLOSED** — see same record (§ "Policy conflict and precedence").
 - policy edit behavior for existing active Alerts: policy changes take effect for new alerts only; open alerts retain the policy snapshot captured at open time. **CLOSED** — same record.
-- **CLOSED** — automatic Alert create/resolve: authorized by `66-alert-evaluation-incident-response-decision-record.md` for G6+G7 event-driven paths. AIOps-driven create/resolve remains BLOCKED until G12 authority contract is accepted.
+- **CLOSED** — automatic Alert create/resolve: authorized by `66-alert-evaluation-incident-response-decision-record.md` for G6+G7 event-driven paths. AIOps-driven automatic Alert create/resolve remains blocked until G12 authority contract is accepted.
 
 ### Remaining open
 

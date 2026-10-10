@@ -1,0 +1,243 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "id": "LEARN-PR179-001",
+      "pr": 179,
+      "source": "external_review",
+      "review_comment_id": 4088260127,
+      "class_id": "ADV-REPRESENTATION-AS-AUTHORITY",
+      "invariant_ids": [
+        "INV-AUTH-001",
+        "INV-TENANT-001"
+      ],
+      "root_cause": "The standalone G11 authentication handler compared two attacker-controlled header values rather than verifying a machine credential. Any caller could grant itself incident_response push, read, or write authority by supplying the matching headers. The inbound principal must be authenticated through a verified machine credential before tenant authority is derived from it, and the authority_provider argument must be exercised rather than bypassed.",
+      "horizontal_audit": [
+        "G11 inbound authentication path",
+        "machine principal credential verification",
+        "tenant authority derivation from headers",
+        "attacker-controlled header trust",
+        "standalone versus BFF-integrated authentication"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_adversarial_learning.py",
+          "probe": "falsify_g11_header_as_machine_auth"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 3
+    },
+    {
+      "id": "LEARN-PR179-002",
+      "pr": 179,
+      "source": "external_review",
+      "review_comment_id": 4088260135,
+      "class_id": "ADV-SCHEMA-CONTRACT-DRIFT",
+      "invariant_ids": [
+        "INV-PROVENANCE-001"
+      ],
+      "root_cause": "The Dockerfile and docker-compose.yml launched only app.main:app and omitted the G11 incident-response router from the deployed server process. A standard docker compose up deployment returned 404 for every incident-response endpoint. G11 must be registered with the main API router so all advertised endpoints are reachable in the nominal deployment path.",
+      "horizontal_audit": [
+        "Dockerfile server entrypoint",
+        "docker-compose service definitions",
+        "G11 router registration in main API",
+        "standalone runtime versus BFF-integrated runtime",
+        "endpoint availability after deployment"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_adversarial_learning.py",
+          "probe": "falsify_g11_schema_contract_drift"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 2
+    },
+    {
+      "id": "LEARN-PR179-003",
+      "pr": 179,
+      "source": "external_review",
+      "review_comment_id": 4088260144,
+      "class_id": "ADV-SCHEMA-CONTRACT-DRIFT",
+      "invariant_ids": [
+        "INV-PROVENANCE-001"
+      ],
+      "root_cause": "The migration discovery script only scanned a hard-coded tuple of directories that excluded incident_response. On a fresh installation the script reported success without applying the G11 SQL schema, leaving every G11 gateway call to fail because the schema and stored procedures did not exist. The incident_response migration directory must be included in migration discovery.",
+      "horizontal_audit": [
+        "migration discovery directory enumeration",
+        "G11 schema and stored procedure availability",
+        "fresh installation correctness",
+        "migration script reported success versus actual schema state",
+        "missing schema failure mode at runtime"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_adversarial_learning.py",
+          "probe": "falsify_g11_schema_contract_drift"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 3
+    },
+    {
+      "id": "LEARN-PR179-004",
+      "pr": 179,
+      "source": "external_review",
+      "review_comment_id": 4088260152,
+      "class_id": "ADV-DURABLE-WORK-RECOVERY-GAP",
+      "invariant_ids": [
+        "INV-LIVENESS-001"
+      ],
+      "root_cause": "PgIncidentResponseGateway used psycopg.connect() in default transactional mode but never committed or rolled back. Policy updates, dedupe claims, events, and action state all remained in one uncommitted transaction for the process lifetime, were invisible to other database sessions, and were lost on restart. Database operations must use explicit per-request transactions or an intentional autocommit connection.",
+      "horizontal_audit": [
+        "psycopg connection mode and transaction lifecycle",
+        "policy write and read visibility across sessions",
+        "dedupe claim durability across restarts",
+        "event and action state persistence",
+        "cursor close versus transaction commit"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_adversarial_learning.py",
+          "probe": "falsify_g11_durable_work_recovery"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 2
+    },
+    {
+      "id": "LEARN-PR179-005",
+      "pr": 179,
+      "source": "external_review",
+      "review_comment_id": 4088260157,
+      "class_id": "ADV-BOUNDARY-RUNTIME-TYPE",
+      "invariant_ids": [
+        "INV-BOUNDARY-001",
+        "INV-OBS-001"
+      ],
+      "root_cause": "The incident-response UI page interpolated application_id and error_code from stored push events directly into an HTML response without escaping. Any event whose fields contained HTML or script would execute in the operator's browser, creating a stored-XSS path from a machine push credential. Every stored or path-derived value must be HTML-escaped before interpolation into an HTML response.",
+      "horizontal_audit": [
+        "G11 incident-response page HTML rendering",
+        "application_id and error_code interpolation",
+        "push-supplied data as stored XSS vector",
+        "operator browser execution context",
+        "HTML escaping at rendering boundary"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_adversarial_learning.py",
+          "probe": "falsify_g11_boundary_type_validation"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 5
+    },
+    {
+      "id": "LEARN-PR179-006",
+      "pr": 179,
+      "source": "external_review",
+      "review_comment_id": 4088260167,
+      "class_id": "ADV-DURABLE-WORK-RECOVERY-GAP",
+      "invariant_ids": [
+        "INV-LIVENESS-001"
+      ],
+      "root_cause": "When a ticket or notification adapter raised an exception, the G11 worker immediately completed the action request with terminal status unknown or failed. g11_next_pending_action only selects pending rows, so neither outcome was ever retried. Transient provider failures therefore permanently dropped automated responses. Failed actions must be requeued with bounded exponential backoff rather than completed with a terminal failure status.",
+      "horizontal_audit": [
+        "G11 worker action completion on adapter failure",
+        "pending-only requeue predicate in g11_next_pending_action",
+        "terminal status assignment on transient failure",
+        "adapter error recovery and retry",
+        "bounded retry semantics for ITSM and notification adapters"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_adversarial_learning.py",
+          "probe": "falsify_g11_durable_work_recovery"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 3
+    },
+    {
+      "id": "LEARN-PR179-007",
+      "pr": 179,
+      "source": "external_review",
+      "review_comment_id": 4088260175,
+      "class_id": "ADV-SCHEMA-CONTRACT-DRIFT",
+      "invariant_ids": [
+        "INV-PROVENANCE-001"
+      ],
+      "root_cause": "An unconditional break after the first matching channel caused only one generic notify action to be enqueued when a policy configured multiple channels for the same severity. The action also carried no selected channel metadata, preventing the worker from recovering omitted destinations. A channel-specific action must be enqueued for every matching channel so all configured destinations receive the notification.",
+      "horizontal_audit": [
+        "notify channel enumeration and break semantics",
+        "multi-channel policy enforcement",
+        "action payload channel identity",
+        "worker channel destination recovery",
+        "notification intent completeness per matching severity"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_adversarial_learning.py",
+          "probe": "falsify_g11_schema_contract_drift"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 4
+    },
+    {
+      "id": "LEARN-PR179-008",
+      "pr": 179,
+      "source": "external_review",
+      "review_comment_id": 4088260183,
+      "class_id": "ADV-BOUNDARY-RUNTIME-TYPE",
+      "invariant_ids": [
+        "INV-BOUNDARY-001",
+        "INV-OBS-001"
+      ],
+      "root_cause": "Boolean policy fields were coerced via Python's bool() rather than validated as actual JSON booleans. A payload with auto_open_ticket or manual_override_only as a string false was silently accepted and evaluated as True, enabling automatic ticket creation or disabling manual-override when the client intended the opposite. JSON boolean fields must be validated as actual booleans and non-boolean types must return 422.",
+      "horizontal_audit": [
+        "auto_open_ticket and manual_override_only type coercion",
+        "bool() applied to JSON string values",
+        "policy write validation boundary",
+        "silent semantic inversion of boolean intent",
+        "422 rejection for non-boolean policy fields"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_adversarial_learning.py",
+          "probe": "falsify_g11_boundary_type_validation"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 6
+    },
+    {
+      "id": "LEARN-PR179-009",
+      "pr": 179,
+      "source": "external_review",
+      "review_comment_id": 4088260195,
+      "class_id": "ADV-BOUNDARY-RUNTIME-TYPE",
+      "invariant_ids": [
+        "INV-BOUNDARY-001",
+        "INV-OBS-001"
+      ],
+      "root_cause": "Required event fields were converted to strings with str() before type validation, so null, numbers, arrays, or objects passed validate_event and were stored as bogus strings such as None or {}. This was particularly harmful for occurred_at because the resulting arbitrary string was used to form the dedupe bucket, allowing mismatched deduplication across malformed replays. Required fields must be validated as the correct type before any string conversion.",
+      "horizontal_audit": [
+        "ApplicationErrorEvent required field type validation",
+        "str() conversion before validate_event",
+        "null and non-string values in required fields",
+        "occurred_at dedupe bucket formation",
+        "422 rejection for non-string required fields"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_adversarial_learning.py",
+          "probe": "falsify_g11_boundary_type_validation"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 7
+    }
+  ]
+}

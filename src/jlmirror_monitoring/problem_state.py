@@ -71,6 +71,12 @@ class ZabbixProblemEvidence:
     severity: int
     acknowledged: bool
     tags: tuple[ProviderTag, ...] = ()
+    # suppressed=True when silenced by a Zabbix maintenance window.
+    suppressed: bool = False
+    # Non-empty when this is a symptom of another problem (Zabbix correlation).
+    cause_eventid: str = ""
+    # Operational data string shown alongside the problem in Zabbix UI.
+    opdata: str = ""
 
     def __post_init__(self) -> None:
         if not self.eventid or len(self.eventid) > 256:
@@ -142,6 +148,12 @@ class CanonicalProblemEvidence:
     resolved_at_epoch_seconds: int | None
     provider_acknowledged: bool
     tags: tuple[ProviderTag, ...]
+    # Suppressed by provider maintenance window (Zabbix: suppressed=1).
+    suppressed: bool = False
+    # Operational data shown alongside the problem name in the provider UI.
+    opdata: str = ""
+    # Non-empty when this problem is a symptom of a correlated root cause.
+    cause_eventid: str = ""
 
 
 @dataclass(frozen=True)
@@ -304,6 +316,9 @@ def collect_problem_state(
                     resolved_at_epoch_seconds=None,
                     provider_acknowledged=row.acknowledged,
                     tags=row.tags,
+                    suppressed=row.suppressed,
+                    opdata=row.opdata,
+                    cause_eventid=row.cause_eventid,
                 )
             )
     except ProviderAuthenticationError:

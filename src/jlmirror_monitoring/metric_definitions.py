@@ -30,6 +30,10 @@ MAX_ITEM_NAME_LENGTH = 1024
 MAX_ITEM_KEY_LENGTH = 2048
 MAX_ITEM_UNIT_LENGTH = 255
 
+# Zabbix preprocessing step types that produce delta (difference) values.
+# Type 9 = Simple change, Type 10 = Change per second.
+_DELTA_STEP_TYPES: frozenset[int] = frozenset({9, 10})
+
 
 class MetricValueKind(StrEnum):
     NUMBER = "number"
@@ -89,6 +93,10 @@ class ZabbixItemEvidence:
     unit: str
     native_value_type: ZabbixNativeValueType
     operational_state: ZabbixItemOperationalState
+    # Preprocessing step type IDs as returned by selectPreprocessing.
+    # Steps 9 (Simple change) and 10 (Change per second) produce delta values
+    # that may be negative; the UI uses has_delta_preprocessing to explain this.
+    preprocessing_step_types: tuple[int, ...] = ()
 
     def __post_init__(self) -> None:
         _canonical_explicit_text(self.itemid, "itemid", max_len=256)
@@ -103,6 +111,20 @@ class ZabbixItemEvidence:
             raise ValueError("native_value_type must be normalized before entering Monitoring")
         if not isinstance(self.operational_state, ZabbixItemOperationalState):
             raise ValueError("operational_state must be normalized provider evidence")
+        if not isinstance(self.preprocessing_step_types, tuple) or not all(
+            isinstance(t, int) for t in self.preprocessing_step_types
+        ):
+            raise ValueError("preprocessing_step_types must be a tuple of ints")
+
+    @property
+    def has_delta_preprocessing(self) -> bool:
+        """True when step type 9 (Simple change) or 10 (Change per second) is present.
+
+        These steps produce the delta between consecutive Zabbix readings, so
+        the stored value may be negative when the monitored counter decreases.
+        This is correct Zabbix behaviour, not a data error.
+        """
+        return bool(_DELTA_STEP_TYPES.intersection(self.preprocessing_step_types))
 
     @property
     def value_kind(self) -> MetricValueKind:

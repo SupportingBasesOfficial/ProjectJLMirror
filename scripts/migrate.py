@@ -1,15 +1,16 @@
 """JLMIRROR SQL migration runner.
 
 Applies the canonical SQL migrations under sql/ in dependency order:
-    wave1 -> wave2 -> wave4 -> integration -> d2-open-rel-030
+    wave1 -> wave2 -> wave4 -> g1 -> alerting -> human_operations ->
+    itsm -> notification -> integration -> d2-open-rel-030 -> incident_response
 
 Tracks applied migrations in a `platform._migration_log` table so repeated
 runs are idempotent. Runs as the migration/admin role (DATABASE_MIGRATION_URL),
 which must be a superuser or have DDL + role-creation authority.
 
 Usage:
-    python scripts/migrate.py apply    # apply pending migrations
-    python scripts/migrate.py status    # show applied / pending migrations
+    python scripts/migrate.py apply    # apply pending migrations (default)
+    python scripts/migrate.py status   # show applied / pending migrations
 """
 
 from __future__ import annotations
@@ -32,6 +33,11 @@ MIGRATION_GROUPS: tuple[tuple[str, str], ...] = (
     ("wave1", "wave1"),
     ("wave2", "wave2"),
     ("wave4", "wave4"),
+    ("g1", "g1"),
+    ("alerting", "alerting"),
+    ("human_operations", "human_operations"),
+    ("itsm", "itsm"),
+    ("notification", "notification"),
     ("integration", "integration"),
     ("d2-open-rel-030", "d2-open-rel-030"),
     ("incident_response", "incident_response"),
@@ -176,12 +182,13 @@ def cmd_status() -> int:
 
 
 def main() -> int:
-    if len(sys.argv) < 2 or sys.argv[1] not in ("apply", "status"):
-        print(__doc__)
-        return 2
-    if sys.argv[1] == "apply":
+    cmd = sys.argv[1] if len(sys.argv) >= 2 else "apply"
+    if cmd == "apply":
         return cmd_apply()
-    return cmd_status()
+    if cmd == "status":
+        return cmd_status()
+    print(__doc__)
+    return 2
 
 
 if __name__ == "__main__":

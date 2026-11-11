@@ -136,6 +136,11 @@ class ZabbixInventoryEvidence:
     site_city: str | None = None
     site_rack: str | None = None
     site_notes: str | None = None
+    site_address_a: str | None = None
+    site_state: str | None = None
+    site_country: str | None = None
+    location_lat: str | None = None
+    location_lon: str | None = None
     url_a: str | None = None
     url_b: str | None = None
     url_c: str | None = None
@@ -168,6 +173,11 @@ class ZabbixInventoryEvidence:
             ("site_city", self.site_city, 255),
             ("site_rack", self.site_rack, 255),
             ("site_notes", self.site_notes, 2048),
+            ("site_address_a", self.site_address_a, 512),
+            ("site_state", self.site_state, 255),
+            ("site_country", self.site_country, 255),
+            ("location_lat", self.location_lat, 64),
+            ("location_lon", self.location_lon, 64),
             ("url_a", self.url_a, 512),
             ("url_b", self.url_b, 512),
             ("url_c", self.url_c, 512),

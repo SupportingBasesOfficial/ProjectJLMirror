@@ -480,7 +480,7 @@ def collect_host_inventory(
             egress_decision_ref=endpoint.egress_decision_ref,
             credential_generation_ref=credential.credential_generation_ref,
         )
-    returned_refs = tuple(group.groupid for group in visible_groups)
+    returned_refs = tuple(group.name for group in visible_groups)
     configured_set = set(configured_refs)
     if len(returned_refs) != len(set(returned_refs)) or any(ref not in configured_set for ref in returned_refs):
         return _degraded(

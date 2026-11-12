@@ -205,7 +205,7 @@ def validate_host_group_scope(
             credential_generation_ref=credential.credential_generation_ref,
         )
 
-    returned = [group.groupid for group in groups]
+    returned = [group.name for group in groups]
     if len(returned) != len(set(returned)):
         return _reconciliation_result(
             ValidationFailureClass.PROVIDER_PROTOCOL_INVALID,
